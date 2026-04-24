@@ -167,30 +167,38 @@
         }
 
         /* Tutorial Pulse Animation */
-        @keyframes tutorialPulse {
-            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7); }
-            50% { transform: scale(1.5); box-shadow: 0 0 0 15px rgba(74, 222, 128, 0); }
-            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+        /* Radikal einfaches Tutorial-Blinken (nur Opacity) */
+        @keyframes simplePulse {
+            0% { opacity: 0.4; }
+            50% { opacity: 1.0; }
+            100% { opacity: 0.4; }
         }
 
         .tutorial-pulse {
-            animation: tutorialPulse 1s infinite !important;
-            background-color: #4ade80 !important;
+            animation: simplePulse 1.5s ease-in-out infinite !important;
         }
 
         /* Neighbor Marker CSS */
         .neighbor-marker {
             background-color: #2ecc71;
-            border: 2px solid #27ae60;
+            border: 2px solid black;
             border-radius: 50%;
             width: 12px;
             height: 12px;
-            cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><path fill='%232ecc71' d='M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2s-2 .9-2 2s.9 2 2 2M9.8 8.9L7 23h2.1l1.8-8l2.1 2v6h2V15.5l-2.1-2l.6-3c1.3 1.5 3.3 2.5 5.5 2.5v-2c-1.8 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1c-.3 0-.5.1-.8.1L9.1 8.1c-.6.3-1 .9-1 1.6c0 .3.1.5.2.8l1.5 2.7l-1.5 2.7l-1.5-2.7c-.1-.3-.2-.5-.2-.8c0-.7.4-1.3 1-1.6l.7-.4z'/></svg>") 16 16, pointer;
-            transition: transform 0.2s;
+            cursor: pointer;
+            transition: transform 0.2s, background-color 0.2s;
         }
+
+        @keyframes hoverRipple {
+            0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.8); }
+            100% { box-shadow: 0 0 0 15px rgba(46, 204, 113, 0); }
+        }
+
         .neighbor-marker:hover {
             transform: scale(1.3);
             background-color: #27ae60;
+            animation: hoverRipple 0.6s ease-out;
+            cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><path fill='%23000000' d='M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2s-2 .9-2 2s.9 2 2 2M9.8 8.9L7 23h2.1l1.8-8l2.1 2v6h2V15.5l-2.1-2l.6-3c1.3 1.5 3.3 2.5 5.5 2.5v-2c-1.8 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1c-.3 0-.5.1-.8.1L9.1 8.1c-.6.3-1 .9-1 1.6c0 .3.1.5.2.8l1.5 2.7l-1.5 2.7l-1.5-2.7c-.1-.3-.2-.5-.2-.8c0-.7.4-1.3 1-1.6l.7-.4z'/></svg>") 16 16, pointer !important;
         }
 
         /* Tutorial Overlay (Die GROßE Infotafel am oberen Rand) */
@@ -233,6 +241,25 @@
             display: inline-block;
             vertical-align: middle;
         }
+
+        /* HUD System */
+        #hud-container {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 2500;
+            background: rgba(15, 23, 42, 0.95);
+            border: 2px solid #3b82f6;
+            color: #f8fafc;
+            padding: 10px 30px;
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 1.5rem;
+            font-weight: bold;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+            display: none;
+        }
     </style>
 
 </head>
@@ -253,6 +280,7 @@
 
     <button id="back-to-menu" onclick="backToMenu()">← Hauptmenü</button>
     <div id="tutorial-container"></div>
+    <div id="hud-container">GUTHABEN: 150 €</div>
     <div id="map"></div>
 
     <script>
@@ -329,7 +357,7 @@
 
             // PHASE 2: Nach 2 Sekunden nah ranzoomen
             setTimeout(() => {
-                map.flyTo(city.coords, 17, {
+                map.flyTo(city.coords, 18, {
                     duration: 2.5,
                     easeLinearity: 0.25
                 });
@@ -358,10 +386,19 @@
             tutorialActive = false;
             tutorialFinished = true;
             const container = document.getElementById('tutorial-container');
-            container.innerHTML = "<h2>Erfolg</h2><p>ERSTER SCHRITT ERFOLGREICH. SIGNATUR GEDÄMPFT.</p>";
-            setTimeout(() => {
-                container.style.display = 'none';
-            }, 3000);
+            container.innerHTML = "<h2>Ziel erreicht</h2><p>ERSTER SCHRITT ERFOLGREICH. SIGNATUR GEDÄMPFT. JEDER SCHRITT KOSTET 10 EURO. DU MUSST SPARSAM MIT DEM GELD UMGEHEN, DU HAST NUR 150 EURO ZUR VERFÜGUNG.</p>";
+            // Tafel bleibt dauerhaft eingeblendet
+        }
+
+        function gameOver() {
+            gameActive = false;
+            const container = document.getElementById('tutorial-container');
+            container.innerHTML = "<h2>Game Over</h2><p>FINANZIELLE MITTEL ERSCHÖPFT. DIE STATISTIK HAT DICH EINGEHOLT.</p>";
+            container.style.display = 'block';
+            
+            // Bewegung verhindern
+            neighborMarkers.forEach(m => map.removeLayer(m));
+            neighborMarkers = [];
         }
 
         function backToMenu() {
@@ -378,6 +415,10 @@
             playerMarker = null;
             neighborMarkers.forEach(m => map.removeLayer(m));
             neighborMarkers = [];
+            budget = 150;
+            gameActive = false;
+            document.getElementById('hud-container').style.display = 'none';
+            document.getElementById('tutorial-container').style.display = 'none';
         }
 
         // --- Globaler Status ---
@@ -387,6 +428,8 @@
         var nodesData = {};
         var waysData = {};
         var nodeToWays = {};
+        var budget = 150;
+        var gameActive = false;
 
         function createPlayerMarker(coords) {
             var playerIcon = L.divIcon({
@@ -418,11 +461,19 @@
                 if (intersectionNodes.length > 0) {
                     const startNodeId = intersectionNodes[Math.floor(Math.random() * intersectionNodes.length)];
                     
+                    if (!tutorialFinished) {
+                        // Wichtig: tutorialActive ZUERST auf true setzen, damit updateNeighbors es weiß
+                        tutorialActive = true;
+                        startTutorial();
+                    }
+
+                    gameActive = true;
+                    budget = 150;
+                    document.getElementById('hud-container').innerText = `GUTHABEN: ${budget} €`;
+                    document.getElementById('hud-container').style.display = 'block';
+
                     // isInitial = true verhindert, dass das Tutorial sofort beendet wird
                     moveToNode(startNodeId, true);
-                    
-                    // Tutorial erst starten, wenn der Spieler platziert wurde
-                    startTutorial();
                 } else {
                     console.warn("Keine Kreuzungen im Ausschnitt gefunden.");
                     const container = document.getElementById('tutorial-container');
@@ -435,9 +486,18 @@
         }
 
         async function loadNetwork(bounds) {
+            // Wir erweitern den abzufragenden Kartenausschnitt um ca. 500 Meter,
+            // damit beim extrem nahen Zoom (Stufe 18) keine angrenzenden Knotenpunkte verschwinden.
+            const center = map.getCenter();
+            const offset = 0.005; 
+            const s = center.lat - offset;
+            const w = center.lng - offset;
+            const n = center.lat + offset;
+            const e = center.lng + offset;
+
             const query = `
                 [out:json][timeout:15];
-                way["highway"](${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()});
+                way["highway"](${s},${w},${n},${e});
                 (._;>;);
                 out body;
             `;
@@ -468,7 +528,21 @@
         }
 
         function moveToNode(nodeId, isInitial = false) {
+            if (!gameActive && !isInitial) return;
+            
             if (tutorialActive && !isInitial) completeTutorial();
+            
+            if (!isInitial) {
+                budget -= 10;
+                document.getElementById('hud-container').innerText = `GUTHABEN: ${budget} €`;
+                
+                if (budget <= 0) {
+                    budget = 0;
+                    document.getElementById('hud-container').innerText = `GUTHABEN: ${budget} €`;
+                    gameOver();
+                }
+            }
+            
             currentPlayerNodeId = nodeId;
             const node = nodesData[nodeId];
             if (!node) return;
@@ -477,7 +551,9 @@
             createPlayerMarker(coords);
             map.panTo(coords);
             
-            updateNeighbors(nodeId);
+            if (budget > 0) {
+                updateNeighbors(nodeId);
+            }
         }
 
         function updateNeighbors(nodeId) {
@@ -491,9 +567,8 @@
                 const node = nodesData[nId];
                 if (!node) return;
 
-                const className = tutorialActive ? 'neighbor-marker tutorial-pulse' : 'neighbor-marker';
                 const neighborIcon = L.divIcon({
-                    className: className,
+                    className: 'neighbor-marker', // Nur die Basis-Klasse bei Erstellung
                     iconSize: [12, 12],
                     iconAnchor: [6, 6]
                 });
@@ -502,13 +577,13 @@
                     .addTo(map)
                     .on('click', () => moveToNode(nId));
                 
-                // Tooltip nur für das Tutorial
-                if (tutorialActive && neighborMarkers.length === 0) {
-                    marker.bindTooltip("KLICKE HIER, UM DEN SEKTOR ZU WECHSELN", {
-                        permanent: true, 
-                        direction: 'top',
-                        className: 'tutorial-label'
-                    }).openTooltip();
+                // Radikal einfache DOM-Manipulation
+                if (tutorialActive) {
+                    const el = marker.getElement();
+                    if (el) {
+                        el.classList.add('tutorial-pulse');
+                        console.log("Marker-Element Klasse hinzugefügt");
+                    }
                 }
                 
                 neighborMarkers.push(marker);
