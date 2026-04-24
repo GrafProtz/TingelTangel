@@ -167,7 +167,6 @@
         }
 
         /* Tutorial Pulse Animation */
-        /* Radikal einfaches Tutorial-Blinken (nur Opacity) */
         @keyframes simplePulse {
             0% { opacity: 0.4; }
             50% { opacity: 1.0; }
@@ -271,6 +270,52 @@
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
             display: none;
         }
+
+        .pub-glow {
+            filter: brightness(200%) drop-shadow(0 0 10px white);
+            transform: scale(1.3);
+            cursor: pointer;
+        }
+
+        #options-container {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(15, 23, 42, 0.95);
+            border: 3px solid #facc15;
+            padding: 30px;
+            border-radius: 16px;
+            color: #f8fafc;
+            text-align: center;
+            z-index: 3000;
+            display: none;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.8);
+            font-family: 'Segoe UI', sans-serif;
+            width: 80%;
+            max-width: 600px;
+        }
+        
+        .option-btn {
+            display: block;
+            width: 100%;
+            background: #1e293b;
+            color: white;
+            border: 1px solid #334155;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: all 0.2s;
+            text-align: left;
+        }
+        
+        .option-btn:hover {
+            background: #334155;
+            border-color: #facc15;
+            transform: translateX(5px);
+        }
     </style>
 
 </head>
@@ -289,12 +334,58 @@
         </div>
     </div>
 
+    <div id="options-container">
+        <h2 style="color: #facc15; margin-top: 0;">In der Kneipe</h2>
+        <p>Du hörst dich unauffällig um. Was tust du?</p>
+        <button class="option-btn" onclick="selectOption('A')">A: Dem Barkeeper ein großzügiges Trinkgeld geben (50 €)</button>
+        <button class="option-btn" onclick="selectOption('B')">B: Mit den düsteren Gestalten am Eck-Tisch reden</button>
+        <button class="option-btn" onclick="selectOption('C')">C: Eine Runde für die ganze Kneipe ausgeben (150 €)</button>
+        <button class="option-btn" onclick="selectOption('D')">D: Nur kurz umsehen und wieder gehen</button>
+    </div>
+
     <button id="back-to-menu" onclick="backToMenu()">← Hauptmenü</button>
     <div id="tutorial-container"></div>
     <div id="hud-container">GUTHABEN: 150 €</div>
     <div id="map"></div>
 
     <script>
+        // --- GLOBALE HILFSFUNKTIONEN ---
+        function dist2(v, w) {
+            return Math.pow(v.lat - w.lat, 2) + Math.pow(v.lon - w.lon, 2);
+        }
+
+        function getNearestNode(lat, lon, nodeIdsArray, nodesDictionary) {
+            let minDist = Infinity;
+            let nearestId = null;
+            nodeIdsArray.forEach(id => {
+                const n = nodesDictionary[id];
+                if (!n) return;
+                const dist = dist2(n, {lat: lat, lon: lon});
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearestId = id;
+                }
+            });
+            return nearestId ? nodesDictionary[nearestId] : null;
+        }
+
+        // --- Globaler Status ---
+        var playerMarker;
+        var currentPlayerNodeId;
+        var neighborMarkers = [];
+        var nodesData = {};
+        var waysData = {};
+        var nodeToWays = {};
+        var budget = 300;
+        var gameActive = false;
+        var moveCounter = 0;
+        var pubMarker = null;
+        var pubsData = [];
+        var targetPubNode = null;
+        var targetName = "";
+        var tutorialActive = false;
+        var tutorialFinished = false;
+
         // 1. & 2. & 3. Startpunkt und Zoom-Level setzen
         var map = L.map('map').setView([51.5139, 7.4653], 16);
 
@@ -341,13 +432,11 @@
         const dropdown = document.getElementById('city-dropdown-intro');
         cities.sort((a,b) => a.name.localeCompare(b.name)).forEach((city, index) => {
             const opt = document.createElement('option');
-            // Wir nutzen den Index im sortierten Array
             opt.value = index;
             opt.textContent = city.name;
             dropdown.appendChild(opt);
         });
 
-        // Wir brauchen eine Referenz auf das sortierte Array für startGame
         const sortedCities = [...cities].sort((a,b) => a.name.localeCompare(b.name));
 
         function startGame() {
@@ -375,14 +464,110 @@
                 
                 // Sobald der Zoom fertig ist, Spiel initialisieren
                 map.once('moveend', () => {
-                    initGame();
+                    initGameMap(city.coords);
                 });
             }, 2000);
         }
 
-        // --- Tutorial Logik ---
-        var tutorialActive = false;
-        var tutorialFinished = false;
+        async function initGameMap(cityCoords) {
+            console.log("LOG 1: Start Overpass-Query für Wege...");
+            var bounds = map.getBounds();
+            if (!bounds.isValid()) {
+                console.log("Bounds noch nicht valide, warte...");
+                setTimeout(() => initGameMap(cityCoords), 200);
+                return;
+            }
+
+            const success = await loadNetwork(bounds);
+            if (!success) {
+                alert("OSM-Daten konnten nicht geladen werden!");
+                return;
+            }
+
+            console.log("LOG 2: Wege empfangen, baue Graph...");
+            const intersectionNodes = Object.keys(nodeToWays).filter(id => nodeToWays[id].size > 1);
+            
+            if (intersectionNodes.length > 0) {
+                let startNodeId = intersectionNodes[Math.floor(Math.random() * intersectionNodes.length)];
+                targetPubNode = null;
+
+                console.log("LOG 3: Suche Kneipe...");
+                if (pubsData.length > 0) {
+                    // Ziel-Distanz: ca. 200-300 Meter (entspricht grob 10-15 Schritten)
+                    const targetDistSq = 0.000007;
+                    let bestDiff = Infinity;
+                    let realPubNode = null;
+                    const startNode = nodesData[startNodeId];
+                    pubsData.forEach(p => {
+                        const distSq = Math.pow(p.lat - startNode.lat, 2) + Math.pow(p.lon - startNode.lon, 2);
+                        const diff = Math.abs(distSq - targetDistSq);
+                        if (diff < bestDiff) {
+                            bestDiff = diff;
+                            realPubNode = p;
+                        }
+                    });
+                    
+                    if (realPubNode) {
+                        targetPubNode = getNearestNode(realPubNode.lat, realPubNode.lon, intersectionNodes, nodesData);
+                        if (targetPubNode) {
+                            if (!targetPubNode.tags) targetPubNode.tags = {};
+                            targetPubNode.tags.name = realPubNode.tags ? (realPubNode.tags.name || "Kneipe") : "Kneipe";
+                            targetPubNode.isKneipe = true;
+                            const distMeters = Math.sqrt(dist2(targetPubNode, realPubNode)) * 111000;
+                            console.log(`Kneipe an Knoten-ID ${targetPubNode.id} gebunden. Distanz zum realen POI: ${distMeters.toFixed(1)} Meter.`);
+                        }
+                    }
+                }
+                
+                if (!targetPubNode) {
+                    // Fallback, falls keine Kneipe gefunden wurde
+                    if (intersectionNodes.length > 1) {
+                        const startNode = nodesData[startNodeId];
+                        const targetDistSq = 0.000007;
+                        let bestDiff = Infinity;
+                        intersectionNodes.forEach(id => {
+                            if (id === startNodeId) return;
+                            const node = nodesData[id];
+                            const distSq = Math.pow(node.lat - startNode.lat, 2) + Math.pow(node.lon - startNode.lon, 2);
+                            const diff = Math.abs(distSq - targetDistSq);
+                            if (diff < bestDiff) {
+                                bestDiff = diff;
+                                targetPubNode = node;
+                            }
+                        });
+                        
+                        if (targetPubNode) {
+                            if (!targetPubNode.tags) targetPubNode.tags = {};
+                            targetPubNode.tags.name = "Lokale Gaststätte";
+                            targetPubNode.isKneipe = true;
+                            console.log(`Kneipe an Knoten-ID ${targetPubNode.id} gebunden (Fallback). Distanz zum realen POI: 0.0 Meter.`);
+                        }
+                    }
+                }
+
+                if (targetPubNode) {
+                    targetName = targetPubNode.tags.name || "Lokale Gaststätte";
+                }
+
+                console.log("LOG 4: Setze Spielfigur & grüne Punkte...");
+                if (!tutorialFinished) {
+                    tutorialActive = true;
+                    startTutorial();
+                }
+
+                gameActive = true;
+                budget = 300;
+                moveCounter = 0;
+                document.getElementById('hud-container').innerText = `GUTHABEN: ${budget} €`;
+                document.getElementById('hud-container').style.display = 'block';
+
+                moveToNode(startNodeId, true);
+            } else {
+                console.warn("Keine Kreuzungen im Ausschnitt gefunden.");
+                const container = document.getElementById('tutorial-container');
+                container.innerHTML = "<h2>Fehler</h2><p>KEINE KREUZUNGEN GEFUNDEN. BITTE ANDEREN STANDORT WÄHLEN.</p>";
+            }
+        }
 
         function startTutorial() {
             if (tutorialFinished) return;
@@ -398,7 +583,18 @@
             tutorialFinished = true;
             const container = document.getElementById('tutorial-container');
             container.innerHTML = "<h2>Ziel erreicht</h2><p>ERSTER SCHRITT ERFOLGREICH. SIGNATUR GEDÄMPFT. JEDER SCHRITT KOSTET 10 EURO. DU MUSST SPARSAM MIT DEM GELD UMGEHEN, DU HAST NUR 300 EURO ZUR VERFÜGUNG.</p>";
-            // Tafel bleibt dauerhaft eingeblendet
+        }
+
+        function pubVisited() {
+            gameActive = false;
+            document.getElementById('hud-container').innerText = "ZIEL ERREICHT";
+            document.getElementById('options-container').style.display = 'block';
+        }
+        
+        function selectOption(opt) {
+            document.getElementById('options-container').style.display = 'none';
+            alert("Option " + opt + " gewählt! (Logik folgt...)");
+            gameActive = true;
         }
 
         function gameOver() {
@@ -423,6 +619,8 @@
             waysData = {};
             nodeToWays = {};
             pubsData = [];
+            targetPubNode = null;
+            targetName = "";
             if (playerMarker) map.removeLayer(playerMarker);
             playerMarker = null;
             if (pubMarker) map.removeLayer(pubMarker);
@@ -435,19 +633,6 @@
             document.getElementById('hud-container').style.display = 'none';
             document.getElementById('tutorial-container').style.display = 'none';
         }
-
-        // --- Globaler Status ---
-        var playerMarker;
-        var currentPlayerNodeId;
-        var neighborMarkers = [];
-        var nodesData = {};
-        var waysData = {};
-        var nodeToWays = {};
-        var budget = 300;
-        var gameActive = false;
-        var moveCounter = 0;
-        var pubMarker = null;
-        var pubsData = [];
 
         function createPlayerMarker(coords) {
             var playerIcon = L.divIcon({
@@ -463,91 +648,7 @@
             }
         }
 
-        async function initGame() {
-            console.log("Initialisiere Netzwerk...");
-            var bounds = map.getBounds();
-            if (!bounds.isValid()) {
-                console.log("Bounds noch nicht valide, warte...");
-                setTimeout(initGame, 200);
-                return;
-            }
-
-            const success = await loadNetwork(bounds);
-            if (success) {
-                const intersectionNodes = Object.keys(nodeToWays).filter(id => nodeToWays[id].size > 1);
-                
-                if (intersectionNodes.length > 0) {
-                    let startNodeId = null;
-                    let pubNode = null;
-
-                    if (pubsData.length > 0) {
-                        // Wähle eine reale Kneipe (zufällig aus den gefundenen)
-                        pubNode = pubsData[Math.floor(Math.random() * pubsData.length)];
-                        
-                        // Finde die nächstgelegene Kreuzung zur Kneipe für den Startpunkt
-                        let minDist = Infinity;
-                        intersectionNodes.forEach(id => {
-                            const node = nodesData[id];
-                            const dist = Math.pow(node.lat - pubNode.lat, 2) + Math.pow(node.lon - pubNode.lon, 2);
-                            if (dist < minDist) {
-                                minDist = dist;
-                                startNodeId = id;
-                            }
-                        });
-                    }
-                    
-                    if (!startNodeId) {
-                        // Fallback, falls keine Kneipe gefunden wurde
-                        startNodeId = intersectionNodes[Math.floor(Math.random() * intersectionNodes.length)];
-                        if (intersectionNodes.length > 1) {
-                            const fallbackId = intersectionNodes.find(id => id !== startNodeId);
-                            if (fallbackId) {
-                                pubNode = nodesData[fallbackId];
-                                if (!pubNode.tags) pubNode.tags = {};
-                                pubNode.tags.name = "Geheime Taverne";
-                            }
-                        }
-                    }
-
-                    if (!tutorialFinished) {
-                        // Wichtig: tutorialActive ZUERST auf true setzen, damit updateNeighbors es weiß
-                        tutorialActive = true;
-                        startTutorial();
-                    }
-
-                    gameActive = true;
-                    budget = 300;
-                    moveCounter = 0;
-                    document.getElementById('hud-container').innerText = `GUTHABEN: ${budget} €`;
-                    document.getElementById('hud-container').style.display = 'block';
-
-                    if (pubNode) {
-                        const pubIcon = L.divIcon({
-                            className: 'pub-marker',
-                            html: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='16' height='16'><path fill='#ffffff' d='M6 3v2l4 6v8H8v2h8v-2h-2v-8l4-6V3H6zm2.5 2h7l-1.3 2H9.8L8.5 5z'/></svg>`,
-                            iconSize: [24, 24],
-                            iconAnchor: [12, 12]
-                        });
-                        pubMarker = L.marker([pubNode.lat, pubNode.lon], {icon: pubIcon}).addTo(map);
-                        pubMarker.bindTooltip(pubNode.tags.name || "Kneipe", {permanent: false, direction: 'top'});
-                    }
-
-                    // isInitial = true verhindert, dass das Tutorial sofort beendet wird
-                    moveToNode(startNodeId, true);
-                } else {
-                    console.warn("Keine Kreuzungen im Ausschnitt gefunden.");
-                    const container = document.getElementById('tutorial-container');
-                    container.innerHTML = "<h2>Fehler</h2><p>KEINE KREUZUNGEN GEFUNDEN. BITTE ANDEREN STANDORT WÄHLEN.</p>";
-                }
-            } else {
-                const container = document.getElementById('tutorial-container');
-                container.innerHTML = "<h2>Fehler</h2><p>DATEN-GRID NICHT ERREICHBAR. PRÜFE DEINE VERBINDUNG.</p>";
-            }
-        }
-
         async function loadNetwork(bounds) {
-            // Wir erweitern den abzufragenden Kartenausschnitt um ca. 500 Meter,
-            // damit beim extrem nahen Zoom (Stufe 18) keine angrenzenden Knotenpunkte verschwinden.
             const center = map.getCenter();
             const offset = 0.005; 
             const s = center.lat - offset;
@@ -569,9 +670,9 @@
                     method: 'POST',
                     body: 'data=' + encodeURIComponent(query)
                 });
+                if (!response.ok) return false;
                 const data = await response.json();
                 
-                // Graphen-Daten aufbereiten
                 data.elements.forEach(el => {
                     if (el.type === 'node') {
                         nodesData[el.id] = el;
@@ -596,17 +697,54 @@
         function moveToNode(nodeId, isInitial = false) {
             if (!gameActive && !isInitial) return;
             
+            const targetNode = nodesData[nodeId];
+            if (targetNode && targetNode.isKneipe === true) {
+                pubVisited();
+                return;
+            }
+
             if (tutorialActive && !isInitial) completeTutorial();
+            
+            let skipPan = false;
             
             if (!isInitial) {
                 budget -= 10;
                 moveCounter++;
-                document.getElementById('hud-container').innerText = `GUTHABEN: ${budget} €`;
                 
-                if (moveCounter === 3 && pubMarker) {
-                    pubMarker.getElement().classList.add('tutorial-pulse');
+                let hudText = `GUTHABEN: ${budget} €`;
+                if (moveCounter >= 3 && targetName) {
+                    hudText += ` | ${targetName} besuchen`;
+                }
+                document.getElementById('hud-container').innerText = hudText;
+                
+                if (moveCounter === 1 && targetPubNode && !pubMarker) {
+                    const pubIcon = L.divIcon({
+                        className: 'pub-marker',
+                        html: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='16' height='16'><path fill='#ffffff' d='M6 3v2l4 6v8H8v2h8v-2h-2v-8l4-6V3H6zm2.5 2h7l-1.3 2H9.8L8.5 5z'/></svg>`,
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 12]
+                    });
+                    pubMarker = L.marker([targetPubNode.lat, targetPubNode.lon], {icon: pubIcon}).addTo(map);
+                    pubMarker.bindTooltip(targetName, {permanent: false, direction: 'top'});
+                    
+                    const targetN = nodesData[nodeId];
+                    map.flyToBounds(L.latLngBounds([targetN.lat, targetN.lon], [targetPubNode.lat, targetPubNode.lon]).pad(0.3), {
+                        duration: 2.5,
+                        easeLinearity: 0.25
+                    });
+                    skipPan = true;
+                }
+
+                if (moveCounter === 3) {
+                    if (pubMarker) {
+                        pubMarker.getElement().classList.add('tutorial-pulse');
+                    }
                     const container = document.getElementById('tutorial-container');
-                    container.innerHTML += "<br><br><strong style='color:#facc15;'>Besuch die Kneipe, vielleicht erfährst du dort, wie du schnell an Geld kommen kannst.</strong>";
+                    container.innerHTML += "<br><br><strong style='color:#facc15;'>Besuch die Gaststätte, vielleicht erfährst du dort, wie du schnell an Geld kommen kannst.</strong>";
+                }
+
+                if (moveCounter === 7) {
+                    document.getElementById('tutorial-container').style.display = 'none';
                 }
                 
                 if (budget <= 0) {
@@ -622,7 +760,9 @@
 
             const coords = [node.lat, node.lon];
             createPlayerMarker(coords);
-            map.panTo(coords);
+            if (!skipPan) {
+                map.panTo(coords);
+            }
             
             if (budget > 0) {
                 updateNeighbors(nodeId);
@@ -630,18 +770,28 @@
         }
 
         function updateNeighbors(nodeId) {
-            // Alte Nachbarn entfernen
             neighborMarkers.forEach(m => map.removeLayer(m));
             neighborMarkers = [];
 
             const neighbors = findNextIntersections(nodeId);
+            console.log("Aktuelle Nachbarn von", nodeId, ":", Array.from(neighbors));
             
+            if (pubMarker && pubMarker.getElement()) {
+                pubMarker.getElement().classList.remove('pub-glow');
+            }
+
             neighbors.forEach(nId => {
                 const node = nodesData[nId];
                 if (!node) return;
 
+                if (node.isKneipe === true) {
+                    if (pubMarker && pubMarker.getElement()) {
+                        pubMarker.getElement().classList.add('pub-glow');
+                    }
+                }
+
                 const neighborIcon = L.divIcon({
-                    className: 'neighbor-marker', // Nur die Basis-Klasse bei Erstellung
+                    className: 'neighbor-marker',
                     iconSize: [12, 12],
                     iconAnchor: [6, 6]
                 });
@@ -650,12 +800,10 @@
                     .addTo(map)
                     .on('click', () => moveToNode(nId));
                 
-                // Radikal einfache DOM-Manipulation
                 if (tutorialActive) {
                     const el = marker.getElement();
                     if (el) {
                         el.classList.add('tutorial-pulse');
-                        console.log("Marker-Element Klasse hinzugefügt");
                     }
                 }
                 
@@ -673,7 +821,6 @@
                 const index = nodes.indexOf(parseInt(nodeId));
                 if (index === -1) return;
 
-                // Suche vorwärts zur nächsten Kreuzung
                 for (let i = index + 1; i < nodes.length; i++) {
                     const nextId = nodes[i];
                     if (nodeToWays[nextId] && nodeToWays[nextId].size > 1) {
@@ -681,7 +828,6 @@
                         break;
                     }
                 }
-                // Suche rückwärts zur nächsten Kreuzung
                 for (let i = index - 1; i >= 0; i--) {
                     const prevId = nodes[i];
                     if (nodeToWays[prevId] && nodeToWays[prevId].size > 1) {
@@ -697,6 +843,5 @@
             // Wir warten nun auf den Start-Button im Intro
         });
     </script>
-
 </body>
 </html>
