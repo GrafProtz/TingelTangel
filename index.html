@@ -233,17 +233,8 @@
             display: inline-block;
             vertical-align: middle;
         }
-
-        .tutorial-label {
-            background: #22c55e !important;
-            border: none !important;
-            color: white !important;
-            font-weight: bold !important;
-            border-radius: 4px !important;
-            padding: 4px 12px !important;
-            font-size: 1.1rem !important;
-        }
     </style>
+
 </head>
 <body>
 
@@ -336,10 +327,10 @@
             container.innerHTML = "<h2>GridCrime</h2><p>INITIALISIERE DATEN-GRID FÜR " + city.name.toUpperCase() + "...</p>";
             container.style.display = 'block';
 
-            // PHASE 2: Nach 2 Sekunden EXTREM nah ranzoomen (Zoom 19)
+            // PHASE 2: Nach 2 Sekunden nah ranzoomen
             setTimeout(() => {
-                map.flyTo(city.coords, 19, {
-                    duration: 3,
+                map.flyTo(city.coords, 17, {
+                    duration: 2.5,
                     easeLinearity: 0.25
                 });
                 
@@ -426,6 +417,7 @@
                 
                 if (intersectionNodes.length > 0) {
                     const startNodeId = intersectionNodes[Math.floor(Math.random() * intersectionNodes.length)];
+                    
                     // isInitial = true verhindert, dass das Tutorial sofort beendet wird
                     moveToNode(startNodeId, true);
                     
@@ -434,11 +426,11 @@
                 } else {
                     console.warn("Keine Kreuzungen im Ausschnitt gefunden.");
                     const container = document.getElementById('tutorial-container');
-                    container.innerHTML = "FEHLER: KEINE KREUZUNGEN GEFUNDEN. BITTE ANDEREN STANDORT WÄHLEN.";
+                    container.innerHTML = "<h2>Fehler</h2><p>KEINE KREUZUNGEN GEFUNDEN. BITTE ANDEREN STANDORT WÄHLEN.</p>";
                 }
             } else {
                 const container = document.getElementById('tutorial-container');
-                container.innerHTML = "FEHLER: DATEN-GRID NICHT ERREICHBAR. PRÜFE DEINE VERBINDUNG.";
+                container.innerHTML = "<h2>Fehler</h2><p>DATEN-GRID NICHT ERREICHBAR. PRÜFE DEINE VERBINDUNG.</p>";
             }
         }
 
