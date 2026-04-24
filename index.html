@@ -25,6 +25,52 @@
             width: 100vw;
             height: 100vh;
         }
+
+        /* Player Marker CSS */
+        .player-marker {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .player-dot {
+            background-color: red;
+            border: 2px solid black;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(0.9);
+                box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7);
+            }
+            70% {
+                transform: scale(1.1);
+                box-shadow: 0 0 0 10px rgba(255, 0, 0, 0);
+            }
+            100% {
+                transform: scale(0.9);
+                box-shadow: 0 0 0 0 rgba(255, 0, 0, 0);
+            }
+        }
+
+        /* Neighbor Marker CSS */
+        .neighbor-marker {
+            background-color: #2ecc71;
+            border: 2px solid #27ae60;
+            border-radius: 50%;
+            width: 12px;
+            height: 12px;
+            cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><path fill='%232ecc71' d='M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2s-2 .9-2 2s.9 2 2 2M9.8 8.9L7 23h2.1l1.8-8l2.1 2v6h2V15.5l-2.1-2l.6-3c1.3 1.5 3.3 2.5 5.5 2.5v-2c-1.8 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1c-.3 0-.5.1-.8.1L9.1 8.1c-.6.3-1 .9-1 1.6c0 .3.1.5.2.8l1.5 2.7l-1.5 2.7l-1.5-2.7c-.1-.3-.2-.5-.2-.8c0-.7.4-1.3 1-1.6l.7-.4z'/></svg>") 16 16, pointer;
+            transition: transform 0.2s;
+        }
+        .neighbor-marker:hover {
+            transform: scale(1.3);
+            background-color: #27ae60;
+        }
     </style>
 </head>
 <body>
@@ -40,6 +86,153 @@
             maxZoom: 19,
             attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         }).addTo(map);
+
+        // --- Globaler Status ---
+        var playerMarker;
+        var currentPlayerNodeId;
+        var neighborMarkers = [];
+        var nodesData = {};
+        var waysData = {};
+        var nodeToWays = {};
+
+        function createPlayerMarker(coords) {
+            var playerIcon = L.divIcon({
+                className: 'player-marker',
+                html: '<div class="player-dot"></div>',
+                iconSize: [20, 20],
+                iconAnchor: [10, 10]
+            });
+            if (playerMarker) {
+                playerMarker.setLatLng(coords);
+            } else {
+                playerMarker = L.marker(coords, {icon: playerIcon, zIndexOffset: 1000}).addTo(map);
+            }
+        }
+
+        async function initGame() {
+            console.log("Initialisiere Netzwerk...");
+            var bounds = map.getBounds();
+            if (!bounds.isValid()) {
+                setTimeout(initGame, 100);
+                return;
+            }
+
+            const success = await loadNetwork(bounds);
+            if (success) {
+                // Finde eine initiale Kreuzung zum Starten
+                const intersectionNodes = Object.keys(nodeToWays).filter(id => nodeToWays[id].size > 1);
+                if (intersectionNodes.length > 0) {
+                    const startNodeId = intersectionNodes[Math.floor(Math.random() * intersectionNodes.length)];
+                    moveToNode(startNodeId);
+                } else {
+                    console.warn("Keine Kreuzungen im Ausschnitt gefunden.");
+                }
+            }
+        }
+
+        async function loadNetwork(bounds) {
+            const query = `
+                [out:json][timeout:15];
+                way["highway"](${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()});
+                (._;>;);
+                out body;
+            `;
+            try {
+                const response = await fetch('https://overpass-api.de/api/interpreter', {
+                    method: 'POST',
+                    body: 'data=' + encodeURIComponent(query)
+                });
+                const data = await response.json();
+                
+                // Graphen-Daten aufbereiten
+                data.elements.forEach(el => {
+                    if (el.type === 'node') {
+                        nodesData[el.id] = el;
+                    } else if (el.type === 'way') {
+                        waysData[el.id] = el;
+                        el.nodes.forEach(nodeId => {
+                            if (!nodeToWays[nodeId]) nodeToWays[nodeId] = new Set();
+                            nodeToWays[nodeId].add(el.id);
+                        });
+                    }
+                });
+                return true;
+            } catch (err) {
+                console.error("Netzwerk-Fehler:", err);
+                return false;
+            }
+        }
+
+        function moveToNode(nodeId) {
+            currentPlayerNodeId = nodeId;
+            const node = nodesData[nodeId];
+            if (!node) return;
+
+            const coords = [node.lat, node.lon];
+            createPlayerMarker(coords);
+            map.panTo(coords);
+            
+            updateNeighbors(nodeId);
+        }
+
+        function updateNeighbors(nodeId) {
+            // Alte Nachbarn entfernen
+            neighborMarkers.forEach(m => map.removeLayer(m));
+            neighborMarkers = [];
+
+            const neighbors = findNextIntersections(nodeId);
+            
+            neighbors.forEach(nId => {
+                const node = nodesData[nId];
+                if (!node) return;
+
+                const neighborIcon = L.divIcon({
+                    className: 'neighbor-marker',
+                    iconSize: [12, 12],
+                    iconAnchor: [6, 6]
+                });
+
+                const marker = L.marker([node.lat, node.lon], {icon: neighborIcon})
+                    .addTo(map)
+                    .on('click', () => moveToNode(nId));
+                
+                neighborMarkers.push(marker);
+            });
+        }
+
+        function findNextIntersections(nodeId) {
+            const neighbors = new Set();
+            const ways = nodeToWays[nodeId] || [];
+            
+            ways.forEach(wayId => {
+                const way = waysData[wayId];
+                const nodes = way.nodes;
+                const index = nodes.indexOf(parseInt(nodeId));
+                if (index === -1) return;
+
+                // Suche vorwärts zur nächsten Kreuzung
+                for (let i = index + 1; i < nodes.length; i++) {
+                    const nextId = nodes[i];
+                    if (nodeToWays[nextId] && nodeToWays[nextId].size > 1) {
+                        neighbors.add(nextId);
+                        break;
+                    }
+                }
+                // Suche rückwärts zur nächsten Kreuzung
+                for (let i = index - 1; i >= 0; i--) {
+                    const prevId = nodes[i];
+                    if (nodeToWays[prevId] && nodeToWays[prevId].size > 1) {
+                        neighbors.add(prevId);
+                        break;
+                    }
+                }
+            });
+            return neighbors;
+        }
+
+        map.whenReady(() => {
+            setTimeout(initGame, 500);
+        });
     </script>
 
 </body>
