@@ -266,13 +266,36 @@ html, body {
     animation: pubSonar 20s infinite ease-out !important;
 }
 
-@keyframes intenseGlow {
-    0% { filter: drop-shadow(0 0 15px #FFD700) drop-shadow(0 0 15px #FFD700); }
-    100% { filter: drop-shadow(0 0 30px #FFD700) drop-shadow(0 0 30px #FFD700); }
+@keyframes pubPulse {
+    0% { transform: translate(-50%, -50%) scale(1); filter: drop-shadow(0 0 10px gold) brightness(100%); }
+    50% { transform: translate(-50%, -50%) scale(1.25); filter: drop-shadow(0 0 35px gold) brightness(150%); }
+    100% { transform: translate(-50%, -50%) scale(1); filter: drop-shadow(0 0 10px gold) brightness(100%); }
+}
+
+#pub-overlay-ui {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    z-index: 9999;
+    pointer-events: auto;
+    cursor: pointer;
+    display: none; /* hidden until FIXED_PUB_LOCATION is set */
+    transition: filter 0.3s;
+    transform: translate(-50%, -50%);
+    justify-content: center;
+    align-items: center;
+}
+
+.pub-inactive {
+    filter: drop-shadow(0 2px 5px rgba(0,0,0,0.7));
+}
+
+.pub-active {
+    animation: pubPulse 1s infinite ease-in-out !important;
 }
 
 .bier-active {
-    animation: intenseGlow 1s infinite alternate ease-in-out !important;
+    animation: pubPulse 1s infinite ease-in-out !important;
     z-index: 1000 !important;
     cursor: pointer;
 }
