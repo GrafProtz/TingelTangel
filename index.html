@@ -271,10 +271,26 @@
             display: none;
         }
 
+        @keyframes pubSonar {
+            0% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.8); }
+            20% { box-shadow: 0 0 0 60px rgba(250, 204, 21, 0); }
+            100% { box-shadow: 0 0 0 60px rgba(250, 204, 21, 0); }
+        }
+        
+        .pub-sonar {
+            animation: pubSonar 20s infinite ease-out !important;
+        }
+
+        @keyframes rapidBlink {
+            0% { opacity: 1; filter: brightness(300%) drop-shadow(0 0 15px #facc15); transform: scale(1.4); }
+            50% { opacity: 0.5; filter: brightness(200%) drop-shadow(0 0 5px #facc15); transform: scale(1.3); }
+            100% { opacity: 1; filter: brightness(300%) drop-shadow(0 0 15px #facc15); transform: scale(1.4); }
+        }
+
         .pub-glow {
-            filter: brightness(200%) drop-shadow(0 0 10px white);
-            transform: scale(1.3);
+            animation: rapidBlink 0.5s infinite !important;
             cursor: pointer;
+            z-index: 3000 !important;
         }
 
         #options-container {
@@ -485,7 +501,22 @@
             }
 
             console.log("LOG 2: Wege empfangen, baue Graph...");
-            const intersectionNodes = Object.keys(nodeToWays).filter(id => nodeToWays[id].size > 1);
+            
+            // WICHTIG: Nur existierende Knoten verwenden, um Sackgassen zu vermeiden.
+            const intersectionNodes = Object.keys(nodeToWays).filter(id => {
+                if (!nodesData[id]) return false; // Knoten muss physisch im Datensatz existieren
+                if (nodeToWays[id].size > 1) return true; // Echte Kreuzung
+                
+                // Um Sackgassen-Crashes zu verhindern: Auch Start-/Endpunkte von Wegen sind gültige Knoten
+                let isEndpoint = false;
+                nodeToWays[id].forEach(wayId => {
+                    const way = waysData[wayId];
+                    if (way && way.nodes && (way.nodes[0] == id || way.nodes[way.nodes.length - 1] == id)) {
+                        isEndpoint = true;
+                    }
+                });
+                return isEndpoint;
+            });
             
             if (intersectionNodes.length > 0) {
                 let startNodeId = intersectionNodes[Math.floor(Math.random() * intersectionNodes.length)];
@@ -493,7 +524,6 @@
 
                 console.log("LOG 3: Suche Kneipe...");
                 if (pubsData.length > 0) {
-                    // Ziel-Distanz: ca. 200-300 Meter (entspricht grob 10-15 Schritten)
                     const targetDistSq = 0.000007;
                     let bestDiff = Infinity;
                     let realPubNode = null;
@@ -720,7 +750,7 @@
                 if (moveCounter === 1 && targetPubNode && !pubMarker) {
                     const pubIcon = L.divIcon({
                         className: 'pub-marker',
-                        html: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='16' height='16'><path fill='#ffffff' d='M6 3v2l4 6v8H8v2h8v-2h-2v-8l4-6V3H6zm2.5 2h7l-1.3 2H9.8L8.5 5z'/></svg>`,
+                        html: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='16' height='16'><path fill='#ffffff' d='M6 2h10v2H6V2zm1 3h8v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5zm10 2h1c1.1 0 2 .9 2 2v6c0 1.1-.9 2-2 2h-1v-2h1V9h-1V7z'/></svg>`,
                         iconSize: [24, 24],
                         iconAnchor: [12, 12]
                     });
@@ -737,7 +767,7 @@
 
                 if (moveCounter === 3) {
                     if (pubMarker) {
-                        pubMarker.getElement().classList.add('tutorial-pulse');
+                        pubMarker.getElement().classList.add('pub-sonar');
                     }
                     const container = document.getElementById('tutorial-container');
                     container.innerHTML += "<br><br><strong style='color:#facc15;'>Besuch die Gaststätte, vielleicht erfährst du dort, wie du schnell an Geld kommen kannst.</strong>";
@@ -774,7 +804,13 @@
             neighborMarkers = [];
 
             const neighbors = findNextIntersections(nodeId);
-            console.log("Aktuelle Nachbarn von", nodeId, ":", Array.from(neighbors));
+            
+            // Radikale Fehlerüberwachung
+            const neighborsArray = Array.from(neighbors);
+            console.log("Stehe auf:", nodeId, "Nachbarn:", neighborsArray);
+            if (neighborsArray.length === 0) {
+                console.warn("ACHTUNG: Sackgasse erreicht! Keine navigierbaren Nachbarn gefunden.");
+            }
             
             if (pubMarker && pubMarker.getElement()) {
                 pubMarker.getElement().classList.remove('pub-glow');
@@ -817,22 +853,32 @@
             
             ways.forEach(wayId => {
                 const way = waysData[wayId];
+                if (!way || !way.nodes) return;
+                
                 const nodes = way.nodes;
                 const index = nodes.indexOf(parseInt(nodeId));
                 if (index === -1) return;
 
+                // Suche vorwärts
                 for (let i = index + 1; i < nodes.length; i++) {
                     const nextId = nodes[i];
-                    if (nodeToWays[nextId] && nodeToWays[nextId].size > 1) {
-                        neighbors.add(nextId);
-                        break;
+                    // Prüfe, ob es ein gültiger Knoten ist (in nodesData) und entweder Kreuzung oder Endpunkt
+                    if (nodesData[nextId] && nodeToWays[nextId]) {
+                        if (nodeToWays[nextId].size > 1 || i === nodes.length - 1) {
+                            neighbors.add(nextId);
+                            break;
+                        }
                     }
                 }
+                
+                // Suche rückwärts
                 for (let i = index - 1; i >= 0; i--) {
                     const prevId = nodes[i];
-                    if (nodeToWays[prevId] && nodeToWays[prevId].size > 1) {
-                        neighbors.add(prevId);
-                        break;
+                    if (nodesData[prevId] && nodeToWays[prevId]) {
+                        if (nodeToWays[prevId].size > 1 || i === 0) {
+                            neighbors.add(prevId);
+                            break;
+                        }
                     }
                 }
             });
