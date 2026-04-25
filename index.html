@@ -81,17 +81,22 @@
         var tutorialActive = false;
         var tutorialFinished = false;
         var canInteractWithPub = false;
+        
+        const pubSound = new Audio('https://actions.google.com/sounds/v1/crowds/pub_chatter.ogg');
+        pubSound.loop = true;
+
+        const svgContent = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='40' height='40'><g stroke='#333' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path fill='none' d='M16 9h2.5a2.5 2.5 0 0 1 2.5 2.5v3a2.5 2.5 0 0 1-2.5 2.5H16'/><path fill='#FFD700' d='M6 6h10v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6z'/><path fill='none' d='M9 8v9M13 8v9'/><path fill='#FFFFFF' d='M5 6c0-1.5 1.5-2.5 3-2.5 1 0 1.5.5 2.5.5s1.5-.5 2.5-.5c1.5 0 3 1 3 2.5 0 1-1 1.5-1 2.5H6c0-1-1-1.5-1-2.5z'/></g></svg>`;
 
         var pubIconNormal = L.divIcon({
             className: 'bier-icon',
-            html: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='32' height='32'><path fill='#facc15' d='M6 2h10v2H6V2zm1 3h8v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5zm10 2h1c1.1 0 2 .9 2 2v6c0 1.1-.9 2-2 2h-1v-2h1V9h-1V7z'/></svg>`,
+            html: svgContent,
             iconSize: [40, 40],
             iconAnchor: [20, 20]
         });
 
         var pubIconActive = L.divIcon({
             className: 'bier-icon bier-active',
-            html: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='32' height='32'><path fill='#facc15' d='M6 2h10v2H6V2zm1 3h8v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5zm10 2h1c1.1 0 2 .9 2 2v6c0 1.1-.9 2-2 2h-1v-2h1V9h-1V7z'/></svg>`,
+            html: svgContent,
             iconSize: [40, 40],
             iconAnchor: [20, 20]
         });
@@ -339,6 +344,7 @@
 
         function pubVisited() {
             gameActive = false;
+            pubSound.pause();
             
             if (pubMarker) {
                 pubMarker.setIcon(pubIconNormal);
@@ -373,18 +379,24 @@
             
             // 3. Trigger (50 Meter Radius)
             if (distanceInMeters <= 50) {
+                if (!canInteractWithPub) { // Nur abspielen, wenn der Status frisch wechselt
+                    pubSound.play().catch(e => console.log("Audio play blocked", e));
+                }
                 pubMarker.setIcon(pubIconActive); // Icon leuchtet auf
                 canInteractWithPub = true;
                 console.log("Status: INNERHALB des 50m Radius -> Aktiv");
             } else {
                 pubMarker.setIcon(pubIconNormal); // Standard Icon
                 canInteractWithPub = false;
+                pubSound.pause(); // Sound stoppen, wenn man sich entfernt
+                pubSound.currentTime = 0;
                 console.log("Status: AUSSERHALB -> Inaktiv");
             }
         }
 
         function gameOver() {
             gameActive = false;
+            pubSound.pause();
             const container = document.getElementById('tutorial-container');
             container.innerHTML = "<h2>Game Over</h2><p>FINANZIELLE MITTEL ERSCHÖPFT. DIE STATISTIK HAT DICH EINGEHOLT.</p>";
             container.style.display = 'block';
