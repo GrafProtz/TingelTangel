@@ -100,7 +100,7 @@ html, body {
     position: absolute;
     top: 20px;
     left: 20px;
-    z-index: 1500;
+    z-index: 100000;
     background: rgba(15, 23, 42, 0.8);
     color: white;
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -190,42 +190,40 @@ html, body {
 #tutorial-container {
     position: fixed;
     top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 2500;
+    right: 20px;
+    padding: 20px;
+    border-radius: 16px;
     background: rgba(15, 23, 42, 0.95);
-    border: 3px solid #22c55e;
+    backdrop-filter: blur(8px);
+    border: 2px solid #22c55e;
     color: #f8fafc;
-    padding: 20px 40px;
-    border-radius: 20px;
+    z-index: 100000;
+    pointer-events: auto;
     font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    width: 90%;
-    max-width: 1000px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    width: 350px;
+    max-width: 90vw;
+    box-shadow: 0 15px 30px rgba(0, 0, 0, 0.5);
     display: none;
-    text-align: center;
-    border-bottom: 8px solid #22c55e;
+    text-align: left;
+    border-bottom: 6px solid #22c55e;
     transition: all 0.3s;
 }
 
 #tutorial-container h2 {
     color: #4ade80;
-    font-size: 1.8rem;
-    margin: 0;
+    font-size: 1.4rem;
+    margin: 0 0 10px 0;
     text-transform: uppercase;
-    letter-spacing: 2px;
-    display: inline-block;
-    margin-right: 20px;
-    vertical-align: middle;
+    letter-spacing: 1px;
+    display: block;
 }
 
 #tutorial-container p {
-    font-size: 1.3rem;
-    line-height: 1.4;
+    font-size: 1.1rem;
+    line-height: 1.5;
     color: #cbd5e1;
     margin: 0;
-    display: inline-block;
-    vertical-align: middle;
+    display: block;
 }
 
 /* HUD System */
@@ -234,12 +232,12 @@ html, body {
     bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 2500;
+    padding: 10px 30px;
+    border-radius: 10px;
     background: rgba(15, 23, 42, 0.95);
     border: 2px solid #3b82f6;
     color: #f8fafc;
-    padding: 10px 30px;
-    border-radius: 10px;
+    z-index: 100000;
     font-family: monospace;
     font-size: 1.5rem;
     font-weight: bold;
@@ -311,7 +309,8 @@ html, body {
     border-radius: 16px;
     color: #f8fafc;
     text-align: center;
-    z-index: 3000;
+    z-index: 100000;
+    pointer-events: auto;
     display: none;
     box-shadow: 0 20px 40px rgba(0,0,0,0.8);
     font-family: 'Segoe UI', sans-serif;
