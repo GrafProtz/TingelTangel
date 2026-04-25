@@ -8,332 +8,11 @@
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     
+    <!-- Eigene Styles -->
+    <link rel="stylesheet" href="style.css" />
+    
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    
-    <style>
-        /* UI-Anpassung: Füllt das gesamte Fenster ohne Ränder/Scrollbalken */
-        html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-        }
-        
-        #map {
-            width: 100vw;
-            height: 100vh;
-            background: #0f172a;
-        }
-
-        /* Intro Overlay Styling */
-        #intro-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-            z-index: 2000;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            color: #f8fafc;
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            text-align: center;
-        }
-
-        .branding {
-            margin-bottom: 40px;
-            animation: fadeInDown 0.8s ease-out;
-        }
-
-        .branding h1 {
-            font-size: 5rem;
-            margin: 0;
-            letter-spacing: -2px;
-            background: linear-gradient(to right, #4ade80, #22c55e);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            text-transform: uppercase;
-            font-weight: 900;
-        }
-
-        .branding p {
-            font-size: 1.2rem;
-            color: #94a3b8;
-            letter-spacing: 2px;
-            margin-top: -10px;
-        }
-
-        .menu-card {
-            background: rgba(30, 41, 59, 0.7);
-            backdrop-filter: blur(12px);
-            padding: 40px;
-            border-radius: 24px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            width: 320px;
-            animation: fadeInUp 0.8s ease-out 0.2s backwards;
-        }
-
-        .menu-card select {
-            width: 100%;
-            padding: 12px;
-            background: #0f172a;
-            border: 1px solid #334155;
-            color: white;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            font-size: 1rem;
-            outline: none;
-        }
-
-        .start-btn {
-            width: 100%;
-            padding: 14px;
-            background: #22c55e;
-            color: white;
-            border: none;
-            border-radius: 12px;
-            font-weight: bold;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .start-btn:hover {
-            background: #16a34a;
-            transform: translateY(-2px);
-            box-shadow: 0 10px 15px -3px rgba(34, 197, 94, 0.4);
-        }
-
-        #back-to-menu {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            z-index: 1500;
-            background: rgba(15, 23, 42, 0.8);
-            color: white;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            padding: 8px 16px;
-            border-radius: 8px;
-            cursor: pointer;
-            display: none;
-            backdrop-filter: blur(4px);
-        }
-
-        @keyframes fadeInDown {
-            from { opacity: 0; transform: translateY(-30px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        /* Player Marker CSS */
-        .player-marker {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        .player-dot {
-            background-color: red;
-            border: 2px solid black;
-            border-radius: 50%;
-            width: 16px;
-            height: 16px;
-            box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7);
-            animation: pulse 1.5s infinite;
-        }
-
-        @keyframes pulse {
-            0% {
-                transform: scale(0.9);
-                box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7);
-            }
-            70% {
-                transform: scale(1.1);
-                box-shadow: 0 0 0 10px rgba(255, 0, 0, 0);
-            }
-            100% {
-                transform: scale(0.9);
-                box-shadow: 0 0 0 0 rgba(255, 0, 0, 0);
-            }
-        }
-
-        /* Tutorial Pulse Animation */
-        @keyframes simplePulse {
-            0% { opacity: 0.4; }
-            50% { opacity: 1.0; }
-            100% { opacity: 0.4; }
-        }
-
-        .tutorial-pulse {
-            animation: simplePulse 1.5s ease-in-out infinite !important;
-        }
-
-        .pub-marker {
-            background-color: #000;
-            border: 2px solid #444;
-            border-radius: 6px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-            transition: all 0.3s;
-        }
-
-        /* Neighbor Marker CSS */
-        .neighbor-marker {
-            background-color: #2ecc71;
-            border: 2px solid black;
-            border-radius: 50%;
-            width: 12px;
-            height: 12px;
-            cursor: pointer;
-            transition: transform 0.2s, background-color 0.2s;
-        }
-
-        @keyframes hoverRipple {
-            0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.8); }
-            100% { box-shadow: 0 0 0 15px rgba(46, 204, 113, 0); }
-        }
-
-        .neighbor-marker:hover {
-            transform: scale(1.3);
-            background-color: #27ae60;
-            animation: hoverRipple 0.6s ease-out;
-            cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><path fill='%23000000' d='M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2s-2 .9-2 2s.9 2 2 2M9.8 8.9L7 23h2.1l1.8-8l2.1 2v6h2V15.5l-2.1-2l.6-3c1.3 1.5 3.3 2.5 5.5 2.5v-2c-1.8 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1c-.3 0-.5.1-.8.1L9.1 8.1c-.6.3-1 .9-1 1.6c0 .3.1.5.2.8l1.5 2.7l-1.5 2.7l-1.5-2.7c-.1-.3-.2-.5-.2-.8c0-.7.4-1.3 1-1.6l.7-.4z'/></svg>") 16 16, pointer !important;
-        }
-
-        /* Tutorial Overlay (Die GROßE Infotafel am oberen Rand) */
-        #tutorial-container {
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 2500;
-            background: rgba(15, 23, 42, 0.95);
-            border: 3px solid #22c55e;
-            color: #f8fafc;
-            padding: 20px 40px;
-            border-radius: 20px;
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            width: 90%;
-            max-width: 1000px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-            display: none;
-            text-align: center;
-            border-bottom: 8px solid #22c55e;
-        }
-
-        #tutorial-container h2 {
-            color: #4ade80;
-            font-size: 1.8rem;
-            margin: 0;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            display: inline-block;
-            margin-right: 20px;
-            vertical-align: middle;
-        }
-
-        #tutorial-container p {
-            font-size: 1.3rem;
-            line-height: 1.4;
-            color: #cbd5e1;
-            margin: 0;
-            display: inline-block;
-            vertical-align: middle;
-        }
-
-        /* HUD System */
-        #hud-container {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 2500;
-            background: rgba(15, 23, 42, 0.95);
-            border: 2px solid #3b82f6;
-            color: #f8fafc;
-            padding: 10px 30px;
-            border-radius: 10px;
-            font-family: monospace;
-            font-size: 1.5rem;
-            font-weight: bold;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
-            display: none;
-        }
-
-        @keyframes pubSonar {
-            0% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.8); }
-            20% { box-shadow: 0 0 0 60px rgba(250, 204, 21, 0); }
-            100% { box-shadow: 0 0 0 60px rgba(250, 204, 21, 0); }
-        }
-        
-        .pub-sonar {
-            animation: pubSonar 20s infinite ease-out !important;
-        }
-
-        @keyframes rapidBlink {
-            0% { opacity: 1; filter: brightness(300%) drop-shadow(0 0 15px #facc15); transform: scale(1.4); }
-            50% { opacity: 0.5; filter: brightness(200%) drop-shadow(0 0 5px #facc15); transform: scale(1.3); }
-            100% { opacity: 1; filter: brightness(300%) drop-shadow(0 0 15px #facc15); transform: scale(1.4); }
-        }
-
-        .pub-glow {
-            animation: rapidBlink 0.5s infinite !important;
-            cursor: pointer;
-            z-index: 3000 !important;
-        }
-
-        #options-container {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(15, 23, 42, 0.95);
-            border: 3px solid #facc15;
-            padding: 30px;
-            border-radius: 16px;
-            color: #f8fafc;
-            text-align: center;
-            z-index: 3000;
-            display: none;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.8);
-            font-family: 'Segoe UI', sans-serif;
-            width: 80%;
-            max-width: 600px;
-        }
-        
-        .option-btn {
-            display: block;
-            width: 100%;
-            background: #1e293b;
-            color: white;
-            border: 1px solid #334155;
-            padding: 15px;
-            margin: 10px 0;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 1.1rem;
-            transition: all 0.2s;
-            text-align: left;
-        }
-        
-        .option-btn:hover {
-            background: #334155;
-            border-color: #facc15;
-            transform: translateX(5px);
-        }
-    </style>
-
 </head>
 <body>
 
@@ -361,7 +40,7 @@
 
     <button id="back-to-menu" onclick="backToMenu()">← Hauptmenü</button>
     <div id="tutorial-container"></div>
-    <div id="hud-container">GUTHABEN: 150 €</div>
+    <div id="hud-container" class="hud-bottom">GUTHABEN: 150 €</div>
     <div id="map"></div>
 
     <script>
@@ -404,6 +83,10 @@
 
         // 1. & 2. & 3. Startpunkt und Zoom-Level setzen
         var map = L.map('map').setView([51.5139, 7.4653], 16);
+
+        // LEAFLET PANE-MANAGEMENT: Eigenes Pane für Kneipe mit hohem Z-Index
+        map.createPane('targetPane');
+        map.getPane('targetPane').style.zIndex = 650;
 
         // 4. Standard OpenStreetMap-TileLayer einbinden
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -519,7 +202,31 @@
             });
             
             if (intersectionNodes.length > 0) {
-                let startNodeId = intersectionNodes[Math.floor(Math.random() * intersectionNodes.length)];
+                
+                // NEU: Filtere nach bevorzugten Straßentypen für den Spawn (vermeidet Fußgängerzonen)
+                const preferredNodes = intersectionNodes.filter(id => {
+                    let isPreferred = false;
+                    nodeToWays[id].forEach(wayId => {
+                        const way = waysData[wayId];
+                        if (way && way.tags && way.tags.highway) {
+                            const hw = way.tags.highway;
+                            if (hw === 'residential' || hw === 'tertiary' || hw === 'secondary') {
+                                isPreferred = true;
+                            }
+                        }
+                    });
+                    return isPreferred;
+                });
+
+                let startNodeId;
+                if (preferredNodes.length > 0) {
+                    startNodeId = preferredNodes[Math.floor(Math.random() * preferredNodes.length)];
+                    console.log("Startpunkt auf bevorzugter Straße gesetzt (residential/tertiary/secondary).");
+                } else {
+                    startNodeId = intersectionNodes[Math.floor(Math.random() * intersectionNodes.length)];
+                    console.log("Startpunkt-Fallback aktiv.");
+                }
+
                 targetPubNode = null;
 
                 console.log("LOG 3: Suche Kneipe...");
@@ -603,7 +310,7 @@
             if (tutorialFinished) return;
             tutorialActive = true;
             const container = document.getElementById('tutorial-container');
-            container.innerHTML = "<h2>Mission gestartet</h2><p>STANDORT ERFASST. BEWEGE DICH ZU EINEM BENACHBARTEN KNOTENPUNKT, UM DIE STATISTISCHE SIGNATUR ZU VERSCHLEIERN.</p>";
+            container.innerHTML = "<h2>Mission gestartet</h2><p>STANDORT ERFASST. BEWEGE DICH ZU EINEM BENACHBARTEN GRÜNEN KNOTENPUNKT, UM DIE STATISTISCHE SIGNATUR ZU VERSCHLEIERN.</p>";
             container.style.display = 'block';
         }
 
@@ -617,10 +324,20 @@
 
         function pubVisited() {
             gameActive = false;
-            document.getElementById('hud-container').innerText = "ZIEL ERREICHT";
+            
+            if (pubMarker && pubMarker.getElement()) {
+                pubMarker.getElement().classList.remove('bier-active');
+                pubMarker.getElement().classList.remove('sonar-active');
+            }
+
+            document.getElementById('tutorial-container').style.display = 'none';
             document.getElementById('options-container').style.display = 'block';
+            
+            // Bewegung verhindern
+            neighborMarkers.forEach(m => map.removeLayer(m));
+            neighborMarkers = [];
         }
-        
+
         function selectOption(opt) {
             document.getElementById('options-container').style.display = 'none';
             alert("Option " + opt + " gewählt! (Logik folgt...)");
@@ -632,6 +349,7 @@
             const container = document.getElementById('tutorial-container');
             container.innerHTML = "<h2>Game Over</h2><p>FINANZIELLE MITTEL ERSCHÖPFT. DIE STATISTIK HAT DICH EINGEHOLT.</p>";
             container.style.display = 'block';
+            container.style.borderColor = '#ef4444';
             
             // Bewegung verhindern
             neighborMarkers.forEach(m => map.removeLayer(m));
@@ -662,6 +380,8 @@
             gameActive = false;
             document.getElementById('hud-container').style.display = 'none';
             document.getElementById('tutorial-container').style.display = 'none';
+            document.getElementById('tutorial-container').style.borderColor = '#22c55e';
+            document.getElementById('options-container').style.display = 'none';
         }
 
         function createPlayerMarker(coords) {
@@ -749,12 +469,24 @@
                 
                 if (moveCounter === 1 && targetPubNode && !pubMarker) {
                     const pubIcon = L.divIcon({
-                        className: 'pub-marker',
-                        html: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='16' height='16'><path fill='#ffffff' d='M6 2h10v2H6V2zm1 3h8v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5zm10 2h1c1.1 0 2 .9 2 2v6c0 1.1-.9 2-2 2h-1v-2h1V9h-1V7z'/></svg>`,
+                        className: 'bier-icon',
+                        html: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='16' height='16'><path fill='#facc15' d='M6 2h10v2H6V2zm1 3h8v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5zm10 2h1c1.1 0 2 .9 2 2v6c0 1.1-.9 2-2 2h-1v-2h1V9h-1V7z'/></svg>`,
                         iconSize: [24, 24],
                         iconAnchor: [12, 12]
                     });
-                    pubMarker = L.marker([targetPubNode.lat, targetPubNode.lon], {icon: pubIcon}).addTo(map);
+                    
+                    // NEU: Dem targetPane zuweisen, damit das Icon nie verschwindet!
+                    pubMarker = L.marker([targetPubNode.lat, targetPubNode.lon], {
+                            icon: pubIcon,
+                            pane: 'targetPane'
+                        })
+                        .addTo(map)
+                        .on('click', () => {
+                            if (pubMarker.getElement().classList.contains('bier-active')) {
+                                pubVisited();
+                            }
+                        });
+                        
                     pubMarker.bindTooltip(targetName, {permanent: false, direction: 'top'});
                     
                     const targetN = nodesData[nodeId];
@@ -767,7 +499,7 @@
 
                 if (moveCounter === 3) {
                     if (pubMarker) {
-                        pubMarker.getElement().classList.add('pub-sonar');
+                        pubMarker.getElement().classList.add('sonar-active');
                     }
                     const container = document.getElementById('tutorial-container');
                     container.innerHTML += "<br><br><strong style='color:#facc15;'>Besuch die Gaststätte, vielleicht erfährst du dort, wie du schnell an Geld kommen kannst.</strong>";
@@ -813,7 +545,7 @@
             }
             
             if (pubMarker && pubMarker.getElement()) {
-                pubMarker.getElement().classList.remove('pub-glow');
+                pubMarker.getElement().classList.remove('bier-active');
             }
 
             neighbors.forEach(nId => {
@@ -822,8 +554,10 @@
 
                 if (node.isKneipe === true) {
                     if (pubMarker && pubMarker.getElement()) {
-                        pubMarker.getElement().classList.add('pub-glow');
+                        pubMarker.getElement().classList.add('bier-active');
                     }
+                    // NEU: Zeichne KEINEN grünen Punkt auf der Kneipe, um Überlappung zu verhindern!
+                    return;
                 }
 
                 const neighborIcon = L.divIcon({
