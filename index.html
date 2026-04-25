@@ -216,6 +216,9 @@
                 return;
             }
 
+            // NEU: Graphen bereinigen (Clustering & Linear Filtering)
+            simplifyGraph();
+
             console.log("LOG 2: Wege empfangen, baue Graph...");
             
             // WICHTIG: Nur existierende Knoten verwenden, um Sackgassen zu vermeiden.
@@ -487,7 +490,7 @@
             const e = center.lng + offset;
 
             const query = `
-                [out:json][timeout:15];
+                [out:json][timeout:25];
                 (
                     way["highway"](${s},${w},${n},${e});
                     node["amenity"~"pub|bar"](${s},${w},${n},${e});
@@ -495,33 +498,52 @@
                 (._;>;);
                 out body;
             `;
-            try {
-                const response = await fetch('https://overpass-api.de/api/interpreter', {
-                    method: 'POST',
-                    body: 'data=' + encodeURIComponent(query)
-                });
-                if (!response.ok) return false;
-                const data = await response.json();
-                
-                data.elements.forEach(el => {
-                    if (el.type === 'node') {
-                        nodesData[el.id] = el;
-                        if (el.tags && (el.tags.amenity === 'pub' || el.tags.amenity === 'bar')) {
-                            pubsData.push(el);
-                        }
-                    } else if (el.type === 'way') {
-                        waysData[el.id] = el;
-                        el.nodes.forEach(nodeId => {
-                            if (!nodeToWays[nodeId]) nodeToWays[nodeId] = new Set();
-                            nodeToWays[nodeId].add(el.id);
-                        });
+
+            const endpoints = [
+                'https://overpass-api.de/api/interpreter',
+                'https://overpass.kumi.systems/api/interpreter',
+                'https://lz4.overpass-api.de/api/interpreter'
+            ];
+
+            for (let url of endpoints) {
+                try {
+                    console.log(`Versuche OSM-Daten von ${url} zu laden...`);
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: 'data=' + encodeURIComponent(query)
+                    });
+                    
+                    if (!response.ok) {
+                        console.warn(`Server ${url} meldete Status ${response.status}`);
+                        continue;
                     }
-                });
-                return true;
-            } catch (err) {
-                console.error("Netzwerk-Fehler:", err);
-                return false;
+                    
+                    const data = await response.json();
+                    if (!data || !data.elements) continue;
+
+                    data.elements.forEach(el => {
+                        if (el.type === 'node') {
+                            nodesData[el.id] = el;
+                            if (el.tags && (el.tags.amenity === 'pub' || el.tags.amenity === 'bar')) {
+                                pubsData.push(el);
+                            }
+                        } else if (el.type === 'way') {
+                            waysData[el.id] = el;
+                            el.nodes.forEach(nodeId => {
+                                if (!nodeToWays[nodeId]) nodeToWays[nodeId] = new Set();
+                                nodeToWays[nodeId].add(el.id);
+                            });
+                        }
+                    });
+                    return true;
+                } catch (err) {
+                    console.error(`Fehler bei ${url}:`, err);
+                }
             }
+            return false;
         }
 
         function moveToNode(nodeId, isInitial = false) {
@@ -637,6 +659,115 @@
                 
                 neighborMarkers.push(marker);
             });
+        }
+
+        function simplifyGraph() {
+            console.log("Starte Graphen-Bereinigung...");
+            const removals = new Set();
+            const merges = [];
+
+            const priority = {
+                'motorway': 7, 'trunk': 6, 'primary': 5, 'secondary': 4,
+                'tertiary': 3, 'unclassified': 2, 'residential': 1
+            };
+
+            function getPriority(id) {
+                let maxP = 0;
+                const ways = nodeToWays[id] || new Set();
+                ways.forEach(wayId => {
+                    const way = waysData[wayId];
+                    if (way && way.tags && way.tags.highway) {
+                        maxP = Math.max(maxP, priority[way.tags.highway] || 0);
+                    }
+                });
+                return maxP;
+            }
+
+            // PHASE 1: Scannen (Sammeln ohne Mutation)
+            const nodeIds = Object.keys(nodesData);
+            nodeIds.forEach(id1 => {
+                if (removals.has(id1) || !nodesData[id1]) return;
+                const ways = nodeToWays[id1] || new Set();
+                
+                ways.forEach(wayId => {
+                    const way = waysData[wayId];
+                    if (!way) return;
+                    const nodes = way.nodes;
+                    const idx = nodes.indexOf(parseInt(id1));
+                    if (idx === -1) return;
+
+                    [idx - 1, idx + 1].forEach(nIdx => {
+                        if (nIdx < 0 || nIdx >= nodes.length) return;
+                        const id2 = nodes[nIdx].toString();
+                        if (removals.has(id2) || id1 === id2 || !nodesData[id2]) return;
+                        
+                        const d = map.distance([nodesData[id1].lat, nodesData[id1].lon], [nodesData[id2].lat, nodesData[id2].lon]);
+
+                        if (d < 20) {
+                            const p1 = getPriority(id1);
+                            const p2 = getPriority(id2);
+                            const deg1 = (nodeToWays[id1] || new Set()).size;
+                            const deg2 = (nodeToWays[id2] || new Set()).size;
+
+                            let survivor = (p1 > p2 || (p1 === p2 && deg1 >= deg2)) ? id1 : id2;
+                            let victim = (survivor === id1) ? id2 : id1;
+
+                            merges.push({type: 'cluster', keep: survivor, remove: victim});
+                            removals.add(victim);
+                        }
+                    });
+                });
+            });
+
+            // Lineare Knoten (Degree 2) scannen
+            Object.keys(nodeToWays).forEach(id => {
+                if (removals.has(id) || !nodesData[id]) return;
+                const ways = nodeToWays[id];
+                if (ways.size === 1) { 
+                    const wayId = Array.from(ways)[0];
+                    const way = waysData[wayId];
+                    const nodes = way.nodes;
+                    const idx = nodes.indexOf(parseInt(id));
+                    
+                    if (idx > 0 && idx < nodes.length - 1) {
+                        const prevId = nodes[idx - 1].toString();
+                        const nextId = nodes[idx + 1].toString();
+                        if (!nodesData[prevId] || !nodesData[nextId]) return;
+
+                        const d1 = map.distance([nodesData[id].lat, nodesData[id].lon], [nodesData[prevId].lat, nodesData[prevId].lon]);
+                        const d2 = map.distance([nodesData[id].lat, nodesData[id].lon], [nodesData[nextId].lat, nodesData[nextId].lon]);
+
+                        if (d1 < 100 && d2 < 100) {
+                            merges.push({type: 'linear', wayId: wayId, remove: id});
+                            removals.add(id);
+                        }
+                    }
+                }
+            });
+
+            // PHASE 2: Ausführen (Die eigentliche Mutation)
+            merges.forEach(task => {
+                if (task.type === 'cluster') {
+                    const victimWays = nodeToWays[task.remove] || new Set();
+                    victimWays.forEach(vWayId => {
+                        const vWay = waysData[vWayId];
+                        if (vWay) {
+                            vWay.nodes = vWay.nodes.map(n => n.toString() === task.remove ? parseInt(task.keep) : n);
+                            if (!nodeToWays[task.keep]) nodeToWays[task.keep] = new Set();
+                            nodeToWays[task.keep].add(vWayId);
+                        }
+                    });
+                } else if (task.type === 'linear') {
+                    const way = waysData[task.wayId];
+                    if (way) {
+                        way.nodes = way.nodes.filter(n => n.toString() !== task.remove);
+                    }
+                }
+                delete nodesData[task.remove];
+                delete nodeToWays[task.remove];
+            });
+
+            console.log("Bereinigung erfolgreich. Knoten nach Bereinigung:", Object.keys(nodesData).length);
         }
 
         function findNextIntersections(nodeId) {
