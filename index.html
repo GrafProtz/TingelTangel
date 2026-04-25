@@ -574,21 +574,18 @@
                     pubSound.play().then(() => {
                         pubSound.pause();
                     }).catch(e => console.log("Audio unlock on map failed", e));
-                    
-                    const targetN = nodesData[nodeId];
-                    if (targetPubNode) {
-                        map.flyToBounds(L.latLngBounds([targetN.lat, targetN.lon], [FIXED_PUB_LOCATION.lat, FIXED_PUB_LOCATION.lon]).pad(0.3), {
-                            duration: 2.5,
-                            easeLinearity: 0.25
-                        });
-                        skipPan = true;
-                    }
                 }
 
                 if (moveCounter === 3) {
-                    // Marker logic removed
                     const container = document.getElementById('tutorial-container');
                     container.innerHTML += "<br><br><strong style='color:#facc15;'>Besuch die Gaststätte, vielleicht erfährst du dort, wie du schnell an Geld kommen kannst.</strong>";
+                    container.style.display = 'block';
+
+                    // DYNAMISCHE KAMERA: Aufziehen, um das Ziel zu zeigen
+                    if (FIXED_PUB_LOCATION && playerMarker) {
+                        let bounds = L.latLngBounds([playerMarker.getLatLng(), FIXED_PUB_LOCATION]);
+                        map.fitBounds(bounds, { padding: [100, 100], animate: true, duration: 1.5 });
+                    }
                 }
 
                 if (moveCounter === 7) {
@@ -609,7 +606,11 @@
             const coords = [node.lat, node.lon];
             createPlayerMarker(coords);
             if (!skipPan) {
-                map.panTo(coords);
+                if (isInitial) {
+                    map.setView(coords, 19);
+                } else {
+                    map.panTo(coords);
+                }
             }
             
             if (budget > 0) {
