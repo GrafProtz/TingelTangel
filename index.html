@@ -80,6 +80,21 @@
         var targetName = "";
         var tutorialActive = false;
         var tutorialFinished = false;
+        var canInteractWithPub = false;
+
+        var pubIconNormal = L.divIcon({
+            className: 'bier-icon',
+            html: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='32' height='32'><path fill='#facc15' d='M6 2h10v2H6V2zm1 3h8v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5zm10 2h1c1.1 0 2 .9 2 2v6c0 1.1-.9 2-2 2h-1v-2h1V9h-1V7z'/></svg>`,
+            iconSize: [40, 40],
+            iconAnchor: [20, 20]
+        });
+
+        var pubIconActive = L.divIcon({
+            className: 'bier-icon bier-active',
+            html: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='32' height='32'><path fill='#facc15' d='M6 2h10v2H6V2zm1 3h8v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5zm10 2h1c1.1 0 2 .9 2 2v6c0 1.1-.9 2-2 2h-1v-2h1V9h-1V7z'/></svg>`,
+            iconSize: [40, 40],
+            iconAnchor: [20, 20]
+        });
 
         // 1. & 2. & 3. Startpunkt und Zoom-Level setzen
         var map = L.map('map').setView([51.5139, 7.4653], 16);
@@ -325,9 +340,8 @@
         function pubVisited() {
             gameActive = false;
             
-            if (pubMarker && pubMarker.getElement()) {
-                pubMarker.getElement().classList.remove('bier-active');
-                pubMarker.getElement().classList.remove('sonar-active');
+            if (pubMarker) {
+                pubMarker.setIcon(pubIconNormal);
             }
 
             document.getElementById('tutorial-container').style.display = 'none';
@@ -342,6 +356,31 @@
             document.getElementById('options-container').style.display = 'none';
             alert("Option " + opt + " gewählt! (Logik folgt...)");
             gameActive = true;
+        }
+
+        function evaluateGameState() {
+            if (!targetPubNode || !pubMarker || !playerMarker) return;
+            
+            // 1. Hole die aktuellen Koordinaten von Spieler und Kneipe
+            let playerPos = playerMarker.getLatLng(); 
+            let kneipePos = pubMarker.getLatLng();
+            
+            // 2. Berechne Distanz in Metern (Leaflet nativ)
+            let distanceInMeters = map.distance(playerPos, kneipePos);
+            
+            console.log("=== DISTANZ-KOLLISION ===");
+            console.log("Distanz zur Kneipe:", distanceInMeters.toFixed(2), "Meter");
+            
+            // 3. Trigger (50 Meter Radius)
+            if (distanceInMeters <= 50) {
+                pubMarker.setIcon(pubIconActive); // Icon leuchtet auf
+                canInteractWithPub = true;
+                console.log("Status: INNERHALB des 50m Radius -> Aktiv");
+            } else {
+                pubMarker.setIcon(pubIconNormal); // Standard Icon
+                canInteractWithPub = false;
+                console.log("Status: AUSSERHALB -> Inaktiv");
+            }
         }
 
         function gameOver() {
@@ -382,6 +421,7 @@
             document.getElementById('tutorial-container').style.display = 'none';
             document.getElementById('tutorial-container').style.borderColor = '#22c55e';
             document.getElementById('options-container').style.display = 'none';
+            canInteractWithPub = false;
         }
 
         function createPlayerMarker(coords) {
@@ -468,23 +508,15 @@
                 document.getElementById('hud-container').innerText = hudText;
                 
                 if (moveCounter === 1 && targetPubNode && !pubMarker) {
-                    const pubIcon = L.divIcon({
-                        className: 'bier-icon',
-                        html: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='16' height='16'><path fill='#facc15' d='M6 2h10v2H6V2zm1 3h8v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5zm10 2h1c1.1 0 2 .9 2 2v6c0 1.1-.9 2-2 2h-1v-2h1V9h-1V7z'/></svg>`,
-                        iconSize: [24, 24],
-                        iconAnchor: [12, 12]
-                    });
-                    
                     // NEU: Dem targetPane zuweisen, damit das Icon nie verschwindet!
                     pubMarker = L.marker([targetPubNode.lat, targetPubNode.lon], {
-                            icon: pubIcon,
+                            icon: pubIconNormal,
                             pane: 'targetPane'
                         })
                         .addTo(map)
                         .on('click', () => {
-                            if (pubMarker.getElement().classList.contains('bier-active')) {
-                                pubVisited();
-                            }
+                            if (!canInteractWithPub) return;
+                            pubVisited();
                         });
                         
                     pubMarker.bindTooltip(targetName, {permanent: false, direction: 'top'});
@@ -498,7 +530,7 @@
                 }
 
                 if (moveCounter === 3) {
-                    if (pubMarker) {
+                    if (pubMarker && pubMarker.getElement()) {
                         pubMarker.getElement().classList.add('sonar-active');
                     }
                     const container = document.getElementById('tutorial-container');
@@ -527,6 +559,7 @@
             }
             
             if (budget > 0) {
+                evaluateGameState();
                 updateNeighbors(nodeId);
             }
         }
@@ -544,21 +577,9 @@
                 console.warn("ACHTUNG: Sackgasse erreicht! Keine navigierbaren Nachbarn gefunden.");
             }
             
-            if (pubMarker && pubMarker.getElement()) {
-                pubMarker.getElement().classList.remove('bier-active');
-            }
-
             neighbors.forEach(nId => {
                 const node = nodesData[nId];
                 if (!node) return;
-
-                if (node.isKneipe === true) {
-                    if (pubMarker && pubMarker.getElement()) {
-                        pubMarker.getElement().classList.add('bier-active');
-                    }
-                    // NEU: Zeichne KEINEN grünen Punkt auf der Kneipe, um Überlappung zu verhindern!
-                    return;
-                }
 
                 const neighborIcon = L.divIcon({
                     className: 'neighbor-marker',
