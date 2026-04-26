@@ -1,147 +1,235 @@
 /**
  * MapData - Der Data-Layer der Engine.
- * Zuständig für das Laden, Speichern und Indizieren von geografischen Daten.
+ * Baut einen Makro-Graphen aus OSM-Daten: Nur echte Kreuzungen und
+ * Sackgassen werden zu begehbaren Knoten; die Kurvenpunkte dazwischen
+ * werden als "Geometrie-Pfad" in den Kanten gespeichert.
  */
 class MapData {
     constructor() {
-        // Interne Datenspeicher (Kapselung)
-        this._nodes = new Map();
-        this._ways = new Map();
-        this._pubs = [];
-        
-        // Der Graph: Map<nodeId, Set<neighborNodeId>>
-        this._graph = new Map();
+        this._nodes = new Map();      // Alle OSM-Nodes (auch Geometrie)
+        this._ways  = new Map();
+        this._pubs  = [];
 
-        // Spatial Index (Grid-basiertes Hashing)
-        // Wir teilen die Welt in Zellen auf (ca. 100m bei 0.001 Grad)
+        // Makro-Graph: Map<nodeId, Array<Edge>>
+        // Edge = { to, path: [[lat,lon],...], distance }
+        this._macroGraph = new Map();
+
+        // Spatial Index
         this._spatialIndex = new Map();
-        this._gridSize = 0.001; 
+        this._gridSize = 0.001;
     }
 
-    /**
-     * Lädt Stadtdaten von einer URL (JSON im OSM-Format).
-     * @param {string} url 
-     */
-    async loadCityData(url) {
+    // ----------------------------------------------------------------
+    //  Laden
+    // ----------------------------------------------------------------
+
+    async loadCityData(coords) {
+        const range = 0.008;
+        const s = coords[0] - range, w = coords[1] - range;
+        const n = coords[0] + range, e = coords[1] + range;
+
+        const query = `[out:json][timeout:25];(way["highway"](${s},${w},${n},${e});node["amenity"~"pub|bar"](${s},${w},${n},${e});way["amenity"~"pub|bar"](${s},${w},${n},${e}););(._;>;);out body;`;
+
         try {
-            // In einer echten Umgebung: const response = await fetch(url);
-            // Hier nutzen wir Mock-Daten für die Demonstration:
-            const data = this._getMockData();
+            console.log('MapData: Starte Overpass-Abfrage …');
+            const resp = await fetch('https://overpass-api.de/api/interpreter', {
+                method: 'POST',
+                body: 'data=' + encodeURIComponent(query)
+            });
+            const data = await resp.json();
             this._parseOSMData(data);
-            console.log(`MapData: ${this._nodes.size} Nodes und ${this._pubs.length} Pubs geladen.`);
-        } catch (error) {
-            console.error("MapData: Fehler beim Laden der Daten", error);
+            this._buildMacroGraph();
+            console.log(`MapData: Makro-Graph mit ${this._macroGraph.size} Kreuzungen erstellt.`);
+        } catch (err) {
+            console.error('MapData: Overpass-Fehler', err);
         }
     }
 
-    /**
-     * Interner Parser für das Overpass-JSON Format.
-     */
+    // ----------------------------------------------------------------
+    //  Parsing
+    // ----------------------------------------------------------------
+
     _parseOSMData(data) {
         this._nodes.clear();
         this._ways.clear();
-        this._graph.clear();
         this._pubs = [];
         this._spatialIndex.clear();
+        this._macroGraph.clear();
 
-        // 1. Pass: Nodes extrahieren und räumlich indizieren
         data.elements.forEach(el => {
+            const safeId = String(el.id);
+
             if (el.type === 'node') {
-                this._nodes.set(el.id, el);
-                this._addToSpatialIndex(el);
-
-                if (el.tags && (el.tags.amenity === 'pub' || el.tags.amenity === 'bar')) {
-                    this._pubs.push(el);
+                const nd = { ...el, id: safeId };
+                this._nodes.set(safeId, nd);
+                this._addToSpatialIndex(nd);
+                if (el.tags?.amenity === 'pub' || el.tags?.amenity === 'bar') {
+                    this._pubs.push(nd);
                 }
-            }
-        });
-
-        // 2. Pass: Ways verarbeiten und Graphen aufbauen
-        data.elements.forEach(el => {
-            if (el.type === 'way') {
-                this._ways.set(el.id, el);
-                
-                // Wir bauen die Adjazenzliste bidirektional auf
-                for (let i = 0; i < el.nodes.length - 1; i++) {
-                    const u = el.nodes[i];
-                    const v = el.nodes[i + 1];
-                    this._addEdge(u, v);
-                    this._addEdge(v, u);
-                }
-
-                // Check, ob der Way selbst als Pub getaggt ist (z.B. Gebäude-Umriss)
-                if (el.tags && (el.tags.amenity === 'pub' || el.tags.amenity === 'bar')) {
-                    // Wir nehmen den ersten Node des Gebäudes als Repräsentanten
-                    const firstNode = this._nodes.get(el.nodes[0]);
-                    if (firstNode) this._pubs.push({...el, lat: firstNode.lat, lon: firstNode.lon});
+            } else if (el.type === 'way') {
+                this._ways.set(safeId, el);
+                if (el.tags?.amenity === 'pub' || el.tags?.amenity === 'bar') {
+                    const first = this._nodes.get(String(el.nodes[0]));
+                    if (first) this._pubs.push({ ...el, lat: first.lat, lon: first.lon, id: safeId });
                 }
             }
         });
     }
 
-    _addEdge(u, v) {
-        if (!this._graph.has(u)) this._graph.set(u, new Set());
-        this._graph.get(u).add(v);
+    // ----------------------------------------------------------------
+    //  Makro-Graph
+    // ----------------------------------------------------------------
+
+    _buildMacroGraph() {
+        // 1. Zähle, wie oft jeder Knoten in allen Wegen vorkommt
+        const nodeUsage = new Map();
+        this._ways.forEach(way => {
+            if (!way.tags?.highway) return;           // Nur Straßen
+            way.nodes.forEach(rawId => {
+                const id = String(rawId);
+                nodeUsage.set(id, (nodeUsage.get(id) || 0) + 1);
+            });
+        });
+
+        // 2. Entscheidungsknoten-Check
+        const isDecision = (id, way, idx) => {
+            if (nodeUsage.get(id) > 1) return true;              // Kreuzung
+            if (idx === 0 || idx === way.nodes.length - 1) return true;  // Endpunkt
+            return false;
+        };
+
+        // 3. Wege durchlaufen und Segmente zwischen Entscheidungsknoten bilden
+        this._ways.forEach(way => {
+            if (!way.tags?.highway) return;
+
+            const ids = way.nodes.map(n => String(n));
+
+            let lastDecision = ids[0];
+            let pathCoords   = [];   // Zwischen-Koordinaten (ohne Start-Kreuzung)
+            let segDist      = 0;
+
+            for (let i = 1; i < ids.length; i++) {
+                const prev = this._nodes.get(ids[i - 1]);
+                const curr = this._nodes.get(ids[i]);
+                if (!prev || !curr) continue;
+
+                segDist += this._haversine(prev, curr);
+                pathCoords.push([curr.lat, curr.lon]);
+
+                if (isDecision(ids[i], way, i)) {
+                    // Vorwärts-Kante
+                    this._addMacroEdge(lastDecision, ids[i], pathCoords, segDist);
+                    // Rückwärts-Kante (Pfad umkehren)
+                    this._addMacroEdge(ids[i], lastDecision, [...pathCoords].reverse(), segDist);
+
+                    // Reset
+                    lastDecision = ids[i];
+                    pathCoords   = [];
+                    segDist      = 0;
+                }
+            }
+        });
     }
+
+    _addMacroEdge(from, to, path, dist) {
+        if (from === to) return;                                 // Selbst-Schleifen ignorieren
+        if (!this._macroGraph.has(from)) this._macroGraph.set(from, []);
+
+        // Duplikat-Vermeidung: kürzere Kante gewinnt
+        const list = this._macroGraph.get(from);
+        const existing = list.find(e => e.to === to);
+        if (existing) {
+            if (dist < existing.distance) {
+                existing.path = path;
+                existing.distance = dist;
+            }
+        } else {
+            list.push({ to, path, distance: dist });
+        }
+    }
+
+    // ----------------------------------------------------------------
+    //  Haversine (Meter)
+    // ----------------------------------------------------------------
+
+    _haversine(a, b) {
+        const R   = 6_371_000;
+        const toR = Math.PI / 180;
+        const dLat = (b.lat - a.lat) * toR;
+        const dLon = (b.lon - a.lon) * toR;
+        const s = Math.sin(dLat / 2) ** 2 +
+                  Math.cos(a.lat * toR) * Math.cos(b.lat * toR) *
+                  Math.sin(dLon / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+    }
+
+    // ----------------------------------------------------------------
+    //  Spatial Index
+    // ----------------------------------------------------------------
 
     _addToSpatialIndex(node) {
-        const key = this._getGridKey(node.lat, node.lon);
+        const key = this._gridKey(node.lat, node.lon);
         if (!this._spatialIndex.has(key)) this._spatialIndex.set(key, []);
         this._spatialIndex.get(key).push(node.id);
     }
 
-    _getGridKey(lat, lon) {
-        const x = Math.floor(lat / this._gridSize);
-        const y = Math.floor(lon / this._gridSize);
-        return `${x}_${y}`;
+    _gridKey(lat, lon) {
+        return `${Math.floor(lat / this._gridSize)}_${Math.floor(lon / this._gridSize)}`;
+    }
+
+    getNearestNode(lat, lon) {
+        const ids = this._spatialIndex.get(this._gridKey(lat, lon)) || [];
+        let best = null, bestD = Infinity;
+        ids.forEach(id => {
+            const n = this._nodes.get(id);
+            if (!n) return;
+            const d = (n.lat - lat) ** 2 + (n.lon - lon) ** 2;
+            if (d < bestD) { bestD = d; best = n; }
+        });
+        return best;
+    }
+
+    // ----------------------------------------------------------------
+    //  Öffentliche Getter
+    // ----------------------------------------------------------------
+
+    getNode(id) {
+        return this._nodes.get(String(id));
     }
 
     /**
-     * Findet den nächstgelegenen Knotenpunkt effizient über den Spatial Index.
+     * Gibt die Nachbar-Kreuzungen mit edgeData zurück.
+     * Format: [{ id, lat, lon, edgeData: { to, path, distance } }, …]
      */
-    getNearestNode(lat, lon) {
-        const key = this._getGridKey(lat, lon);
-        const candidateIds = this._spatialIndex.get(key) || [];
-        
-        let minPlayerDist = Infinity;
-        let nearestNode = null;
-
-        candidateIds.forEach(id => {
-            const node = this._nodes.get(id);
-            const d = Math.sqrt(Math.pow(node.lat - lat, 2) + Math.pow(node.lon - lon, 2));
-            if (d < minPlayerDist) {
-                minPlayerDist = d;
-                nearestNode = node;
-            }
-        });
-
-        return nearestNode;
-    }
-
-    // --- GETTER ---
-
-    getNode(id) {
-        return this._nodes.get(id);
-    }
-
     getNeighbors(id) {
-        const neighbors = this._graph.get(id);
-        return neighbors ? Array.from(neighbors) : [];
+        const edges = this._macroGraph.get(String(id));
+        if (!edges) return [];
+        return edges
+            .map(edge => {
+                const node = this._nodes.get(edge.to);
+                if (!node) return null;
+                return { ...node, edgeData: edge };
+            })
+            .filter(Boolean);
+    }
+
+    /**
+     * Gibt die Kanten-Daten einer bestimmten Verbindung zurück.
+     */
+    getEdge(fromId, toId) {
+        const edges = this._macroGraph.get(String(fromId));
+        if (!edges) return null;
+        return edges.find(e => e.to === String(toId)) || null;
     }
 
     getPubs() {
         return [...this._pubs];
     }
 
-    _getMockData() {
-        return {
-            elements: [
-                { type: "node", id: 1, lat: 51.513, lon: 7.465 },
-                { type: "node", id: 2, lat: 51.514, lon: 7.466 },
-                { type: "node", id: 3, lat: 51.515, lon: 7.467, tags: { amenity: "pub", name: "The Mock Tavern" } },
-                { type: "way", id: 10, nodes: [1, 2, 3], tags: { highway: "residential" } }
-            ]
-        };
+    getRandomIntersectionNode() {
+        const keys = Array.from(this._macroGraph.keys());
+        if (keys.length === 0) return null;
+        return keys[Math.floor(Math.random() * keys.length)];
     }
 }
 
