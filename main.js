@@ -24,6 +24,11 @@ async function initApp() {
         mapView.updateHUD(`GUTHABEN: ${budget} €`);
     });
 
+    // ----- Tutorial-Panel ausblenden nach erstem Zug -----
+    game.onFirstMove(() => {
+        mapView.fadeTutorialPanelOut();
+    });
+
     // ----- Logische State-Changes -----
     game.onStateChange((state) => {
         if (state.currentPlayerNodeId === null) return;
@@ -53,23 +58,27 @@ async function initApp() {
     // ----- Ziel erreicht → Kneipen-Dialog -----
     game.onTargetReached((targetNodeId) => {
         const name = missionPOI?.poiData?.tags?.name || 'Unbekannte Gaststätte';
+
+        // 1. Visuelles Feedback: Icon pulsiert
+        mapView.highlightTarget();
         mapView.showNotification('ANGEKOMMEN', `Du hast "${name}" erreicht!`);
 
-        mapView.showInteractionOverlay((option) => {
-            // Optionen-Logik
-            const state = game.getState();
-            let msg = '';
-            if (option === 'A') {
-                msg = "Der Barkeeper flüstert: 'Die Ware bewegt sich Richtung Osten.'";
-            } else if (option === 'B') {
-                msg = 'Niemand will mit dir reden.';
-            } else if (option === 'C') {
-                msg = 'Ein Informant markiert dir das nächste Versteck!';
-            } else {
-                msg = 'Du verlässt die Gaststätte unauffällig.';
-            }
-            mapView.showNotification('Info', msg);
-        });
+        // 2. Verzögerung, damit der Spieler die Animation wahrnimmt
+        setTimeout(() => {
+            mapView.showInteractionOverlay((option) => {
+                let msg = '';
+                if (option === 'A') {
+                    msg = "Der Barkeeper flüstert: 'Die Ware bewegt sich Richtung Osten.'";
+                } else if (option === 'B') {
+                    msg = 'Niemand will mit dir reden.';
+                } else if (option === 'C') {
+                    msg = 'Ein Informant markiert dir das nächste Versteck!';
+                } else {
+                    msg = 'Du verlässt die Gaststätte unauffällig.';
+                }
+                mapView.showNotification('Info', msg);
+            });
+        }, 1200);
     });
 
     // ----- Start-Button -----
@@ -81,37 +90,59 @@ async function initApp() {
         mapView.showNotification('LADEN …', `Lade Daten für ${city.name} …`);
         await mapData.loadCityData(city.coords);
 
-        const startId = mapData.getRandomIntersectionNode();
-        if (!startId) {
-            alert('Keine begehbaren Wege gefunden.');
+        // Tutorial-Szenario erzeugen (100-200m Abstand)
+        const scenario = mapData.spawnTutorialScenario();
+        if (!scenario) {
+            // Fallback auf altes Verfahren
+            const startId = mapData.getRandomIntersectionNode();
+            missionPOI = mapData.getNearestPOI(startId);
+            const targetId = missionPOI ? missionPOI.graphNodeId : mapData.getRandomIntersectionNode();
+            if (!startId || !targetId) { alert('Keine begehbaren Wege gefunden.'); return; }
+
+            mapView.setUIState('intro-overlay', false);
+            mapView.setUIState('back-to-menu', true);
+            mapView.hideNotification();
+            const tn = mapData.getNode(targetId); if (tn) mapView.renderTarget(tn);
+            const sn = mapData.getNode(startId);
+            mapView.focusLocation([sn.lat, sn.lon]);
+            mapView.onMapReady(() => {
+                game.startMission(startId, targetId);
+                const nb = mapData.getNeighbors(startId);
+                mapView.renderNeighbors(nb, id => game.moveToNode(id));
+            });
             return;
         }
 
-        // POI-System: Nächste Gaststätte finden und auf den Graphen snappen
-        missionPOI = mapData.getNearestPOI(startId);
-        const targetId = missionPOI
-            ? missionPOI.graphNodeId
-            : mapData.getRandomIntersectionNode();
+        // Tutorial-Szenario verwenden
+        missionPOI = { poiData: { tags: { name: scenario.poiName } }, graphNodeId: scenario.targetNodeId };
 
         mapView.setUIState('intro-overlay', false);
         mapView.setUIState('back-to-menu', true);
         mapView.hideNotification();
 
-        // Ziel-Icon auf den GRAPH-KNOTEN rendern (nicht auf die rohen POI-Koordinaten)
-        const targetNode = mapData.getNode(targetId);
+        // Spieler und Ziel rendern
+        mapView.renderPlayer(scenario.startCoords);
+        const targetNode = mapData.getNode(scenario.targetNodeId);
         if (targetNode) mapView.renderTarget(targetNode);
 
-        // Kamera zum Start, Mission beginnen, und sofort Nachbarn zeigen
-        const startNode = mapData.getNode(startId);
-        mapView.focusLocation([startNode.lat, startNode.lon]);
-        mapView.onMapReady(() => {
-            game.startMission(startId, targetId);
+        // Kamera zum Start
+        mapView.focusLocation(scenario.startCoords);
 
-            // Sofort Nachbarn rendern (verhindert "eingefrorenen" Start)
-            const neighbors = mapData.getNeighbors(startId);
-            mapView.renderNeighbors(neighbors, (clickedId) => {
-                game.moveToNode(clickedId);
-            });
+        // Tutorial-Kamerafahrt starten (Spieler kann noch nicht klicken)
+        mapView.onMapReady(() => {
+            mapView.playTutorialSequence(
+                scenario.startCoords,
+                scenario.targetCoords,
+                scenario.poiName,
+                () => {
+                    // Nach Tutorial: Mission starten und Nachbarn zeigen
+                    game.startMission(scenario.startNodeId, scenario.targetNodeId);
+                    const neighbors = mapData.getNeighbors(scenario.startNodeId);
+                    mapView.renderNeighbors(neighbors, (clickedId) => {
+                        game.moveToNode(clickedId);
+                    });
+                }
+            );
         });
     });
 

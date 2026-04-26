@@ -23,6 +23,8 @@ class Game {
         this._stateChangeCallbacks  = [];
         this._positionCallbacks     = [];
         this._targetReachedCallbacks = [];
+        this._firstMoveCallbacks     = [];
+        this._firstMoveFired = false;
         this._animFrameId = null;
     }
 
@@ -63,6 +65,11 @@ class Game {
         this._targetReachedCallbacks.forEach(cb => cb(this._state.targetPubNodeId));
     }
 
+    /** Callback für den allerersten erfolgreichen Zug. */
+    onFirstMove(callback) {
+        if (typeof callback === 'function') this._firstMoveCallbacks.push(callback);
+    }
+
     // ----------------------------------------------------------------
     //  Mission
     // ----------------------------------------------------------------
@@ -76,8 +83,8 @@ class Game {
             moveCounter: 0,
             targetPubNodeId: String(targetNodeId)
         };
-        console.log('🎯 MISSION GESTARTET! Ziel-ID gesetzt auf:', this._state.targetPubNodeId, '| Typ:', typeof this._state.targetPubNodeId);
-        console.log('🏁 Start-ID:', this._state.currentPlayerNodeId, '| Typ:', typeof this._state.currentPlayerNodeId);
+        this._firstMoveFired = false;
+        console.log('🎯 MISSION GESTARTET! Ziel-ID gesetzt auf:', this._state.targetPubNodeId);
         this._notify();
     }
 
@@ -137,6 +144,12 @@ class Game {
                 this._state.isMoving = false;
                 this._state.moveCounter++;
 
+                // Erster Zug → Tutorial-Fade-out auslösen
+                if (!this._firstMoveFired) {
+                    this._firstMoveFired = true;
+                    this._firstMoveCallbacks.forEach(cb => cb());
+                }
+
                 console.log('--- ANIMATION BEENDET ---');
                 console.log('Angekommen auf Knoten:', String(this._state.currentPlayerNodeId), '| Typ:', typeof this._state.currentPlayerNodeId);
                 console.log('Gesuchtes Ziel ist:   ', String(this._state.targetPubNodeId), '| Typ:', typeof this._state.targetPubNodeId);
@@ -152,15 +165,15 @@ class Game {
                 let arrived = idA === idB;
                 console.log('ID-Vergleich:', idA, '===', idB, '->', arrived);
 
-                // Sicherheitsnetz: 15m Proximity-Check
+                // Sicherheitsnetz: 50m Proximity-Check
                 if (!arrived && this._state.targetPubNodeId) {
                     const playerNode = this._mapData.getNode(this._state.currentPlayerNodeId);
                     const targetNode = this._mapData.getNode(this._state.targetPubNodeId);
                     if (playerNode && targetNode) {
                         const dist = this._haversine(playerNode, targetNode);
                         console.log('ID-Match fehlgeschlagen. Distanz zum Ziel:', dist.toFixed(1), 'Meter');
-                        if (dist < 15) {
-                            console.log('✅ PROXIMITY TRIGGER! Unter 15m → Ziel erreicht.');
+                        if (dist < 50) {
+                            console.log('✅ PROXIMITY TRIGGER! Unter 50m → Ziel erreicht.');
                             arrived = true;
                         }
                     } else {

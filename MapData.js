@@ -282,6 +282,64 @@ class MapData {
         if (connected.length === 0) return null;
         return connected[Math.floor(Math.random() * connected.length)];
     }
+
+    /**
+     * Erzeugt ein Tutorial-Szenario: POI als Ziel, Startknoten 100-200m entfernt.
+     * @returns {{ startNodeId, targetNodeId, poiName, startCoords, targetCoords }|null}
+     */
+    spawnTutorialScenario() {
+        if (this._pubs.length === 0) return null;
+
+        // Erreichbare Kreuzungen
+        const connected = Array.from(this._macroGraph.entries())
+            .filter(([, edges]) => edges.length > 0)
+            .map(([id]) => id);
+        if (connected.length === 0) return null;
+
+        // Zufälligen POI wählen und auf nächste Kreuzung snappen
+        const shuffledPubs = [...this._pubs].sort(() => Math.random() - 0.5);
+
+        for (const poi of shuffledPubs) {
+            // Snap POI auf nächste erreichbare Kreuzung
+            let snapId = null, snapDist = Infinity;
+            connected.forEach(id => {
+                const nd = this._nodes.get(id);
+                if (!nd) return;
+                const d = this._haversine(poi, nd);
+                if (d < snapDist) { snapDist = d; snapId = id; }
+            });
+            if (!snapId) continue;
+
+            const targetNode = this._nodes.get(snapId);
+
+            // Kandidaten für den Start: Kreuzungen im Umkreis 100-200m vom Ziel
+            const candidates = connected.filter(id => {
+                if (id === snapId) return false;
+                const nd = this._nodes.get(id);
+                if (!nd) return false;
+                const d = this._haversine(targetNode, nd);
+                return d >= 100 && d <= 200;
+            });
+
+            if (candidates.length === 0) continue;
+
+            const startId = candidates[Math.floor(Math.random() * candidates.length)];
+            const startNode = this._nodes.get(startId);
+            const poiName = poi.tags?.name || 'Unbekannte Gaststätte';
+
+            console.log(`MapData: Tutorial-Szenario → Start ${startId}, Ziel ${snapId} ("${poiName}")`);
+
+            return {
+                startNodeId: startId,
+                targetNodeId: snapId,
+                poiName,
+                startCoords: [startNode.lat, startNode.lon],
+                targetCoords: [targetNode.lat, targetNode.lon]
+            };
+        }
+
+        return null;
+    }
 }
 
 export { MapData };
