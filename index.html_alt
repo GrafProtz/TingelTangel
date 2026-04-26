@@ -163,36 +163,58 @@
         }
 
         function moveToNode(nodeId, isInitial = false) {
-            if (!gameActive && !isInitial) return;
-            
-            const node = nodesData[nodeId];
-            if (!node) return;
+    if (!gameActive && !isInitial) return;
+    
+    const node = nodesData[nodeId];
+    if (!node) return;
 
-            if (!isInitial) {
-                budget -= 10;
-                moveCounter++;
-                updateHUD();
-                if (budget <= 0) return gameOver();
+    if (!isInitial) {
+        budget -= 10;
+        moveCounter++;
+        
+        // --- DIE VERLORENE TUTORIAL-LOGIK ---
+        let hudText = `GUTHABEN: ${budget} €`;
+        if (moveCounter >= 3 && targetName) hudText += ` | ${targetName} besuchen`;
+        document.getElementById('hud-container').innerText = hudText;
+
+        if (moveCounter === 3) {
+            const container = document.getElementById('tutorial-container');
+            container.innerHTML += "<br><br><strong style='color:#facc15;'>Besuch die Gaststätte, vielleicht erfährst du dort, wie du schnell an Geld kommen kannst.</strong>";
+            container.style.display = 'block';
+
+            // DYNAMISCHE KAMERAFAHRT (Der "Wow"-Effekt)
+            if (FIXED_PUB_LOCATION && playerMarker) {
+                let bounds = L.latLngBounds([playerMarker.getLatLng(), FIXED_PUB_LOCATION]);
+                map.fitBounds(bounds, { padding: [100, 100], animate: true, duration: 1.5 });
             }
-
-            currentPlayerNodeId = nodeId;
-            const coords = [node.lat, node.lon];
-
-            if (!playerMarker) {
-                playerMarker = L.marker(coords, {
-                    icon: L.divIcon({ className: 'player-marker', html: '<div class="player-dot"></div>', iconSize: [20, 20] }),
-                    zIndexOffset: 1000
-                }).addTo(map);
-            } else {
-                playerMarker.setLatLng(coords);
-            }
-
-            map.panTo(coords);
-            updateNeighbors(nodeId);
-            evaluateGameState();
-
-            if (isInitial) showTutorial("Mission gestartet", "Bewege dich zu den grünen Knotenpunkten.");
         }
+
+        if (moveCounter === 7) {
+            document.getElementById('tutorial-container').style.display = 'none';
+        }
+        
+        if (budget <= 0) return gameOver();
+    }
+
+    currentPlayerNodeId = nodeId;
+    const coords = [node.lat, node.lon];
+
+    if (!playerMarker) {
+        createPlayerMarker(coords);
+    } else {
+        playerMarker.setLatLng(coords);
+    }
+
+    // Kamera-Verhalten
+    if (isInitial) {
+        map.setView(coords, 19);
+    } else if (moveCounter !== 3) { // Nicht panen, wenn wir gerade die Übersichtsfahrt bei Schritt 3 machen
+        map.panTo(coords);
+    }
+
+    updateNeighbors(nodeId);
+    evaluateGameState();
+}
 
         function updateNeighbors(nodeId) {
             neighborMarkers.forEach(m => map.removeLayer(m));
