@@ -28,7 +28,7 @@ class MapData {
         const s = coords[0] - range, w = coords[1] - range;
         const n = coords[0] + range, e = coords[1] + range;
 
-        const query = `[out:json][timeout:25];(way["highway"](${s},${w},${n},${e});node["amenity"~"pub|bar"](${s},${w},${n},${e});way["amenity"~"pub|bar"](${s},${w},${n},${e}););(._;>;);out body;`;
+        const query = `[out:json][timeout:25];(way["highway"](${s},${w},${n},${e});node["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});way["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e}););(._;>;);out body;`;
 
         try {
             console.log('MapData: Starte Overpass-Abfrage …');
@@ -63,12 +63,12 @@ class MapData {
                 const nd = { ...el, id: safeId };
                 this._nodes.set(safeId, nd);
                 this._addToSpatialIndex(nd);
-                if (el.tags?.amenity === 'pub' || el.tags?.amenity === 'bar') {
+                if (el.tags?.amenity === 'pub' || el.tags?.amenity === 'bar' || el.tags?.amenity === 'restaurant') {
                     this._pubs.push(nd);
                 }
             } else if (el.type === 'way') {
                 this._ways.set(safeId, el);
-                if (el.tags?.amenity === 'pub' || el.tags?.amenity === 'bar') {
+                if (el.tags?.amenity === 'pub' || el.tags?.amenity === 'bar' || el.tags?.amenity === 'restaurant') {
                     const first = this._nodes.get(String(el.nodes[0]));
                     if (first) this._pubs.push({ ...el, lat: first.lat, lon: first.lon, id: safeId });
                 }
@@ -226,10 +226,61 @@ class MapData {
         return [...this._pubs];
     }
 
+    /**
+     * Findet den nächsten POI relativ zu einem Startknoten und snappt
+     * ihn auf die nächste erreichbare Kreuzung im Makro-Graphen.
+     * Gibt { poiData, graphNodeId, snapCoords } zurück oder null.
+     */
+    getNearestPOI(startNodeId) {
+        const start = this._nodes.get(String(startNodeId));
+        if (!start || this._pubs.length === 0) return null;
+
+        // Nur Kreuzungen mit echten Nachbarn kommen als Snap-Ziele in Frage
+        const reachable = Array.from(this._macroGraph.entries())
+            .filter(([, edges]) => edges.length > 0)
+            .map(([id]) => id);
+
+        let bestPoi = null, bestDist = Infinity;
+
+        this._pubs.forEach(poi => {
+            if (String(poi.id) === String(startNodeId)) return;
+            const d = this._haversine(start, poi);
+            if (d > 50 && d < bestDist) {
+                bestDist = d;
+                bestPoi = poi;
+            }
+        });
+
+        if (!bestPoi) return null;
+
+        // Snap auf die nächste erreichbare Kreuzung
+        let snapId = null, snapDist = Infinity;
+        reachable.forEach(id => {
+            const nd = this._nodes.get(id);
+            if (!nd) return;
+            const d = this._haversine(bestPoi, nd);
+            if (d < snapDist) { snapDist = d; snapId = id; }
+        });
+
+        if (!snapId) return null;
+
+        const snapNode = this._nodes.get(snapId);
+        return {
+            poiData: bestPoi,
+            graphNodeId: snapId,
+            snapCoords: [snapNode.lat, snapNode.lon]   // Exakte Graph-Koordinaten
+        };
+    }
+
+    /**
+     * Gibt einen zufälligen Knoten zurück, der mindestens einen Nachbarn hat.
+     */
     getRandomIntersectionNode() {
-        const keys = Array.from(this._macroGraph.keys());
-        if (keys.length === 0) return null;
-        return keys[Math.floor(Math.random() * keys.length)];
+        const connected = Array.from(this._macroGraph.entries())
+            .filter(([, edges]) => edges.length > 0)
+            .map(([id]) => id);
+        if (connected.length === 0) return null;
+        return connected[Math.floor(Math.random() * connected.length)];
     }
 }
 

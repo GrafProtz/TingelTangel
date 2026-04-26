@@ -16,7 +16,8 @@ class MapView {
 
         this._playerMarker    = null;
         this._neighborMarkers = [];
-        this._ghostPath       = null;    // Vorschau-Polyline bei Hover
+        this._ghostPath       = null;
+        this._targetMarker    = null;
     }
 
     // ----------------------------------------------------------------
@@ -152,6 +153,64 @@ class MapView {
             c.innerHTML = `<h2>${title}</h2><p>${message}</p>`;
             c.style.display = 'block';
         }
+    }
+
+    hideNotification() {
+        const c = document.getElementById('tutorial-container');
+        if (c) c.style.display = 'none';
+    }
+
+    // ----------------------------------------------------------------
+    //  Ziel-Marker (POI)
+    // ----------------------------------------------------------------
+
+    /** Rendert das Missions-Ziel als Bierglas-Icon auf der Karte. */
+    renderTarget(poiNode) {
+        if (this._targetMarker) this._map.removeLayer(this._targetMarker);
+
+        const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='36' height='36'>`
+            + `<g stroke='#333' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'>`
+            + `<path fill='none' d='M16 9h2.5a2.5 2.5 0 0 1 2.5 2.5v3a2.5 2.5 0 0 1-2.5 2.5H16'/>`
+            + `<path fill='#FFD700' d='M6 6h10v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6z'/>`
+            + `<path fill='none' d='M9 8v9M13 8v9'/>`
+            + `<path fill='#FFF' d='M5 6c0-1.5 1.5-2.5 3-2.5 1 0 1.5.5 2.5.5s1.5-.5 2.5-.5c1.5 0 3 1 3 2.5 0 1-1 1.5-1 2.5H6c0-1-1-1.5-1-2.5z'/>`
+            + `</g></svg>`;
+
+        this._targetMarker = L.marker([poiNode.lat, poiNode.lon], {
+            icon: L.divIcon({
+                className: 'target-marker',
+                html: svg,
+                iconSize: [36, 36],
+                iconAnchor: [18, 18]
+            }),
+            zIndexOffset: 900
+        }).addTo(this._map);
+    }
+
+    // ----------------------------------------------------------------
+    //  Interaktions-Overlay (Kneipen-Dialog)
+    // ----------------------------------------------------------------
+
+    /**
+     * Zeigt den Kneipen-Dialog an und bindet die Optionen.
+     * @param {Function} onSelectCb - Wird mit 'A','B','C','D' aufgerufen
+     */
+    showInteractionOverlay(onSelectCb) {
+        const container = document.getElementById('options-container');
+        if (!container) return;
+        container.style.display = 'block';
+
+        const buttons = container.querySelectorAll('.option-btn');
+        const options = ['A', 'B', 'C', 'D'];
+        buttons.forEach((btn, i) => {
+            // Alte Listener entfernen via cloneNode
+            const fresh = btn.cloneNode(true);
+            btn.parentNode.replaceChild(fresh, btn);
+            fresh.addEventListener('click', () => {
+                container.style.display = 'none';
+                onSelectCb(options[i]);
+            });
+        });
     }
 
     onMapReady(callback) {

@@ -15,42 +15,61 @@ async function initApp() {
     const mapView = new MapView('map');
     const game    = new Game(mapData);
 
-    // ----- Frame-genaue Positions-Updates (während der Animation) -----
+    // Missions-Kontext (wird beim Start befüllt)
+    let missionPOI = null;
+
+    // ----- Frame-genaue Positions-Updates -----
     game.onPositionUpdate((lat, lon, budget) => {
         mapView.updatePlayerPosition([lat, lon]);
         mapView.updateHUD(`GUTHABEN: ${budget} €`);
     });
 
-    // ----- Logische State-Changes (Ankunft, Start, Game-Over) -----
+    // ----- Logische State-Changes -----
     game.onStateChange((state) => {
-        // Vor dem Spielstart: nichts tun
         if (state.currentPlayerNodeId === null) return;
-
-        // Während der Bewegung: Nachbarn ausblenden, kein Re-Render
         if (state.isMoving) {
             mapView.renderNeighbors([], () => {});
             return;
         }
 
-        // Spieler an Zielkreuzung setzen
         const node = mapData.getNode(state.currentPlayerNodeId);
         if (node) mapView.renderPlayer([node.lat, node.lon]);
 
-        // Nachbarn laden (getNeighbors liefert jetzt Objekte mit edgeData)
         const neighbors = mapData.getNeighbors(state.currentPlayerNodeId);
         mapView.renderNeighbors(neighbors, (clickedId) => {
             game.moveToNode(clickedId);
         });
 
-        // HUD
         let hud = `GUTHABEN: ${state.budget} €`;
-        if (state.moveCounter >= 3) hud += ' | Ziel finden!';
+        const poiName = missionPOI?.poiData?.tags?.name;
+        if (poiName) hud += ` | Ziel: ${poiName}`;
         mapView.updateHUD(hud);
 
-        // Game Over
         if (!state.gameActive && state.budget <= 0) {
             mapView.showNotification('MISSION GESCHEITERT', 'Dein Budget ist aufgebraucht.');
         }
+    });
+
+    // ----- Ziel erreicht → Kneipen-Dialog -----
+    game.onTargetReached((targetNodeId) => {
+        const name = missionPOI?.poiData?.tags?.name || 'Unbekannte Gaststätte';
+        mapView.showNotification('ANGEKOMMEN', `Du hast "${name}" erreicht!`);
+
+        mapView.showInteractionOverlay((option) => {
+            // Optionen-Logik
+            const state = game.getState();
+            let msg = '';
+            if (option === 'A') {
+                msg = "Der Barkeeper flüstert: 'Die Ware bewegt sich Richtung Osten.'";
+            } else if (option === 'B') {
+                msg = 'Niemand will mit dir reden.';
+            } else if (option === 'C') {
+                msg = 'Ein Informant markiert dir das nächste Versteck!';
+            } else {
+                msg = 'Du verlässt die Gaststätte unauffällig.';
+            }
+            mapView.showNotification('Info', msg);
+        });
     });
 
     // ----- Start-Button -----
@@ -59,28 +78,44 @@ async function initApp() {
         if (idx === '') return;
 
         const city = CITIES[idx];
+        mapView.showNotification('LADEN …', `Lade Daten für ${city.name} …`);
         await mapData.loadCityData(city.coords);
 
-        const startId  = mapData.getRandomIntersectionNode();
-        const pubs     = mapData.getPubs();
-        const targetId = pubs.length > 0
-            ? String(pubs[Math.floor(Math.random() * pubs.length)].id)
-            : mapData.getRandomIntersectionNode();
-
-        if (!startId || !targetId) {
+        const startId = mapData.getRandomIntersectionNode();
+        if (!startId) {
             alert('Keine begehbaren Wege gefunden.');
             return;
         }
 
+        // POI-System: Nächste Gaststätte finden und auf den Graphen snappen
+        missionPOI = mapData.getNearestPOI(startId);
+        const targetId = missionPOI
+            ? missionPOI.graphNodeId
+            : mapData.getRandomIntersectionNode();
+
         mapView.setUIState('intro-overlay', false);
         mapView.setUIState('back-to-menu', true);
+        mapView.hideNotification();
 
+        // Ziel-Icon auf den GRAPH-KNOTEN rendern (nicht auf die rohen POI-Koordinaten)
+        const targetNode = mapData.getNode(targetId);
+        if (targetNode) mapView.renderTarget(targetNode);
+
+        // Kamera zum Start, Mission beginnen, und sofort Nachbarn zeigen
         const startNode = mapData.getNode(startId);
         mapView.focusLocation([startNode.lat, startNode.lon]);
-        mapView.onMapReady(() => game.startMission(startId, targetId));
+        mapView.onMapReady(() => {
+            game.startMission(startId, targetId);
+
+            // Sofort Nachbarn rendern (verhindert "eingefrorenen" Start)
+            const neighbors = mapData.getNeighbors(startId);
+            mapView.renderNeighbors(neighbors, (clickedId) => {
+                game.moveToNode(clickedId);
+            });
+        });
     });
 
-    // ----- Hauptmenü-Button -----
+    // ----- Hauptmenü -----
     document.getElementById('back-to-menu')?.addEventListener('click', () => {
         location.reload();
     });
