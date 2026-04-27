@@ -45,6 +45,16 @@ async function initApp() {
             game.moveToNode(clickedId);
         });
 
+        // ----- Rechte Infotafel aktualisieren -----
+        const infoLines = [];
+        if (state.radarUnlocked) {
+            infoLines.push(`Du kannst dir den Standort der Polizeistationen in deiner Umgebung für fünf Sekunden anschauen, wenn du "P" drückst. Das kannst du alle fünf Minuten einmal machen.`);
+        }
+        if (state.showPubCooldownText) {
+            infoLines.push(`Du kannst erst wieder in drei Minuten die Kneipe besuchen.`);
+        }
+        mapView.updateInfoPanel('STADT-INFOS', infoLines);
+
         let hud = `GUTHABEN: ${state.budget} €`;
         const poiName = missionPOI?.poiData?.tags?.name;
         if (poiName) hud += ` | Ziel: ${poiName}`;
@@ -56,29 +66,61 @@ async function initApp() {
     });
 
     // ----- Ziel erreicht → Kneipen-Dialog -----
-    game.onTargetReached((targetNodeId) => {
+    game.onTargetReached((targetNodeId, optionsData, riskData) => {
         const name = missionPOI?.poiData?.tags?.name || 'Unbekannte Gaststätte';
 
         // 1. Visuelles Feedback: Icon pulsiert
         mapView.highlightTarget();
         mapView.showNotification('ANGEKOMMEN', `Du hast "${name}" erreicht!`);
 
-        // 2. Verzögerung, damit der Spieler die Animation wahrnimmt
+        // 2. Verzögerung, dann Dialog mit dynamischen Risikodaten
         setTimeout(() => {
-            mapView.showInteractionOverlay((option) => {
-                let msg = '';
-                if (option === 'A') {
-                    msg = "Der Barkeeper flüstert: 'Die Ware bewegt sich Richtung Osten.'";
-                } else if (option === 'B') {
-                    msg = 'Niemand will mit dir reden.';
-                } else if (option === 'C') {
-                    msg = 'Ein Informant markiert dir das nächste Versteck!';
-                } else {
-                    msg = 'Du verlässt die Gaststätte unauffällig.';
+            mapView.showInteractionOverlay(optionsData, riskData, (key, opt) => {
+                const msg = game.handleInteractionDecision(key, opt);
+                
+                // Overlay schließen und UI reaktivieren
+                mapView.hideInteractionOverlay();
+                
+                // Nachbarn neu rendern, damit Steuerung sofort wieder da ist
+                const currentNode = mapData.getNode(game.getState().currentPlayerNodeId);
+                if (currentNode) {
+                    mapView.renderNeighbors(mapData.getNeighbors(currentNode.id), (clickedId) => {
+                        game.moveToNode(clickedId);
+                    });
                 }
-                mapView.showNotification('Info', msg);
+
+                mapView.showNotification('Ergebnis', msg);
             });
         }, 1200);
+    });
+
+    // ----- Hotkey: Polizei-Radar (P) -----
+    document.addEventListener('keydown', (e) => {
+        if (e.key.toLowerCase() !== 'p') return;
+
+        const result = game.triggerRadar();
+
+        if (result === null) {
+            // Noch nicht freigeschaltet → keine Meldung
+            return;
+        }
+        if (result === 'cooldown') {
+            const remaining = Math.ceil((300_000 - (Date.now() - game.getState().lastRadarTime)) / 1000);
+            mapView.showNotification('COOLDOWN', `📡 Radar lädt noch auf! (${remaining} Sek.)`);
+            return;
+        }
+
+        // Aktuelle Spielerposition merken für Rückflug
+        const playerNode = mapData.getNode(game.getState().currentPlayerNodeId);
+        const playerCoords = playerNode ? [playerNode.lat, playerNode.lon] : null;
+
+        mapView.showNotification('RADAR', `📡 ${result.length} Polizeiwache(n) aufgespürt!`);
+        mapView.showPoliceRadar(result).then(() => {
+            // Nach 5 Sek.: Kamera zurück zum Spieler
+            if (playerCoords) {
+                mapView.focusLocation(playerCoords);
+            }
+        });
     });
 
     // ----- Start-Button -----
@@ -88,6 +130,7 @@ async function initApp() {
 
         const city = CITIES[idx];
         mapView.showNotification('LADEN …', `Lade Daten für ${city.name} …`);
+        mapData.cityName = city.name;
         await mapData.loadCityData(city.coords);
 
         // Tutorial-Szenario erzeugen (100-200m Abstand)

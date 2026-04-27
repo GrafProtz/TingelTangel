@@ -18,6 +18,66 @@ class MapView {
         this._neighborMarkers = [];
         this._ghostPath       = null;
         this._targetMarker    = null;
+        this._radarMarkers    = [];
+    }
+
+    // ----------------------------------------------------------------
+    //  Polizei-Radar
+    // ----------------------------------------------------------------
+
+    /**
+     * Zeigt rote Kreise um alle Polizeistationen für 5 Sekunden.
+     * Zoomt die Kamera heraus, um alle Stationen sichtbar zu machen.
+     * @param {Array} policeStations - [{ lat, lon }, ...]
+     * @returns {Promise} Resolved nach 5 Sek. wenn die Kreise verschwinden
+     */
+    showPoliceRadar(policeStations) {
+        // Alte Radar-Marker entfernen
+        this._radarMarkers.forEach(c => this._map.removeLayer(c));
+        this._radarMarkers = [];
+
+        if (policeStations.length === 0) return Promise.resolve();
+
+        // Bounds berechnen und Kamera herauszoomen
+        const latLngs = policeStations.map(s => [s.lat, s.lon]);
+        const bounds = L.latLngBounds(latLngs);
+        this._map.flyToBounds(bounds, { duration: 1.5, padding: [20, 20] });
+
+        // Blaulicht-Icon
+        const sirenIcon = L.divIcon({
+            html: '<div class="police-siren"></div>',
+            className: '',
+            iconSize: [8, 8],
+            iconAnchor: [4, 4]
+        });
+
+        // Rote Kreise + Sirenen-Marker rendern
+        policeStations.forEach(station => {
+            const circle = L.circle([station.lat, station.lon], {
+                radius: 150,
+                color: '#ef4444',
+                fillColor: '#ef4444',
+                fillOpacity: 0.25,
+                weight: 2,
+                dashArray: '6 4'
+            }).addTo(this._map);
+            this._radarMarkers.push(circle);
+
+            const siren = L.marker([station.lat, station.lon], {
+                icon: sirenIcon,
+                interactive: false
+            }).addTo(this._map);
+            this._radarMarkers.push(siren);
+        });
+
+        // Nach 5 Sekunden alles entfernen
+        return new Promise(resolve => {
+            setTimeout(() => {
+                this._radarMarkers.forEach(c => this._map.removeLayer(c));
+                this._radarMarkers = [];
+                resolve();
+            }, 5000);
+        });
     }
 
     // ----------------------------------------------------------------
@@ -222,25 +282,44 @@ class MapView {
     // ----------------------------------------------------------------
 
     /**
-     * Zeigt den Kneipen-Dialog an und bindet die Optionen.
+     * Zeigt den Kneipen-Dialog an und befüllt die Buttons dynamisch.
+     * @param {Object} optionsData - { A: { text, reward|cost, risk }, ... }
+     * @param {Object} riskData - { riskMalus, activeStations }
      * @param {Function} onSelectCb - Wird mit 'A','B','C','D' aufgerufen
      */
-    showInteractionOverlay(onSelectCb) {
+    showInteractionOverlay(optionsData, riskData, onSelectCb) {
         const container = document.getElementById('options-container');
         if (!container) return;
-        container.style.display = 'block';
 
+        // Text-Element befüllen
+        const textEl = document.getElementById('options-text');
+        if (textEl) {
+            textEl.innerHTML = 'Du hörst dich unauffällig um. Was tust du?';
+        }
+
+        // Buttons dynamisch befüllen
         const buttons = container.querySelectorAll('.option-btn');
-        const options = ['A', 'B', 'C', 'D'];
+        const keys = ['A', 'B', 'C', 'D'];
         buttons.forEach((btn, i) => {
-            // Alte Listener entfernen via cloneNode
-            const fresh = btn.cloneNode(true);
+            const key = keys[i];
+            const opt = optionsData[key];
+            if (!opt) return;
+
+            // Text EXAKT so wie er aus der Game.js kommt
+            const label = `${key}: ${opt.text}`;
+
+            // Alten Listener entfernen via cloneNode
+            const fresh = btn.cloneNode(false);
+            fresh.textContent = label;
+            fresh.className = btn.className;
             btn.parentNode.replaceChild(fresh, btn);
             fresh.addEventListener('click', () => {
                 container.style.display = 'none';
-                onSelectCb(options[i]);
+                onSelectCb(key, opt);
             });
         });
+
+        container.style.display = 'block';
     }
 
     // ----------------------------------------------------------------
@@ -267,6 +346,26 @@ class MapView {
         if (!panel) return;
         panel.style.display = 'none';
         panel.innerHTML = '';
+        this._map.invalidateSize({ animate: true });
+    }
+
+    /**
+     * Aktualisiert die rechte Infotafel mit permanenten Informationen.
+     * @param {string} title - Überschrift
+     * @param {Array} lines - Zeilen als Strings
+     */
+    updateInfoPanel(title, lines) {
+        const panel = document.getElementById('tutorial-container');
+        if (!panel) return;
+
+        let content = `<h2>${title}</h2>`;
+        lines.forEach(line => {
+            content += `<p style="margin:0 0 8px 0;line-height:1.4">${line}</p>`;
+        });
+
+        panel.innerHTML = content;
+        panel.style.display = 'block';
+        panel.classList.remove('fade-out');
         this._map.invalidateSize({ animate: true });
     }
 

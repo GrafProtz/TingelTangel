@@ -9,6 +9,8 @@ class MapData {
         this._nodes = new Map();      // Alle OSM-Nodes (auch Geometrie)
         this._ways  = new Map();
         this._pubs  = [];
+        this._policeStations = [];    // [{ lat, lon }, ...]
+        this.cityName = '';
 
         // Makro-Graph: Map<nodeId, Array<Edge>>
         // Edge = { to, path: [[lat,lon],...], distance }
@@ -28,7 +30,17 @@ class MapData {
         const s = coords[0] - range, w = coords[1] - range;
         const n = coords[0] + range, e = coords[1] + range;
 
-        const query = `[out:json][timeout:25];(way["highway"](${s},${w},${n},${e});node["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});way["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e}););(._;>;);out body;`;
+        // Straßen + Gaststätten + Polizei (node/way/relation, amenity+building)
+        const query = `[out:json][timeout:25];(
+            way["highway"](${s},${w},${n},${e});
+            node["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
+            way["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
+            node["amenity"="police"](${s},${w},${n},${e});
+            way["amenity"="police"](${s},${w},${n},${e});
+            relation["amenity"="police"](${s},${w},${n},${e});
+            way["building"="police"](${s},${w},${n},${e});
+            relation["building"="police"](${s},${w},${n},${e});
+        );(._;>;);out body center;`;
 
         try {
             console.log('MapData: Starte Overpass-Abfrage …');
@@ -53,27 +65,47 @@ class MapData {
         this._nodes.clear();
         this._ways.clear();
         this._pubs = [];
+        this._policeStations = [];
         this._spatialIndex.clear();
         this._macroGraph.clear();
 
         data.elements.forEach(el => {
             const safeId = String(el.id);
+            const amenity  = el.tags?.amenity;
+            const building = el.tags?.building;
+            const isPolice = (amenity === 'police' || building === 'police');
+            const isPub    = (amenity === 'pub' || amenity === 'bar' || amenity === 'restaurant');
 
             if (el.type === 'node') {
                 const nd = { ...el, id: safeId };
                 this._nodes.set(safeId, nd);
                 this._addToSpatialIndex(nd);
-                if (el.tags?.amenity === 'pub' || el.tags?.amenity === 'bar' || el.tags?.amenity === 'restaurant') {
-                    this._pubs.push(nd);
-                }
+                if (isPub) this._pubs.push(nd);
+                if (isPolice) this._policeStations.push({ lat: el.lat, lon: el.lon });
+
             } else if (el.type === 'way') {
                 this._ways.set(safeId, el);
-                if (el.tags?.amenity === 'pub' || el.tags?.amenity === 'bar' || el.tags?.amenity === 'restaurant') {
-                    const first = this._nodes.get(String(el.nodes[0]));
-                    if (first) this._pubs.push({ ...el, lat: first.lat, lon: first.lon, id: safeId });
+                // Center-Koordinaten aus "out center" oder Fallback auf ersten Knoten
+                const cLat = el.center?.lat ?? this._nodes.get(String(el.nodes?.[0]))?.lat;
+                const cLon = el.center?.lon ?? this._nodes.get(String(el.nodes?.[0]))?.lon;
+                if (isPub && cLat != null) {
+                    this._pubs.push({ ...el, lat: cLat, lon: cLon, id: safeId });
+                }
+                if (isPolice && cLat != null) {
+                    this._policeStations.push({ lat: cLat, lon: cLon });
+                }
+
+            } else if (el.type === 'relation') {
+                // Relations: Nur Center-Koordinaten nutzen
+                const cLat = el.center?.lat;
+                const cLon = el.center?.lon;
+                if (isPolice && cLat != null) {
+                    this._policeStations.push({ lat: cLat, lon: cLon });
                 }
             }
         });
+
+        console.log(`MapData: ${this._policeStations.length} Polizeistationen erfasst.`);
     }
 
     // ----------------------------------------------------------------
@@ -224,6 +256,42 @@ class MapData {
 
     getPubs() {
         return [...this._pubs];
+    }
+
+    /**
+     * Berechnet den Risiko-Aufschlag basierend auf der Nähe zu Polizeistationen.
+     * @param {Array} poiCoords - [lat, lon]
+     * @returns {{ riskMalus: number, activeStations: number }}
+     */
+    getPoliceRiskModifier(poiCoords) {
+        const MAX_RADIUS = 3000;             // Meter (3km für Großstädte)
+        const MAX_MALUS_PER_STATION = 30;    // Prozentpunkte bei 0m Distanz
+        const HARD_CAP = 40;                 // Maximaler Gesamt-Aufschlag
+        const DIMINISHING = [1.0, 0.5, 0.25]; // Gewichtung pro Station
+
+        const poi = { lat: poiCoords[0], lon: poiCoords[1] };
+
+        // Malus-Werte aller Stationen im Radius sammeln
+        const malusValues = [];
+        this._policeStations.forEach(station => {
+            const dist = this._haversine(poi, station);
+            if (dist <= MAX_RADIUS) {
+                const malus = MAX_MALUS_PER_STATION * (1 - dist / MAX_RADIUS);
+                malusValues.push(malus);
+            }
+        });
+
+        // Absteigend sortieren (nächste Wache = höchster Malus zuerst)
+        malusValues.sort((a, b) => b - a);
+
+        // Diminishing Returns anwenden (max. 3 Wachen berücksichtigt)
+        let total = 0;
+        for (let i = 0; i < Math.min(malusValues.length, DIMINISHING.length); i++) {
+            total += malusValues[i] * DIMINISHING[i];
+        }
+
+        const riskMalus = Math.round(Math.min(total, HARD_CAP));
+        return { riskMalus, activeStations: malusValues.length };
     }
 
     /**

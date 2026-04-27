@@ -15,9 +15,13 @@ class Game {
             budget: 300,
             currentPlayerNodeId: null,
             gameActive: false,
-            isMoving: false,          // Sperrt Eingaben während der Animation
+            isMoving: false,
             moveCounter: 0,
-            targetPubNodeId: null
+            targetPubNodeId: null,
+            radarUnlocked: false,
+            lastRadarTime: 0,
+            lastPubVisitTime: 0,
+            showPubCooldownText: false
         };
 
         this._stateChangeCallbacks  = [];
@@ -62,7 +66,24 @@ class Game {
     }
 
     _notifyTargetReached() {
-        this._targetReachedCallbacks.forEach(cb => cb(this._state.targetPubNodeId));
+        // Risiko-Daten berechnen
+        const targetNode = this._mapData.getNode(this._state.targetPubNodeId);
+        let riskData = { riskMalus: 0, activeStations: 0 };
+        if (targetNode) {
+            riskData = this._mapData.getPoliceRiskModifier([targetNode.lat, targetNode.lon]);
+        }
+
+        // Optionen mit dynamischem Risiko
+        const optionsData = {
+            A: { text: `Sprich mit dem Barkeeper. Wenn du ihm 50 Euro Trinkgeld gibst, erzählt er dir vielleicht, wie die Polizei in ${this._mapData.cityName || 'dieser Stadt'} organisiert ist.`,
+                 cost: 50, risk: 0 },
+            B: { text: 'Einbruch',       reward: 100, risk: Math.min(100, 45 + riskData.riskMalus) },
+            C: { text: 'Straßenraub',    reward: 300, risk: Math.min(100, 85 + riskData.riskMalus) },
+            D: { text: 'Nur Infos kaufen (Sicher)', cost: 10, risk: 0 }
+        };
+
+        console.log('\ud83d\udea8 Risiko-Daten:', riskData, 'Optionen:', optionsData);
+        this._targetReachedCallbacks.forEach(cb => cb(this._state.targetPubNodeId, optionsData, riskData));
     }
 
     /** Callback für den allerersten erfolgreichen Zug. */
@@ -81,7 +102,11 @@ class Game {
             gameActive: true,
             isMoving: false,
             moveCounter: 0,
-            targetPubNodeId: String(targetNodeId)
+            targetPubNodeId: String(targetNodeId),
+            radarUnlocked: false,
+            lastRadarTime: 0,
+            lastPubVisitTime: 0,
+            showPubCooldownText: false
         };
         this._firstMoveFired = false;
         console.log('🎯 MISSION GESTARTET! Ziel-ID gesetzt auf:', this._state.targetPubNodeId);
@@ -182,9 +207,17 @@ class Game {
                 }
 
                 if (arrived) {
-                    console.log('🍺 ZIEL ERREICHT! Callback wird gefeuert.');
-                    this._state.gameActive = false;
-                    this._notifyTargetReached();
+                    const cooldownMs = 180000; // 3 Minuten
+                    const timeSinceLastVisit = Date.now() - this._state.lastPubVisitTime;
+
+                    if (timeSinceLastVisit > cooldownMs) {
+                        console.log('🍺 ZIEL ERREICHT! Callback wird gefeuert.');
+                        this._state.gameActive = false;
+                        this._notifyTargetReached();
+                    } else {
+                        const remaining = Math.ceil((cooldownMs - timeSinceLastVisit) / 1000);
+                        console.log(`🍺 Ziel erreicht, aber Cooldown aktiv: ${remaining}s`);
+                    }
                 }
 
                 this._notify();
@@ -215,6 +248,83 @@ class Game {
             a[0] + (b[0] - a[0]) * segT,
             a[1] + (b[1] - a[1]) * segT
         ];
+    }
+
+    // ----------------------------------------------------------------
+    //  Radar & Items
+    // ----------------------------------------------------------------
+
+    /**
+     * Aktiviert das Polizei-Radar (5-Minuten-Cooldown).
+     * @returns {Array|string|null} Stationen, 'cooldown' oder null
+     */
+    triggerRadar() {
+        if (!this._state.radarUnlocked) return null;
+        const COOLDOWN = 300_000; // 5 Minuten
+        if (Date.now() - this._state.lastRadarTime < COOLDOWN) return 'cooldown';
+        this._state.lastRadarTime = Date.now();
+        this._notify();
+        return [...this._mapData._policeStations];
+    }
+
+    /**
+     * Verarbeitet die Entscheidung im Kneipen-Dialog.
+     * @param {string} key - A, B, C oder D
+     * @param {object} opt - Die gewählte Option { text, reward, risk, cost }
+     * @returns {string} Ergebnismeldung
+     */
+    handleInteractionDecision(key, opt) {
+        const roll = Math.random() * 100;
+        let msg = '';
+
+        if (key === 'A') {
+            if (this._state.radarUnlocked) {
+                msg = '📡 Du hast die Frequenz bereits!';
+            } else if (this._state.budget >= 50) {
+                this._state.budget -= 50;
+                this._state.radarUnlocked = true;
+                
+                const currentNode = this._mapData.getNode(this._state.currentPlayerNodeId);
+                const risk = this._mapData.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
+                const stations = risk.activeStations;
+                msg = `Der Barkeeper meint, dass hier ${stations} Polizeiwache(n) in der Umgebung sind.`;
+            } else {
+                msg = '❌ Nicht genug Geld! Du brauchst 50 €.';
+            }
+        } else if (key === 'D') {
+            const cost = opt.cost || 10;
+            if (this._state.budget >= cost) {
+                this._state.budget -= cost;
+                msg = `Du kaufst Infos für ${cost} €. Ein Tipp: "Halte dich vom Osten fern."`;
+            } else {
+                msg = '❌ Nicht genug Geld für Informationen.';
+            }
+        } else if (roll < opt.risk) {
+            const fine = Math.ceil(opt.reward * 0.5);
+            this._state.budget = Math.max(0, this._state.budget - fine);
+            msg = `🚨 ERWISCHT! Strafe: ${fine} €.`;
+        } else {
+            this._state.budget += opt.reward;
+            msg = `✅ Erfolg! Du kassierst ${opt.reward} € für "${opt.text}".`;
+        }
+
+        // Cooldown setzen und Steuerung reaktivieren
+        this._state.lastPubVisitTime = Date.now();
+        this._state.gameActive = true;
+        this._notify();
+
+        // UI-Timeouts für Cooldown-Text
+        setTimeout(() => {
+            this._state.showPubCooldownText = true;
+            this._notify();
+        }, 5000);
+
+        setTimeout(() => {
+            this._state.showPubCooldownText = false;
+            this._notify();
+        }, 180000);
+
+        return msg;
     }
 
     // ----------------------------------------------------------------
