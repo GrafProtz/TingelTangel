@@ -21,7 +21,10 @@ class Game {
             radarUnlocked: false,
             lastRadarTime: 0,
             lastPubVisitTime: 0,
-            showPubCooldownText: false
+            showPubCooldownText: false,
+            moveCount: 0,
+            infoMenuOpenUntilMove: -1,
+            isInfoMenuOpen: false
         };
 
         this._stateChangeCallbacks  = [];
@@ -106,7 +109,10 @@ class Game {
             radarUnlocked: false,
             lastRadarTime: 0,
             lastPubVisitTime: 0,
-            showPubCooldownText: false
+            showPubCooldownText: false,
+            moveCount: 0,
+            infoMenuOpenUntilMove: -1,
+            isInfoMenuOpen: false
         };
         this._firstMoveFired = false;
         console.log('🎯 MISSION GESTARTET! Ziel-ID gesetzt auf:', this._state.targetPubNodeId);
@@ -167,6 +173,16 @@ class Game {
             } else {
                 this._state.currentPlayerNodeId = String(targetId);
                 this._state.isMoving = false;
+                this._state.moveCount++;
+
+                // Info-Menü automatisch schließen nach X Zügen
+                if (this._state.isInfoMenuOpen && this._state.infoMenuOpenUntilMove !== -1) {
+                    if (this._state.moveCount >= this._state.infoMenuOpenUntilMove) {
+                        this._state.isInfoMenuOpen = false;
+                        this._state.infoMenuOpenUntilMove = -1;
+                    }
+                }
+
                 this._state.moveCounter++;
 
                 // Erster Zug → Tutorial-Fade-out auslösen
@@ -288,6 +304,9 @@ class Game {
                 const risk = this._mapData.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
                 const stations = risk.activeStations;
                 msg = `Der Barkeeper meint, dass hier ${stations} Polizeiwache(n) in der Umgebung sind.`;
+                
+                // Menü automatisch für neue Infos öffnen
+                this.triggerNewInfo();
             } else {
                 msg = '❌ Nicht genug Geld! Du brauchst 50 €.';
             }
@@ -325,6 +344,15 @@ class Game {
         }, 180000);
 
         return msg;
+    }
+
+    /**
+     * Öffnet das Info-Menü automatisch für die nächsten 5 Züge.
+     */
+    triggerNewInfo() {
+        this._state.isInfoMenuOpen = true;
+        this._state.infoMenuOpenUntilMove = this._state.moveCount + 5;
+        this._notify();
     }
 
     // ----------------------------------------------------------------

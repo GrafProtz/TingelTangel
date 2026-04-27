@@ -21,17 +21,25 @@ async function initApp() {
     // ----- Frame-genaue Positions-Updates -----
     game.onPositionUpdate((lat, lon, budget) => {
         mapView.updatePlayerPosition([lat, lon]);
-        mapView.updateHUD(`GUTHABEN: ${budget} €`);
+        mapView.updateBudget(`Budget: ${budget} €`);
     });
 
     // ----- Tutorial-Panel ausblenden nach erstem Zug -----
     game.onFirstMove(() => {
         mapView.fadeTutorialPanelOut();
     });
-
+    // ----- Info-Toggle-Button -----
+    document.getElementById('info-toggle-btn')?.addEventListener('click', () => {
+        game._state.isInfoMenuOpen = !game._state.isInfoMenuOpen;
+        game._notify();
+    });
     // ----- Logische State-Changes -----
     game.onStateChange((state) => {
         if (state.currentPlayerNodeId === null) return;
+        
+        // Menü-Status synchronisieren
+        mapView.toggleInfoMenu(state.isInfoMenuOpen);
+
         if (state.isMoving) {
             mapView.renderNeighbors([], () => {});
             return;
@@ -40,25 +48,54 @@ async function initApp() {
         const node = mapData.getNode(state.currentPlayerNodeId);
         if (node) mapView.renderPlayer([node.lat, node.lon]);
 
+        const targetNode = mapData.getNode(state.targetPubNodeId);
+        if (targetNode) {
+            const isCooldown = (Date.now() - state.lastPubVisitTime < 180000);
+            mapView.renderTarget(targetNode, isCooldown);
+        }
+
         const neighbors = mapData.getNeighbors(state.currentPlayerNodeId);
         mapView.renderNeighbors(neighbors, (clickedId) => {
             game.moveToNode(clickedId);
         });
 
         // ----- Rechte Infotafel aktualisieren -----
-        const infoLines = [];
+        const targetName = missionPOI?.poiData?.tags?.name || 'Unbekannte Gaststätte';
+        
+        // 1. Permanente Karten
+        const infoCards = [
+            { title: 'AKTUELLES ZIEL', body: targetName },
+            { title: 'AUFGABE', body: 'Erreiche die Kneipe, um Informationen zu sammeln.' },
+            { title: 'STEUERUNG', body: 'Klicke auf die grünen Punkte, um dich durch die Stadt zu bewegen.' }
+        ];
+
+        // 2. Event-basierte Karten (unten anhängen)
         if (state.radarUnlocked) {
-            infoLines.push(`Du kannst dir den Standort der Polizeistationen in deiner Umgebung für fünf Sekunden anschauen, wenn du "P" drückst. Das kannst du alle fünf Minuten einmal machen.`);
+            infoCards.push({ 
+                title: 'RADAR AKTIV', 
+                body: 'Du kannst dir den Standort der Polizeistationen für 5 Sek. anschauen (Taste "P").' 
+            });
         }
         if (state.showPubCooldownText) {
-            infoLines.push(`Du kannst erst wieder in drei Minuten die Kneipe besuchen.`);
+            infoCards.push({ 
+                title: 'HINWEIS', 
+                body: 'Du kannst erst wieder in drei Minuten die Kneipe besuchen.' 
+            });
         }
-        mapView.updateInfoPanel('STADT-INFOS', infoLines);
 
-        let hud = `GUTHABEN: ${state.budget} €`;
-        const poiName = missionPOI?.poiData?.tags?.name;
-        if (poiName) hud += ` | Ziel: ${poiName}`;
-        mapView.updateHUD(hud);
+        // Karten rendern
+        const panel = document.getElementById('info-panel');
+        if (panel) {
+            panel.innerHTML = '';
+            infoCards.forEach(card => {
+                const cardEl = document.createElement('div');
+                cardEl.className = 'info-card';
+                cardEl.innerHTML = `<div class="info-header">${card.title}</div><div class="info-body">${card.body}</div>`;
+                panel.appendChild(cardEl);
+            });
+        }
+
+        mapView.updateBudget(`Budget: ${state.budget} €`);
 
         if (!state.gameActive && state.budget <= 0) {
             mapView.showNotification('MISSION GESCHEITERT', 'Dein Budget ist aufgebraucht.');
@@ -77,18 +114,7 @@ async function initApp() {
         setTimeout(() => {
             mapView.showInteractionOverlay(optionsData, riskData, (key, opt) => {
                 const msg = game.handleInteractionDecision(key, opt);
-                
-                // Overlay schließen und UI reaktivieren
                 mapView.hideInteractionOverlay();
-                
-                // Nachbarn neu rendern, damit Steuerung sofort wieder da ist
-                const currentNode = mapData.getNode(game.getState().currentPlayerNodeId);
-                if (currentNode) {
-                    mapView.renderNeighbors(mapData.getNeighbors(currentNode.id), (clickedId) => {
-                        game.moveToNode(clickedId);
-                    });
-                }
-
                 mapView.showNotification('Ergebnis', msg);
             });
         }, 1200);
@@ -144,6 +170,9 @@ async function initApp() {
 
             mapView.setUIState('intro-overlay', false);
             mapView.setUIState('back-to-menu', true);
+            mapView.setUIState('info-toggle-btn', true);
+            mapView.setUIState('budget-panel', true);
+            
             mapView.hideNotification();
             const tn = mapData.getNode(targetId); if (tn) mapView.renderTarget(tn);
             const sn = mapData.getNode(startId);
@@ -161,6 +190,9 @@ async function initApp() {
 
         mapView.setUIState('intro-overlay', false);
         mapView.setUIState('back-to-menu', true);
+        mapView.setUIState('info-toggle-btn', true);
+        mapView.setUIState('budget-panel', true);
+        
         mapView.hideNotification();
 
         // Spieler und Ziel rendern

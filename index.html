@@ -46,10 +46,13 @@
 
     <!-- In-Game UI -->
     <button id="back-to-menu" style="display: none;">← Hauptmenü</button>
+    <button id="info-toggle-btn" style="display: none;"><<</button>
     
-    <div id="hud-container" class="hud-bottom" style="display: none;">
-        GUTHABEN: 300 €
+    <div id="budget-panel" style="display: none;">
+        Budget: 0 €
     </div>
+    
+    <div id="info-panel"></div>
 
     <div id="options-container" style="display: none;">
         <h2 style="color: #facc15; margin-top: 0;">In der Kneipe</h2>
@@ -61,10 +64,8 @@
             <button class="option-btn">D: Wieder gehen</button>
         </div>
     </div>
-    <!-- Flex-Container: Karte + Tutorial-Panel -->
     <div id="app-container">
         <div id="map"></div>
-        <div id="tutorial-container" style="display: none;"></div>
     </div>
     
     <!-- Pub Overlay (Screen Space) -->

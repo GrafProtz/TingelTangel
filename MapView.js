@@ -194,8 +194,8 @@ class MapView {
     //  HUD & UI
     // ----------------------------------------------------------------
 
-    updateHUD(text) {
-        const hud = document.getElementById('hud-container');
+    updateBudget(text) {
+        const hud = document.getElementById('budget-panel');
         if (hud) {
             hud.innerText = text;
             hud.style.display = 'block';
@@ -208,16 +208,15 @@ class MapView {
     }
 
     showNotification(title, message) {
-        const c = document.getElementById('tutorial-container');
+        const c = document.getElementById('info-panel');
         if (c) {
-            c.innerHTML = `<h2>${title}</h2><p>${message}</p>`;
-            c.style.display = 'block';
+            this.updateInfoPanel(title, [message]);
+            this.toggleInfoMenu(true);
         }
     }
 
     hideNotification() {
-        const c = document.getElementById('tutorial-container');
-        if (c) c.style.display = 'none';
+        // Notifications are now part of the info-panel and handled by toggleInfoMenu
     }
 
     // ----------------------------------------------------------------
@@ -225,7 +224,7 @@ class MapView {
     // ----------------------------------------------------------------
 
     /** Rendert das Missions-Ziel als Bierglas-Icon auf der Karte. */
-    renderTarget(poiNode) {
+    renderTarget(poiNode, isCooldown = false) {
         if (this._targetMarker) this._map.removeLayer(this._targetMarker);
 
         const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='36' height='36'>`
@@ -237,7 +236,8 @@ class MapView {
             + `</g></svg>`;
 
         // Wrapper: Leaflet positioniert den äußeren, Animation läuft nur auf dem inneren
-        const html = `<div class="target-marker-wrapper"><div class="target-marker-inner">${svg}</div></div>`;
+        const cooldownClass = isCooldown ? 'poi-cooldown' : '';
+        const html = `<div class="target-marker-wrapper ${cooldownClass}"><div class="target-marker-inner">${svg}</div></div>`;
 
         this._targetMarker = L.marker([poiNode.lat, poiNode.lon], {
             icon: L.divIcon({
@@ -332,21 +332,22 @@ class MapView {
      * @param {boolean} clearFirst - Wenn true, wird der alte Inhalt gelöscht
      */
     updateTutorialPanel(text, clearFirst = false) {
-        const panel = document.getElementById('tutorial-container');
+        const panel = document.getElementById('info-panel');
         if (!panel) return;
+        
         if (clearFirst) panel.innerHTML = '';
-        panel.innerHTML += `<p style="margin:0 0 8px 0;line-height:1.5">${text}</p>`;
+        
+        const card = document.createElement('div');
+        card.className = 'info-card';
+        card.innerHTML = `<div class="info-header">Mission</div><div class="info-body">${text}</div>`;
+        panel.appendChild(card);
+        
         panel.style.display = 'block';
-        panel.classList.remove('fade-out');
-        this._map.invalidateSize({ animate: true });
+        this.toggleInfoMenu(true);
     }
 
     hideTutorialPanel() {
-        const panel = document.getElementById('tutorial-container');
-        if (!panel) return;
-        panel.style.display = 'none';
-        panel.innerHTML = '';
-        this._map.invalidateSize({ animate: true });
+        this.toggleInfoMenu(false);
     }
 
     /**
@@ -355,34 +356,55 @@ class MapView {
      * @param {Array} lines - Zeilen als Strings
      */
     updateInfoPanel(title, lines) {
-        const panel = document.getElementById('tutorial-container');
+        const panel = document.getElementById('info-panel');
         if (!panel) return;
 
-        let content = `<h2>${title}</h2>`;
+        // Wir hängen neue Infos als Karten an oder leeren es?
+        // Für den permanenten Status leeren wir es und befüllen es neu.
+        panel.innerHTML = '';
+        
         lines.forEach(line => {
-            content += `<p style="margin:0 0 8px 0;line-height:1.4">${line}</p>`;
+            const card = document.createElement('div');
+            card.className = 'info-card';
+            card.innerHTML = `<div class="info-header">${title}</div><div class="info-body">${line}</div>`;
+            panel.appendChild(card);
         });
 
-        panel.innerHTML = content;
         panel.style.display = 'block';
-        panel.classList.remove('fade-out');
-        this._map.invalidateSize({ animate: true });
     }
 
     /**
-     * Blendet das Tutorial-Panel langsam aus (1s CSS-Transition).
+     * Schaltet das Info-Menü ein oder aus.
+     * @param {boolean} forceState - Optionaler Zielzustand
+     */
+    toggleInfoMenu(forceState) {
+        const panel = document.getElementById('info-panel');
+        const btn = document.getElementById('info-toggle-btn');
+        if (!panel || !btn) return;
+        
+        let shouldOpen;
+        if (typeof forceState === 'boolean') {
+            shouldOpen = forceState;
+        } else {
+            shouldOpen = !panel.classList.contains('open');
+        }
+
+        if (shouldOpen) {
+            panel.classList.add('open');
+            btn.classList.add('panel-open');
+            btn.innerText = '>>';
+        } else {
+            panel.classList.remove('open');
+            btn.classList.remove('panel-open');
+            btn.innerText = '<<';
+        }
+    }
+
+    /**
+     * Blendet das Tutorial-Panel langsam aus.
      */
     fadeTutorialPanelOut() {
-        const panel = document.getElementById('tutorial-container');
-        if (!panel) return;
-        panel.classList.add('fade-out');
-        // Nach der Transition komplett entfernen
-        setTimeout(() => {
-            panel.style.display = 'none';
-            panel.innerHTML = '';
-            panel.classList.remove('fade-out');
-            this._map.invalidateSize({ animate: true });
-        }, 1100);
+        this.toggleInfoMenu(false);
     }
 
     /**
