@@ -30,16 +30,22 @@ class MapData {
         const s = coords[0] - range, w = coords[1] - range;
         const n = coords[0] + range, e = coords[1] + range;
 
-        // Straßen + Gaststätten + Polizei (node/way/relation, amenity+building)
+        // Erweiterte Suche nach Polizei (Stationen, Präsidien, Verwaltung, Kasernen)
         const query = `[out:json][timeout:25];(
             way["highway"](${s},${w},${n},${e});
             node["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
             way["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
-            node["amenity"="police"](${s},${w},${n},${e});
-            way["amenity"="police"](${s},${w},${n},${e});
-            relation["amenity"="police"](${s},${w},${n},${e});
+            node["amenity"~"police|police_station"](${s},${w},${n},${e});
+            way["amenity"~"police|police_station"](${s},${w},${n},${e});
+            relation["amenity"~"police|police_station"](${s},${w},${n},${e});
             way["building"="police"](${s},${w},${n},${e});
             relation["building"="police"](${s},${w},${n},${e});
+            node["police"](${s},${w},${n},${e});
+            way["police"](${s},${w},${n},${e});
+            relation["police"](${s},${w},${n},${e});
+            node["office"="government"]["government"="police"](${s},${w},${n},${e});
+            way["office"="government"]["government"="police"](${s},${w},${n},${e});
+            relation["office"="government"]["government"="police"](${s},${w},${n},${e});
         );(._;>;);out body center;`;
 
         try {
@@ -85,8 +91,18 @@ class MapData {
             const safeId = String(el.id);
             const amenity  = el.tags?.amenity;
             const building = el.tags?.building;
-            const isPolice = (amenity === 'police' || building === 'police');
-            const isPub    = (amenity === 'pub' || amenity === 'bar' || amenity === 'restaurant');
+            const police   = el.tags?.police;
+            const office   = el.tags?.office;
+            const gov      = el.tags?.government;
+
+            const isPolice = (
+                amenity === 'police' || 
+                amenity === 'police_station' || 
+                building === 'police' || 
+                police !== undefined || 
+                (office === 'government' && gov === 'police')
+            );
+            const isPub = (amenity === 'pub' || amenity === 'bar' || amenity === 'restaurant');
 
             if (el.type === 'node') {
                 const nd = { ...el, id: safeId };
