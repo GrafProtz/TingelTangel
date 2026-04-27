@@ -237,7 +237,13 @@ class MapView {
 
         // Wrapper: Leaflet positioniert den äußeren, Animation läuft nur auf dem inneren
         const cooldownClass = isCooldown ? 'poi-cooldown' : '';
-        const html = `<div class="target-marker-wrapper ${cooldownClass}"><div class="target-marker-inner">${svg}</div></div>`;
+        const html = `
+            <div class="target-marker-wrapper ${cooldownClass}">
+                <div class="target-marker-inner" style="display: inline-block;">
+                    ${svg}
+                </div>
+            </div>
+        `;
 
         this._targetMarker = L.marker([poiNode.lat, poiNode.lon], {
             icon: L.divIcon({
@@ -249,6 +255,22 @@ class MapView {
             pane: 'popupPane',
             zIndexOffset: 2000
         }).addTo(this._map);
+    }
+
+    /** Triggert die Ankunfts-Animation (Pulse) auf dem Ziel-Marker. */
+    animateTargetMarker() {
+        if (this._targetMarker) {
+            const el = this._targetMarker.getElement();
+            if (el) {
+                // Icon sofort groß machen und leuchten lassen
+                el.innerHTML = '<div style="font-size: 30px; transition: all 0.3s ease; transform: scale(2); filter: drop-shadow(0 0 10px yellow); display: flex; justify-content: center; align-items: center;">🍺</div>';
+                
+                // Nach 600ms wieder auf Normalgröße schrumpfen
+                setTimeout(() => {
+                    el.innerHTML = '<div style="font-size: 24px; transition: all 0.3s ease; transform: scale(1); display: flex; justify-content: center; align-items: center;">🍺</div>';
+                }, 600);
+            }
+        }
     }
 
     /** Lässt das Ziel-Icon hell aufleuchten und pulsieren. */
@@ -358,6 +380,7 @@ class MapView {
     updateInfoPanel(title, lines) {
         const panel = document.getElementById('info-panel');
         if (!panel) return;
+        panel.innerHTML = ''; // Zwingend erforderlich: Löscht alte Einträge restlos
 
         // Wir hängen neue Infos als Karten an oder leeren es?
         // Für den permanenten Status leeren wir es und befüllen es neu.
@@ -405,6 +428,40 @@ class MapView {
      */
     fadeTutorialPanelOut() {
         this.toggleInfoMenu(false);
+    }
+
+    /**
+     * Erstellt ein fliegendes Info-Sheet, das ins Menü gleitet.
+     */
+    animateRewardToMenu(text, callback) {
+        const sheet = document.createElement('div');
+        sheet.innerText = text;
+        // Styling für die mittige Tafel
+        sheet.style.cssText = `
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(30, 41, 59, 0.95); border: 2px solid #38bdf8;
+            border-radius: 8px; padding: 20px; color: white; text-align: center;
+            z-index: 9999; width: 300px; font-family: sans-serif;
+            transition: all 0.8s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            line-height: 1.4; font-weight: bold; font-size: 16px;
+        `;
+        document.body.appendChild(sheet);
+
+        // 10 Sekunden Lesezeit
+        setTimeout(() => {
+            // Flug in die obere rechte Ecke (Position des Info-Panels)
+            sheet.style.left = 'calc(100% - 165px)'; 
+            sheet.style.top = '100px';
+            sheet.style.transform = 'translate(0, 0) scale(0.1)';
+            sheet.style.opacity = '0';
+
+            // Nach 800ms Flugzeit: Element löschen und Spiel fortsetzen
+            setTimeout(() => {
+                sheet.remove();
+                if (callback) callback();
+            }, 800);
+        }, 10000);
     }
 
     /**

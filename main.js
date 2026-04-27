@@ -40,6 +40,12 @@ async function initApp() {
         // Menü-Status synchronisieren
         mapView.toggleInfoMenu(state.isInfoMenuOpen);
 
+        // Wenn das Spiel pausiert ist (z.B. Kneipe betreten), zeige KEINE Basisinfos und leere das Panel sofort:
+        if (!state.gameActive) {
+            mapView.updateInfoPanel('', []); 
+            return; 
+        }
+
         if (state.isMoving) {
             mapView.renderNeighbors([], () => {});
             return;
@@ -63,11 +69,14 @@ async function initApp() {
         const targetName = missionPOI?.poiData?.tags?.name || 'Unbekannte Gaststätte';
         
         // 1. Permanente Karten
-        const infoCards = [
-            { title: 'AKTUELLES ZIEL', body: targetName },
-            { title: 'AUFGABE', body: 'Erreiche die Kneipe, um Informationen zu sammeln.' },
-            { title: 'STEUERUNG', body: 'Klicke auf die grünen Punkte, um dich durch die Stadt zu bewegen.' }
-        ];
+        let infoCards = [];
+        if (state.gameActive) {
+            infoCards = [
+                { title: 'AKTUELLES ZIEL', body: targetName },
+                { title: 'AUFGABE', body: 'Erreiche die Kneipe, um Informationen zu sammeln.' },
+                { title: 'STEUERUNG', body: 'Klicke auf die grünen Punkte, um dich durch die Stadt zu bewegen.' }
+            ];
+        }
 
         // 2. Event-basierte Karten (unten anhängen)
         if (state.radarUnlocked) {
@@ -104,18 +113,49 @@ async function initApp() {
 
     // ----- Ziel erreicht → Kneipen-Dialog -----
     game.onTargetReached((targetNodeId, optionsData, riskData) => {
+        // 1. Spiel sofort pausieren -> leert das Seitenmenü augenblicklich
+        game._state.gameActive = false;
+        game._notify();
+
         const name = missionPOI?.poiData?.tags?.name || 'Unbekannte Gaststätte';
 
-        // 1. Visuelles Feedback: Icon pulsiert
-        mapView.highlightTarget();
+        // 2. Native Leaflet-Animation starten
+        mapView.animateTargetMarker();
         mapView.showNotification('ANGEKOMMEN', `Du hast "${name}" erreicht!`);
 
-        // 2. Verzögerung, dann Dialog mit dynamischen Risikodaten
+        // 3. Warten, bis Animation fertig ist, dann Overlay öffnen
         setTimeout(() => {
             mapView.showInteractionOverlay(optionsData, riskData, (key, opt) => {
                 const msg = game.handleInteractionDecision(key, opt);
-                mapView.hideInteractionOverlay();
-                mapView.showNotification('Ergebnis', msg);
+                mapView.hideInteractionOverlay(); // Overlay IMMER sofort schließen
+
+                // Prüfen, ob Radar erfolgreich gekauft wurde (Option A + radarUnlocked)
+                if (key === 'A' && game.getState().radarUnlocked) {
+                    game._state.gameActive = false; // Spiel während Animation pausiert lassen
+                    mapView.animateRewardToMenu(msg, () => {
+                        // Erst wenn das Sheet im Menü angekommen ist, geht das Spiel weiter
+                        game._state.gameActive = true;
+                        const currentNode = mapData.getNode(game.getState().currentPlayerNodeId);
+                        if (currentNode) {
+                            mapView.renderNeighbors(mapData.getNeighbors(currentNode.id), (clickedId) => {
+                                game.moveToNode(clickedId);
+                            });
+                        }
+                        game.triggerNewInfo(); // Menü aufklappen für neue Radar-Info
+                        game._notify();
+                    });
+                } else {
+                    // Für B, C, D oder wenn A wegen Geldmangel fehlschlägt
+                    game._state.gameActive = true;
+                    const currentNode = mapData.getNode(game.getState().currentPlayerNodeId);
+                    if (currentNode) {
+                        mapView.renderNeighbors(mapData.getNeighbors(currentNode.id), (clickedId) => {
+                            game.moveToNode(clickedId);
+                        });
+                    }
+                    mapView.showNotification('Ergebnis', msg);
+                    game._notify();
+                }
             });
         }, 1200);
     });
