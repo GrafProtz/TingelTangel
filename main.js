@@ -71,20 +71,20 @@ async function initApp() {
         // 1. Permanente Karten
         let infoCards = [];
         if (state.gameActive) {
-            infoCards = [
-                { title: 'AKTUELLES ZIEL', body: targetName },
-                { title: 'AUFGABE', body: 'Erreiche die Kneipe, um Informationen zu sammeln.' },
-                { title: 'STEUERUNG', body: 'Klicke auf die grünen Punkte, um dich durch die Stadt zu bewegen.' }
-            ];
+            if (state.missionPhase === 1) {
+                infoCards = [
+                    { title: 'AKTUELLES ZIEL', body: targetName },
+                    { title: 'AUFGABE', body: 'Erreiche die Kneipe, um Informationen zu sammeln.' },
+                    { title: 'STEUERUNG', body: 'Klicke auf die grünen Punkte, um dich durch die Stadt zu bewegen.' }
+                ];
+            } else if (state.missionPhase === 2) {
+                infoCards = [
+                    { title: 'RADAR-SYSTEM', body: 'Drücke "P", um Standorte der Polizei für 5 Sek. aufzudecken. (5 Min. Cooldown)' }
+                ];
+            }
         }
 
         // 2. Event-basierte Karten (unten anhängen)
-        if (state.radarUnlocked) {
-            infoCards.push({ 
-                title: 'RADAR AKTIV', 
-                body: 'Du kannst dir den Standort der Polizeistationen für 5 Sek. anschauen (Taste "P").' 
-            });
-        }
         if (state.showPubCooldownText) {
             infoCards.push({ 
                 title: 'HINWEIS', 
@@ -127,22 +127,33 @@ async function initApp() {
         setTimeout(() => {
             mapView.showInteractionOverlay(optionsData, riskData, (key, opt) => {
                 const msg = game.handleInteractionDecision(key, opt);
-                mapView.hideInteractionOverlay(); // Overlay IMMER sofort schließen
-
+                
                 // Prüfen, ob Radar erfolgreich gekauft wurde (Option A + radarUnlocked)
                 if (key === 'A' && game.getState().radarUnlocked) {
-                    game._state.gameActive = false; // Spiel während Animation pausiert lassen
-                    mapView.animateRewardToMenu(msg, () => {
-                        // Erst wenn das Sheet im Menü angekommen ist, geht das Spiel weiter
-                        game._state.gameActive = true;
-                        const currentNode = mapData.getNode(game.getState().currentPlayerNodeId);
-                        if (currentNode) {
-                            mapView.renderNeighbors(mapData.getNeighbors(currentNode.id), (clickedId) => {
-                                game.moveToNode(clickedId);
+                    // WICHTIG: Spiel pausiert lassen, damit das Overlay nicht überschrieben wird
+                    game._state.gameActive = false; 
+
+                    // Neuen Erklär-Dialog anzeigen
+                    mapView.showRadarTutorialDialog(() => {
+                        // 1. Radar-Animation starten (nutzt die in MapData gespeicherten Stationen)
+                        mapView.showPoliceRadar(mapData._policeStations).then(() => {
+                            // NEU: Animation starten und erst danach Phase 2 aktivieren
+                            mapView.animateInfoToMenu('NEUE FUNKTION', 'Radar-Frequenzen gespeichert!', () => {
+                                game._state.missionPhase = 2;
+                                game._state.lastRadarTime = Date.now();
+                                game._state.gameActive = true;
+                                
+                                const currentNode = mapData.getNode(game.getState().currentPlayerNodeId);
+                                if (currentNode) {
+                                    mapView.renderNeighbors(mapData.getNeighbors(currentNode.id), (clickedId) => {
+                                        game.moveToNode(clickedId);
+                                    });
+                                }
+                                
+                                game.triggerNewInfo(); 
+                                game._notify();
                             });
-                        }
-                        game.triggerNewInfo(); // Menü aufklappen für neue Radar-Info
-                        game._notify();
+                        });
                     });
                 } else {
                     // Für B, C, D oder wenn A wegen Geldmangel fehlschlägt
@@ -197,7 +208,14 @@ async function initApp() {
         const city = CITIES[idx];
         mapView.showNotification('LADEN …', `Lade Daten für ${city.name} …`);
         mapData.cityName = city.name;
-        await mapData.loadCityData(city.coords);
+        
+        try {
+            await mapData.loadCityData(city.coords);
+        } catch (err) {
+            mapView.hideNotification();
+            alert(`Fehler beim Laden der Karte: ${err.message}\n\nBitte prüfe deine Internetverbindung oder versuche es später erneut.`);
+            return;
+        }
 
         // Tutorial-Szenario erzeugen (100-200m Abstand)
         const scenario = mapData.spawnTutorialScenario();

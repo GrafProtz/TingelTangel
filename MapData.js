@@ -48,12 +48,24 @@ class MapData {
                 method: 'POST',
                 body: 'data=' + encodeURIComponent(query)
             });
+            if (!resp.ok) throw new Error(`HTTP-Fehler: ${resp.status}`);
+            
             const data = await resp.json();
+            if (!data.elements || data.elements.length === 0) {
+                throw new Error('Keine Daten von OpenStreetMap erhalten (Overpass-Abfrage leer).');
+            }
+
             this._parseOSMData(data);
             this._buildMacroGraph();
+
+            if (this._macroGraph.size === 0) {
+                throw new Error('Es konnten keine befahrbaren Straßen im gewählten Bereich gefunden werden.');
+            }
+
             console.log(`MapData: Makro-Graph mit ${this._macroGraph.size} Kreuzungen erstellt.`);
         } catch (err) {
             console.error('MapData: Overpass-Fehler', err);
+            throw err; // Fehler nach oben weiterreichen
         }
     }
 

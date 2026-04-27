@@ -344,6 +344,110 @@ class MapView {
         container.style.display = 'block';
     }
 
+    /**
+     * Zeigt einen eigenständigen Erklär-Dialog nach dem Kauf des Radars an.
+     * Erstellt ein dynamisches Overlay, um bestehende UI-Elemente nicht zu beeinflussen.
+     */
+    showRadarTutorialDialog(onConfirmCb) {
+        const overlay = document.createElement('div');
+        overlay.id = 'radar-tutorial-overlay';
+        
+        // Styling direkt per JS für maximale Unabhängigkeit
+        Object.assign(overlay.style, {
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: '#1e293b',
+            border: '3px solid #38bdf8',
+            padding: '30px',
+            borderRadius: '15px',
+            color: 'white',
+            zIndex: '4000',
+            textAlign: 'center',
+            width: '320px',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+            fontFamily: 'sans-serif',
+            lineHeight: '1.5'
+        });
+
+        overlay.innerHTML = `
+            <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px; color: #38bdf8;">📡 Radar freigeschaltet</div>
+            <p><i>Der Barkeeper steckt das Geld ein und flüstert:</i></p>
+            <p>"Hier wimmelt es von Cops. Ich zeige dir unsere Frequenzen. 
+            Du hast <b>5 Sekunden</b>, um dir die Standorte zu merken. 
+            Danach dauert es 5 Minuten, bis der Empfang wieder steht."</p>
+        `;
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.textContent = 'Radar aktivieren';
+        Object.assign(confirmBtn.style, {
+            marginTop: '20px',
+            background: '#3b82f6',
+            border: 'none',
+            padding: '10px 20px',
+            color: 'white',
+            cursor: 'pointer',
+            borderRadius: '8px',
+            fontWeight: 'bold',
+            fontSize: '16px'
+        });
+
+        confirmBtn.addEventListener('click', () => {
+            overlay.remove();
+            onConfirmCb();
+        });
+
+        overlay.appendChild(confirmBtn);
+        document.body.appendChild(overlay);
+    }
+
+    /**
+     * Erstellt eine Info-Karte, die zur rechten Menüleiste fliegt.
+     */
+    animateInfoToMenu(title, text, callback) {
+        const div = document.createElement('div');
+        div.className = 'flying-info-card';
+        
+        // Initiales Styling (zentriert)
+        Object.assign(div.style, {
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%) scale(1)',
+            width: '280px',
+            background: '#1e293b',
+            border: '2px solid #38bdf8',
+            borderRadius: '12px',
+            padding: '20px',
+            color: 'white',
+            zIndex: '5000',
+            textAlign: 'center',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+            fontFamily: 'sans-serif',
+            transition: 'all 1s cubic-bezier(0.25, 1, 0.5, 1)',
+            opacity: '1'
+        });
+
+        div.innerHTML = `<div style="color: #38bdf8; font-weight: bold; margin-bottom: 8px;">${title}</div><div>${text}</div>`;
+        document.body.appendChild(div);
+
+        // 1. Wartezeit zum Lesen (1.5s)
+        setTimeout(() => {
+            // 2. Flug-Ziel setzen
+            div.style.top = '70px';
+            div.style.left = 'calc(100% - 150px)';
+            div.style.transform = 'translate(0, 0) scale(0.1)';
+            div.style.opacity = '0';
+
+            // 3. Nach Ende der Animation (1s) entfernen
+            setTimeout(() => {
+                div.remove();
+                if (callback) callback();
+            }, 1000);
+        }, 1500);
+    }
+
     // ----------------------------------------------------------------
     //  Tutorial-Sequenz
     // ----------------------------------------------------------------

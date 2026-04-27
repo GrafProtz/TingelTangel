@@ -23,6 +23,7 @@ class Game {
             lastPubVisitTime: 0,
             showPubCooldownText: false,
             moveCount: 0,
+            missionPhase: 1,
             infoMenuOpenUntilMove: -1,
             isInfoMenuOpen: false
         };
@@ -111,6 +112,7 @@ class Game {
             lastPubVisitTime: 0,
             showPubCooldownText: false,
             moveCount: 0,
+            missionPhase: 1,
             infoMenuOpenUntilMove: -1,
             isInfoMenuOpen: false
         };
