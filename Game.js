@@ -81,7 +81,8 @@ class Game {
         const optionsData = {
             A: { text: `Sprich mit dem Barkeeper. Wenn du ihm 50 Euro Trinkgeld gibst, erzählt er dir vielleicht, wie die Polizei in ${this._mapData.cityName || 'dieser Stadt'} organisiert ist.`,
                  cost: 50, risk: 0 },
-            B: { text: 'Einbruch',       reward: 100, risk: Math.min(100, 45 + riskData.riskMalus) },
+            B: { text: 'Ein unseriös wirkender Gast bietet dir an, dich fachkundig über Einbruchsmöglichkeiten in der Stadt für ein einmaliges Beratungshonorar von 75 Euro und einer 20-prozentigen Gewinnbeteiligung zu beraten.', 
+                 cost: 75, risk: 0 },
             C: { text: 'Straßenraub',    reward: 300, risk: Math.min(100, 85 + riskData.riskMalus) },
             D: { text: 'Nur Infos kaufen (Sicher)', cost: 10, risk: 0 }
         };
