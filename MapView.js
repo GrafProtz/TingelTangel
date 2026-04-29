@@ -101,7 +101,8 @@ class MapView {
                     html: '<div class="player-dot"></div>',
                     iconSize: [20, 20]
                 }),
-                zIndexOffset: 1000
+                zIndexOffset: 1000,
+                interactive: false
             }).addTo(this._map);
         } else {
             this._playerMarker.setLatLng(coords);
@@ -139,8 +140,7 @@ class MapView {
                 icon: L.divIcon({
                     className: 'neighbor-marker',
                     iconSize: [12, 12]
-                }),
-                zIndexOffset: 5000
+                })
             }).addTo(this._map);
 
             // Klick → Bewegung auslösen
