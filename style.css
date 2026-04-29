@@ -380,9 +380,14 @@ html, body {
 }
 
 .marker-active {
-    filter: drop-shadow(0 0 20px #facc15) brightness(1.5);
     cursor: pointer !important;
-    transition: filter 0.3s ease;
+    animation: urgentMarkerPulse 0.5s infinite alternate ease-in-out !important;
+    z-index: 10000 !important; 
+}
+
+@keyframes urgentMarkerPulse {
+    0% { filter: drop-shadow(0 0 5px #facc15) brightness(1); }
+    100% { filter: drop-shadow(0 0 30px #fff) drop-shadow(0 0 50px #facc15) brightness(3); }
 }
 
 .lockpick-animation::after {
@@ -400,5 +405,16 @@ html, body {
     0% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
     50% { transform: translate(-50%, -50%) scale(1.3); opacity: 1; }
     100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+}
+
+.door-animation::after {
+    content: '🚪';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 80px;
+    animation: lockpickPulse 1s infinite ease-in-out;
+    filter: drop-shadow(0 0 15px #facc15);
 }
 

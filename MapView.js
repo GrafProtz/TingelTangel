@@ -345,31 +345,29 @@ class MapView {
     onTargetReached(targetNodeId, onMarkerClick) {
         console.log('[DEBUG MAP] onTargetReached aufgerufen. Suche Marker für ID:', targetNodeId);
         
-        if (!this._targetMarker) {
-            console.error('[DEBUG MAP] FATAL: _targetMarker existiert nicht in MapView!');
-            return;
+        if (!this._targetMarker) return;
+
+        // 1. Die CSS-Klasse permanent in das Leaflet-Icon brennen (verhindert Überschreiben durch Redraw)
+        const currentIcon = this._targetMarker.options.icon;
+        if (currentIcon && currentIcon.options) {
+            currentIcon.options.className = (currentIcon.options.className || '') + ' marker-active';
+            this._targetMarker.setIcon(currentIcon);
         }
 
+        // 2. Element holen und Klick binden
         const el = this._targetMarker.getElement();
-        console.log('[DEBUG MAP] Marker DOM-Element gefunden:', !!el);
-        
         if (el) {
-            // Zwingend über alle Blockaden heben
             el.style.pointerEvents = 'auto';
             el.style.zIndex = '9999';
-            el.classList.add('marker-active');
 
-            console.log('[DEBUG MAP] Binde nativen Event-Listener an das Marker-Element...');
+            console.log('[DEBUG MAP] Binde nativen Event-Listener an das pulsierende Element...');
 
-            // Natives Event-Binding (pointerdown ist robuster gegen Leaflet-Click-Verschlucken)
             el.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 console.log('[DEBUG MAP] 🎯 POINTERDOWN GEFEUERT!');
                 onMarkerClick();
             }, { once: true });
-        } else {
-            console.error('[DEBUG MAP] FATAL: Marker existiert, hat aber kein physisches DOM-Element (evtl. außerhalb des Viewports).');
         }
     }
 
@@ -384,6 +382,7 @@ class MapView {
         overlay.style.display = 'block';
         overlay.className = ''; 
         if (seqType === 'lockpick') overlay.classList.add('lockpick-animation');
+        if (seqType === 'door') overlay.classList.add('door-animation');
 
         // Kamera-Zoom (Punkt 3)
         if (this._targetMarker) {

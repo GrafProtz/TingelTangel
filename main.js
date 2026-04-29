@@ -117,12 +117,11 @@ async function initApp() {
 
         // Cinematic-Vorbereitung (Task 8): Marker aktiv setzen und auf Klick warten
         mapView.onTargetReached(targetNodeId, () => {
-            // Erst jetzt das Spiel pausieren, um Klicks auf Leaflet-Elemente nicht zu behindern
             game._state.gameActive = false;
-            game._notify();
+            // KEIN game._notify() hier!
 
-            // Cinematic-Loop: Zoom + Sperre
-            mapView.playCinematicSequence('lockpick', 2000, () => {
+            // Cinematic-Loop: Zoom + Sperre (Tür-Symbol)
+            mapView.playCinematicSequence('door', 1500, () => {
                 // Erst JETZT das Overlay öffnen (Task 9 mit Callback-Brücke)
                 mapView.showInteractionOverlay(optionsData, riskData, (key, opt) => {
                     const msg = game.handleInteractionDecision(key, opt);
