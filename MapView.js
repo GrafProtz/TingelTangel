@@ -337,7 +337,8 @@ class MapView {
 
     /**
      * Markiert das Ziel visuell und macht es anklickbar.
-     * Nutzt native DOM-Events, da Leaflet bei deaktivierter Map (gameActive=false) oft blockiert.
+     * Nutzt native DOM-Events (pointerdown), da Leaflet-Klicks bei minimalen Bewegungen 
+     * oft als Drag-Event verschluckt werden.
      * @param {string} targetNodeId 
      * @param {Function} onMarkerClick 
      */
@@ -360,10 +361,11 @@ class MapView {
 
             console.log('[DEBUG MAP] Binde nativen Event-Listener an das Marker-Element...');
 
-            // Natives Event-Binding (Umgeht Leaflet-interne Sperren)
-            el.addEventListener('click', (e) => {
+            // Natives Event-Binding (pointerdown ist robuster gegen Leaflet-Click-Verschlucken)
+            el.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
                 e.stopPropagation();
-                console.log('[DEBUG MAP] 🎯 NATIVES MARKER-EVENT GEFEUERT!');
+                console.log('[DEBUG MAP] 🎯 POINTERDOWN GEFEUERT!');
                 onMarkerClick();
             }, { once: true });
         } else {
