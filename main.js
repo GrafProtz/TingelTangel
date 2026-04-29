@@ -30,8 +30,7 @@ async function initApp() {
     });
     // ----- Info-Toggle-Button -----
     document.getElementById('info-toggle-btn')?.addEventListener('click', () => {
-        game._state.isInfoMenuOpen = !game._state.isInfoMenuOpen;
-        game._notify();
+        game.toggleInfoMenu();
     });
     // ----- Logische State-Changes -----
     game.onStateChange((state) => {
@@ -220,26 +219,8 @@ async function initApp() {
         // Tutorial-Szenario erzeugen (100-200m Abstand)
         const scenario = mapData.spawnTutorialScenario();
         if (!scenario) {
-            // Fallback auf altes Verfahren
-            const startId = mapData.getRandomIntersectionNode();
-            missionPOI = mapData.getNearestPOI(startId);
-            const targetId = missionPOI ? missionPOI.graphNodeId : mapData.getRandomIntersectionNode();
-            if (!startId || !targetId) { alert('Keine begehbaren Wege gefunden.'); return; }
-
-            mapView.setUIState('intro-overlay', false);
-            mapView.setUIState('back-to-menu', true);
-            mapView.setUIState('info-toggle-btn', true);
-            mapView.setUIState('budget-panel', true);
-            
             mapView.hideNotification();
-            const tn = mapData.getNode(targetId); if (tn) mapView.renderTarget(tn);
-            const sn = mapData.getNode(startId);
-            mapView.focusLocation([sn.lat, sn.lon]);
-            mapView.onMapReady(() => {
-                game.startMission(startId, targetId);
-                const nb = mapData.getNeighbors(startId);
-                mapView.renderNeighbors(nb, id => game.moveToNode(id));
-            });
+            alert('Konnte kein gültiges Start-Szenario mit Kneipe generieren.');
             return;
         }
 

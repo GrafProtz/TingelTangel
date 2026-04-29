@@ -253,7 +253,8 @@ class MapView {
                 iconAnchor: [18, 18]
             }),
             pane: 'popupPane',
-            zIndexOffset: 2000
+            zIndexOffset: 2000,
+            interactive: false
         }).addTo(this._map);
     }
 

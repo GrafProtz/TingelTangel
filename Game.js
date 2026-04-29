@@ -208,21 +208,6 @@ class Game {
                 let arrived = idA === idB;
                 console.log('ID-Vergleich:', idA, '===', idB, '->', arrived);
 
-                // Sicherheitsnetz: 50m Proximity-Check
-                if (!arrived && this._state.targetPubNodeId) {
-                    const playerNode = this._mapData.getNode(this._state.currentPlayerNodeId);
-                    const targetNode = this._mapData.getNode(this._state.targetPubNodeId);
-                    if (playerNode && targetNode) {
-                        const dist = this._haversine(playerNode, targetNode);
-                        console.log('ID-Match fehlgeschlagen. Distanz zum Ziel:', dist.toFixed(1), 'Meter');
-                        if (dist < 50) {
-                            console.log('✅ PROXIMITY TRIGGER! Unter 50m → Ziel erreicht.');
-                            arrived = true;
-                        }
-                    } else {
-                        console.warn('⚠️ Node-Lookup fehlgeschlagen! player:', !!playerNode, 'target:', !!targetNode);
-                    }
-                }
 
                 if (arrived) {
                     const cooldownMs = 180000; // 3 Minuten
@@ -349,6 +334,14 @@ class Game {
     }
 
     /**
+     * Schaltet das Info-Menü manuell an/aus.
+     */
+    toggleInfoMenu() {
+        this._state.isInfoMenuOpen = !this._state.isInfoMenuOpen;
+        this._notify();
+    }
+
+    /**
      * Öffnet das Info-Menü automatisch für die nächsten 5 Züge.
      */
     triggerNewInfo() {
@@ -360,17 +353,6 @@ class Game {
     // ----------------------------------------------------------------
     //  Hilfsfunktionen
     // ----------------------------------------------------------------
-
-    _haversine(a, b) {
-        const R = 6_371_000;
-        const toR = Math.PI / 180;
-        const dLat = (b.lat - a.lat) * toR;
-        const dLon = (b.lon - a.lon) * toR;
-        const s = Math.sin(dLat / 2) ** 2 +
-                  Math.cos(a.lat * toR) * Math.cos(b.lat * toR) *
-                  Math.sin(dLon / 2) ** 2;
-        return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
-    }
 
     getState() {
         return { ...this._state };

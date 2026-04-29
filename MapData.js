@@ -173,7 +173,7 @@ class MapData {
                 const curr = this._nodes.get(ids[i]);
                 if (!prev || !curr) continue;
 
-                segDist += this._haversine(prev, curr);
+                segDist += this.calculateDistance(prev, curr);
                 pathCoords.push([curr.lat, curr.lon]);
 
                 if (isDecision(ids[i], way, i)) {
@@ -212,7 +212,7 @@ class MapData {
     //  Haversine (Meter)
     // ----------------------------------------------------------------
 
-    _haversine(a, b) {
+    calculateDistance(a, b) {
         const R   = 6_371_000;
         const toR = Math.PI / 180;
         const dLat = (b.lat - a.lat) * toR;
@@ -302,7 +302,7 @@ class MapData {
         // Malus-Werte aller Stationen im Radius sammeln
         const malusValues = [];
         this._policeStations.forEach(station => {
-            const dist = this._haversine(poi, station);
+            const dist = this.calculateDistance(poi, station);
             if (dist <= MAX_RADIUS) {
                 const malus = MAX_MALUS_PER_STATION * (1 - dist / MAX_RADIUS);
                 malusValues.push(malus);
@@ -340,7 +340,7 @@ class MapData {
 
         this._pubs.forEach(poi => {
             if (String(poi.id) === String(startNodeId)) return;
-            const d = this._haversine(start, poi);
+            const d = this.calculateDistance(start, poi);
             if (d > 50 && d < bestDist) {
                 bestDist = d;
                 bestPoi = poi;
@@ -354,7 +354,7 @@ class MapData {
         reachable.forEach(id => {
             const nd = this._nodes.get(id);
             if (!nd) return;
-            const d = this._haversine(bestPoi, nd);
+            const d = this.calculateDistance(bestPoi, nd);
             if (d < snapDist) { snapDist = d; snapId = id; }
         });
 
@@ -401,7 +401,7 @@ class MapData {
             connected.forEach(id => {
                 const nd = this._nodes.get(id);
                 if (!nd) return;
-                const d = this._haversine(poi, nd);
+                const d = this.calculateDistance(poi, nd);
                 if (d < snapDist) { snapDist = d; snapId = id; }
             });
             if (!snapId) continue;
@@ -413,7 +413,7 @@ class MapData {
                 if (id === snapId) return false;
                 const nd = this._nodes.get(id);
                 if (!nd) return false;
-                const d = this._haversine(targetNode, nd);
+                const d = this.calculateDistance(targetNode, nd);
                 return d >= 100 && d <= 200;
             });
 
