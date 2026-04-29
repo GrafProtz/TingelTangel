@@ -139,7 +139,8 @@ class MapView {
                 icon: L.divIcon({
                     className: 'neighbor-marker',
                     iconSize: [12, 12]
-                })
+                }),
+                zIndexOffset: 5000
             }).addTo(this._map);
 
             // Klick → Bewegung auslösen
@@ -343,6 +344,71 @@ class MapView {
         });
 
         container.style.display = 'block';
+    }
+
+    /**
+     * Investment-Banker Dialog für die Auswahl von Einbruchszielen.
+     */
+    showInvestmentDialog(cityName, onSelectCb, onCancelCb) {
+        const overlay = document.createElement('div');
+        overlay.id = 'investment-dialog-overlay';
+        
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            background: '#1e293b', border: '3px solid #f59e0b', padding: '30px',
+            borderRadius: '15px', color: 'white', zIndex: '4000',
+            textAlign: 'left', width: '400px', boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+            fontFamily: 'sans-serif', lineHeight: '1.4'
+        });
+
+        overlay.innerHTML = `
+            <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px; color: #f59e0b; text-align: center;">💼 Investment Consultant</div>
+            <p style="margin-bottom: 20px;"><i>"Ah, ein Investor! Lass uns einen Blick auf das Portfolio für ${cityName || 'diese Stadt'} werfen. Meine Konditionen: 75 Euro vorab, 20% vom Brutto-Gewinn für mich. Wähle dein Risikoprofil:"</i></p>
+            <div id="invest-options" style="display: flex; flex-direction: column; gap: 10px;"></div>
+        `;
+
+        const optionsContainer = overlay.querySelector('#invest-options');
+
+        const options = [
+            { type: 'residential', icon: '🏡', title: 'Wohnungen', desc: 'Der konservative Fonds. 52.000 Fälle/Jahr. 46-48% Abbruchquote (Hunde, gute Fenster). Aufklärungsquote: 16% (Verhaftung auf frischer Tat nur 2-3%).' },
+            { type: 'commercial', icon: '🏢', title: 'Gewerberäume', desc: 'Der Tech-ETF. 95.000 Fälle/Jahr. 40% Abbruchquote. Aufklärungsquote: 22% (Kameras, stille Alarme). Dafür extrem liquide Kassenbestände.' },
+            { type: 'public', icon: '🏛️', title: 'Öffentliche Einrichtungen', desc: 'Die riskante Staatsanleihe. 18.000 Fälle/Jahr. 35% Abbruchquote. Aufklärungsquote: 25% (Nachtwächter, Patrouillen). Sehr gut gesichert.' },
+            { type: 'allotments', icon: '🏕️', title: 'Schrebergärten', desc: 'Der Penny-Stock. Über 100.000 Fälle/Jahr. 25% Abbruchquote. Aufklärungsquote: 8-10%. Fast ein sicherer Hit, aber kleine Rendite.' }
+        ];
+
+        options.forEach(opt => {
+            const btn = document.createElement('button');
+            Object.assign(btn.style, {
+                background: '#334155', border: '1px solid #475569', borderRadius: '8px',
+                padding: '10px', color: 'white', cursor: 'pointer', textAlign: 'left',
+                display: 'flex', flexDirection: 'column', gap: '5px', transition: 'background 0.2s'
+            });
+            btn.onmouseover = () => btn.style.background = '#475569';
+            btn.onmouseout = () => btn.style.background = '#334155';
+            
+            btn.innerHTML = `<div style="font-weight: bold; font-size: 16px;">${opt.icon} ${opt.title}</div><div style="font-size: 12px; color: #cbd5e1;">${opt.desc}</div>`;
+            
+            btn.onclick = () => {
+                overlay.remove();
+                onSelectCb(opt.type);
+            };
+            optionsContainer.appendChild(btn);
+        });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Abbrechen';
+        Object.assign(cancelBtn.style, {
+            marginTop: '20px', width: '100%', background: '#ef4444', border: 'none',
+            padding: '10px', color: 'white', cursor: 'pointer', borderRadius: '8px',
+            fontWeight: 'bold'
+        });
+        cancelBtn.onclick = () => {
+            overlay.remove();
+            if (onCancelCb) onCancelCb();
+        };
+        overlay.appendChild(cancelBtn);
+
+        document.body.appendChild(overlay);
     }
 
     /**

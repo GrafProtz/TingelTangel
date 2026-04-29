@@ -127,6 +127,72 @@ async function initApp() {
             mapView.showInteractionOverlay(optionsData, riskData, (key, opt) => {
                 const msg = game.handleInteractionDecision(key, opt);
                 
+                // Option B: Investment Berater
+                if (key === 'B') {
+                    if (game.getState().budget < 75) {
+                        mapView.showNotification('NICHT GENUG KAPITAL', 'Die Beratung kostet 75 Euro.');
+                        game._state.gameActive = true;
+                        const currentNode = mapData.getNode(game.getState().currentPlayerNodeId);
+                        if (currentNode) {
+                            mapView.renderNeighbors(mapData.getNeighbors(currentNode.id), (clickedId) => {
+                                game.moveToNode(clickedId);
+                            });
+                        }
+                        game._notify();
+                        return;
+                    }
+
+                    game._state.gameActive = false; // Block game while dialog is open
+
+                    mapView.showInvestmentDialog(mapData.cityName, (type) => {
+                        // User selected an option
+                        game._state.budget -= 75;
+                        game._state.consultantActive = true;
+                        
+                        const pNode = mapData.getNode(game.getState().currentPlayerNodeId);
+                        const playerCoords = pNode ? [pNode.lat, pNode.lon] : null;
+                        
+                        // Generiere Ziele (abhängig davon, ob MapData diese Methode schon hat)
+                        const targetIds = typeof mapData.getCrimeTargets === 'function' 
+                            ? mapData.getCrimeTargets(type, 3, playerCoords) 
+                            : [];
+                            
+                        game._state.activeCrimeTargets = targetIds;
+                        game._state.activeCrimeType = type; // Typ speichern für Risiko-Berechnung später
+                        game._state.missionPhase = 3;
+                        game._state.gameActive = true;
+                        
+                        // Ziele auf Karte rendern (falls die Methode in MapView existiert)
+                        if (typeof mapView.renderCrimeTargets === 'function') {
+                            mapView.renderCrimeTargets(targetIds, type, mapData, (clickedId) => {
+                                game.moveToNode(clickedId);
+                            });
+                        }
+                        
+                        const currentNode = mapData.getNode(game.getState().currentPlayerNodeId);
+                        if (currentNode) {
+                            mapView.renderNeighbors(mapData.getNeighbors(currentNode.id), (clickedId) => {
+                                game.moveToNode(clickedId);
+                            });
+                        }
+                        
+                        game.triggerNewInfo(); 
+                        game._notify();
+                    }, () => {
+                        // Bei Abbruch Spiel wieder freigeben
+                        game._state.gameActive = true;
+                        const currentNode = mapData.getNode(game.getState().currentPlayerNodeId);
+                        if (currentNode) {
+                            mapView.renderNeighbors(mapData.getNeighbors(currentNode.id), (clickedId) => {
+                                game.moveToNode(clickedId);
+                            });
+                        }
+                        game._notify();
+                    });
+                    
+                    return; // Consultant Dialog übernimmt, keine Standard-Auswertung
+                }
+
                 // Prüfen, ob Radar erfolgreich gekauft wurde (Option A + radarUnlocked)
                 if (key === 'A' && game.getState().radarUnlocked) {
                     // WICHTIG: Spiel pausiert lassen, damit das Overlay nicht überschrieben wird
@@ -155,7 +221,7 @@ async function initApp() {
                         });
                     });
                 } else {
-                    // Für B, C, D oder wenn A wegen Geldmangel fehlschlägt
+                    // Für C, D oder wenn A wegen Geldmangel fehlschlägt
                     game._state.gameActive = true;
                     const currentNode = mapData.getNode(game.getState().currentPlayerNodeId);
                     if (currentNode) {
