@@ -112,128 +112,63 @@ async function initApp() {
 
     // ----- Ziel erreicht → Kneipen-Dialog -----
     game.onTargetReached((targetNodeId, optionsData, riskData) => {
-        // 1. Spiel sofort pausieren -> leert das Seitenmenü augenblicklich
-        game._state.gameActive = false;
-        game._notify();
-
         const name = missionPOI?.poiData?.tags?.name || 'Unbekannte Gaststätte';
-
-        // 2. Native Leaflet-Animation starten
-        mapView.animateTargetMarker();
         mapView.showNotification('ANGEKOMMEN', `Du hast "${name}" erreicht!`);
 
-        // 3. Warten, bis Animation fertig ist, dann Overlay öffnen
-        setTimeout(() => {
-            mapView.showInteractionOverlay(optionsData, riskData, (key, opt) => {
-                const msg = game.handleInteractionDecision(key, opt);
-                
-                // Option B: Investment Berater
-                if (key === 'B') {
-                    if (game.getState().budget < 75) {
-                        mapView.showNotification('NICHT GENUG KAPITAL', 'Die Beratung kostet 75 Euro.');
-                        game._state.gameActive = true;
-                        const currentNode = mapData.getNode(game.getState().currentPlayerNodeId);
-                        if (currentNode) {
-                            mapView.renderNeighbors(mapData.getNeighbors(currentNode.id), (clickedId) => {
-                                game.moveToNode(clickedId);
-                            });
-                        }
-                        game._notify();
-                        return;
-                    }
+        // Cinematic-Vorbereitung (Task 8): Marker aktiv setzen und auf Klick warten
+        mapView.onTargetReached(targetNodeId, () => {
+            // Erst jetzt das Spiel pausieren, um Klicks auf Leaflet-Elemente nicht zu behindern
+            game._state.gameActive = false;
+            game._notify();
 
-                    game._state.gameActive = false; // Block game while dialog is open
-
-                    mapView.showInvestmentDialog(mapData.cityName, (type) => {
-                        // User selected an option
-                        game._state.budget -= 75;
-                        game._state.consultantActive = true;
-                        
-                        const pNode = mapData.getNode(game.getState().currentPlayerNodeId);
-                        const playerCoords = pNode ? [pNode.lat, pNode.lon] : null;
-                        
-                        // Generiere Ziele (abhängig davon, ob MapData diese Methode schon hat)
-                        const targetIds = typeof mapData.getCrimeTargets === 'function' 
-                            ? mapData.getCrimeTargets(type, 3, playerCoords) 
-                            : [];
-                            
-                        game._state.activeCrimeTargets = targetIds;
-                        game._state.activeCrimeType = type; // Typ speichern für Risiko-Berechnung später
-                        game._state.missionPhase = 3;
-                        game._state.gameActive = true;
-                        
-                        // Ziele auf Karte rendern (falls die Methode in MapView existiert)
-                        if (typeof mapView.renderCrimeTargets === 'function') {
-                            mapView.renderCrimeTargets(targetIds, type, mapData, (clickedId) => {
-                                game.moveToNode(clickedId);
-                            });
-                        }
-                        
-                        const currentNode = mapData.getNode(game.getState().currentPlayerNodeId);
-                        if (currentNode) {
-                            mapView.renderNeighbors(mapData.getNeighbors(currentNode.id), (clickedId) => {
-                                game.moveToNode(clickedId);
-                            });
-                        }
-                        
-                        game.triggerNewInfo(); 
-                        game._notify();
-                    }, () => {
-                        // Bei Abbruch Spiel wieder freigeben
-                        game._state.gameActive = true;
-                        const currentNode = mapData.getNode(game.getState().currentPlayerNodeId);
-                        if (currentNode) {
-                            mapView.renderNeighbors(mapData.getNeighbors(currentNode.id), (clickedId) => {
-                                game.moveToNode(clickedId);
-                            });
-                        }
-                        game._notify();
-                    });
+            // Cinematic-Loop: Zoom + Sperre
+            mapView.playCinematicSequence('lockpick', 2000, () => {
+                // Erst JETZT das Overlay öffnen (Task 9 mit Callback-Brücke)
+                mapView.showInteractionOverlay(optionsData, riskData, (key, opt) => {
+                    const msg = game.handleInteractionDecision(key, opt);
                     
-                    return; // Consultant Dialog übernimmt, keine Standard-Auswertung
-                }
+                    // Ergebnis anzeigen (Task 10)
+                    mapView.showInteractionResult(msg, msg.includes('✅') ? 'success' : 'fail');
 
-                // Prüfen, ob Radar erfolgreich gekauft wurde (Option A + radarUnlocked)
-                if (key === 'A' && game.getState().radarUnlocked) {
-                    // WICHTIG: Spiel pausiert lassen, damit das Overlay nicht überschrieben wird
-                    game._state.gameActive = false; 
-
-                    // Neuen Erklär-Dialog anzeigen
-                    mapView.showRadarTutorialDialog(() => {
-                        // 1. Radar-Animation starten (nutzt die in MapData gespeicherten Stationen)
-                        mapView.showPoliceRadar(mapData._policeStations).then(() => {
-                            // NEU: Animation starten und erst danach Phase 2 aktivieren
-                            mapView.animateInfoToMenu('NEUE FUNKTION', 'Radar-Frequenzen gespeichert!', () => {
-                                game._state.missionPhase = 2;
-                                game._state.lastRadarTime = Date.now();
-                                game._state.gameActive = true;
-                                
-                                const currentNode = mapData.getNode(game.getState().currentPlayerNodeId);
-                                if (currentNode) {
-                                    mapView.renderNeighbors(mapData.getNeighbors(currentNode.id), (clickedId) => {
-                                        game.moveToNode(clickedId);
-                                    });
-                                }
-                                
-                                game.triggerNewInfo(); 
-                                game._notify();
+                    // Spezielle Logik für Option B (Consultant)
+                    if (key === 'B' && msg.includes('✅')) {
+                        mapView.showInvestmentDialog(mapData.cityName, (type) => {
+                            game._state.budget -= 75;
+                            game._state.consultantActive = true;
+                            const pNode = mapData.getNode(game.getState().currentPlayerNodeId);
+                            const playerCoords = pNode ? [pNode.lat, pNode.lon] : null;
+                            const targetIds = mapData.getCrimeTargets(type, 3, playerCoords);
+                            game._state.activeCrimeTargets = targetIds;
+                            game._state.missionPhase = 3;
+                            game._notify();
+                        }, () => {
+                            game._state.gameActive = true;
+                            game._notify();
+                        });
+                    } 
+                    // Spezielle Logik für Option A (Radar)
+                    else if (key === 'A' && game.getState().radarUnlocked) {
+                        game._state.gameActive = false; 
+                        mapView.showRadarTutorialDialog(() => {
+                            mapView.showPoliceRadar(mapData._policeStations).then(() => {
+                                mapView.animateInfoToMenu('NEUE FUNKTION', 'Radar-Frequenzen gespeichert!', () => {
+                                    game._state.missionPhase = 2;
+                                    game._state.lastRadarTime = Date.now();
+                                    game._state.gameActive = true;
+                                    game.triggerNewInfo(); 
+                                    game._notify();
+                                });
                             });
                         });
-                    });
-                } else {
-                    // Für C, D oder wenn A wegen Geldmangel fehlschlägt
-                    game._state.gameActive = true;
-                    const currentNode = mapData.getNode(game.getState().currentPlayerNodeId);
-                    if (currentNode) {
-                        mapView.renderNeighbors(mapData.getNeighbors(currentNode.id), (clickedId) => {
-                            game.moveToNode(clickedId);
-                        });
+                    } 
+                    // Standard-Fallback für C, D oder wenn A wegen Geldmangel fehlschlägt
+                    else {
+                        game._state.gameActive = true;
+                        game._notify();
                     }
-                    mapView.showNotification('Ergebnis', msg);
-                    game._notify();
-                }
+                }, (key) => game.getInteractionPreview(key));
             });
-        }, 1200);
+        });
     });
 
     // ----- Hotkey: Polizei-Radar (P) -----

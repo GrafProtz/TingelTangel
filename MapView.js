@@ -19,6 +19,11 @@ class MapView {
         this._ghostPath       = null;
         this._targetMarker    = null;
         this._radarMarkers    = [];
+
+        // Globaler Klick-Spion zur Fehlersuche (QA Task)
+        document.addEventListener('click', (e) => { 
+            console.log('[DEBUG DOM] Klick auf Element:', e.target.tagName, '| ID:', e.target.id, '| Klassen:', e.target.className); 
+        });
     }
 
     // ----------------------------------------------------------------
@@ -301,48 +306,204 @@ class MapView {
         }
     }
 
+    /**
+     * Erzeugt eine zentrierte Ergebnismeldung (Toast), die nach 10s ins Menü "segelt".
+     * @param {string} msg - Der anzuzeigende Text
+     * @param {string} type - 'success' oder 'fail'
+     */
+    showInteractionResult(msg, type) {
+        let toast = document.getElementById('result-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'result-toast';
+            document.body.appendChild(toast);
+        }
+
+        // Text und initiale Klasse setzen
+        toast.textContent = msg;
+        toast.className = `toast-center ${type}`;
+        
+        // Sichtbarkeit herstellen (wird per CSS gesteuert)
+        toast.style.display = 'block';
+
+        // Nach 10 Sekunden den Flug ins Menü triggern
+        setTimeout(() => {
+            toast.classList.add('toast-sail-right');
+            
+            // Punkt 6: Kamera zurück in die Übersicht
+            this.returnCameraToOverview();
+        }, 10000);
+    }
+
+    /**
+     * Markiert das Ziel visuell und macht es anklickbar.
+     * Nutzt native DOM-Events, da Leaflet bei deaktivierter Map (gameActive=false) oft blockiert.
+     * @param {string} targetNodeId 
+     * @param {Function} onMarkerClick 
+     */
+    onTargetReached(targetNodeId, onMarkerClick) {
+        console.log('[DEBUG MAP] onTargetReached aufgerufen. Suche Marker für ID:', targetNodeId);
+        
+        if (!this._targetMarker) {
+            console.error('[DEBUG MAP] FATAL: _targetMarker existiert nicht in MapView!');
+            return;
+        }
+
+        const el = this._targetMarker.getElement();
+        console.log('[DEBUG MAP] Marker DOM-Element gefunden:', !!el);
+        
+        if (el) {
+            // Zwingend über alle Blockaden heben
+            el.style.pointerEvents = 'auto';
+            el.style.zIndex = '9999';
+            el.classList.add('marker-active');
+
+            console.log('[DEBUG MAP] Binde nativen Event-Listener an das Marker-Element...');
+
+            // Natives Event-Binding (Umgeht Leaflet-interne Sperren)
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                console.log('[DEBUG MAP] 🎯 NATIVES MARKER-EVENT GEFEUERT!');
+                onMarkerClick();
+            }, { once: true });
+        } else {
+            console.error('[DEBUG MAP] FATAL: Marker existiert, hat aber kein physisches DOM-Element (evtl. außerhalb des Viewports).');
+        }
+    }
+
+    /**
+     * Punkt 2 & 4: Cinematic Loop mit Kamera-Zoom und Sperre.
+     */
+    playCinematicSequence(seqType, durationMs, callback) {
+        const overlay = document.getElementById('cinema-overlay');
+        if (!overlay) return;
+
+        // Sperrbildschirm einblenden (Punkt 2)
+        overlay.style.display = 'block';
+        overlay.className = ''; 
+        if (seqType === 'lockpick') overlay.classList.add('lockpick-animation');
+
+        // Kamera-Zoom (Punkt 3)
+        if (this._targetMarker) {
+            this._map.flyTo(this._targetMarker.getLatLng(), 18, {
+                animate: true,
+                duration: durationMs / 1000
+            });
+        }
+
+        // Nach Ablauf: Sperre aufheben und weiter im Plan (Punkt 5)
+        setTimeout(() => {
+            overlay.style.display = 'none';
+            if (callback) callback();
+        }, durationMs);
+    }
+
+    /**
+     * Punkt 6: Zoomt zurück zur Spiel-Übersicht.
+     */
+    returnCameraToOverview() {
+        if (this._playerMarker) {
+            this._map.flyTo(this._playerMarker.getLatLng(), 16.5, {
+                animate: true,
+                duration: 1.5
+            });
+        }
+    }
+
     // ----------------------------------------------------------------
     //  Interaktions-Overlay (Kneipen-Dialog)
     // ----------------------------------------------------------------
 
     /**
      * Zeigt den Kneipen-Dialog an und befüllt die Buttons dynamisch.
-     * @param {Object} optionsData - { A: { text, reward|cost, risk }, ... }
+     * @param {Object} optionsData - { A: { text, reward|cost, risk, requiresConfirmation }, ... }
      * @param {Object} riskData - { riskMalus, activeStations }
      * @param {Function} onSelectCb - Wird mit 'A','B','C','D' aufgerufen
+     * @param {Function} getPreviewCb - Callback zur Risiko-Vorschau aus dem Model (Task 9)
      */
-    showInteractionOverlay(optionsData, riskData, onSelectCb) {
+    showInteractionOverlay(optionsData, riskData, onSelectCb, getPreviewCb) {
         const container = document.getElementById('options-container');
         if (!container) return;
 
-        // Text-Element befüllen
-        const textEl = document.getElementById('options-text');
-        if (textEl) {
-            textEl.innerHTML = 'Du hörst dich unauffällig um. Was tust du?';
-        }
+        // Hilfsfunktion zum Rendern der ersten Phase (Übersicht der Aktionen)
+        const renderPhase1 = () => {
+            const textEl = document.getElementById('options-text');
+            if (textEl) {
+                textEl.innerHTML = 'Du hörst dich unauffällig um. Was tust du?';
+            }
 
-        // Buttons dynamisch befüllen
-        const buttons = container.querySelectorAll('.option-btn');
-        const keys = ['A', 'B', 'C', 'D'];
-        buttons.forEach((btn, i) => {
-            const key = keys[i];
-            const opt = optionsData[key];
-            if (!opt) return;
+            const buttonsContainer = document.getElementById('options-buttons');
+            const buttons = buttonsContainer.querySelectorAll('.option-btn');
+            const keys = ['A', 'B', 'C', 'D'];
 
-            // Text EXAKT so wie er aus der Game.js kommt
-            const label = `${key}: ${opt.text}`;
+            buttons.forEach((btn, i) => {
+                const key = keys[i];
+                const opt = optionsData[key];
+                
+                if (!opt) {
+                    btn.style.display = 'none';
+                    return;
+                }
 
-            // Alten Listener entfernen via cloneNode
-            const fresh = btn.cloneNode(false);
-            fresh.textContent = label;
-            fresh.className = btn.className;
-            btn.parentNode.replaceChild(fresh, btn);
-            fresh.addEventListener('click', () => {
-                container.style.display = 'none';
-                onSelectCb(key, opt);
+                btn.style.display = 'block';
+                const fresh = btn.cloneNode(false);
+                fresh.textContent = `${key}: ${opt.text}`;
+                fresh.className = btn.className;
+                btn.parentNode.replaceChild(fresh, btn);
+
+                fresh.addEventListener('click', () => {
+                    if (opt.requiresConfirmation) {
+                        renderPhase2(key, opt);
+                    } else {
+                        container.style.display = 'none';
+                        onSelectCb(key, opt);
+                    }
+                });
             });
-        });
+        };
 
+        // Hilfsfunktion zum Rendern der zweiten Phase (Risiko-Warnung und Bestätigung)
+        const renderPhase2 = (key, opt) => {
+            // Task 9: Callback statt direktem Zugriff auf 'game'
+            const preview = getPreviewCb(key);
+            if (!preview) return;
+
+            const textEl = document.getElementById('options-text');
+            if (textEl) {
+                textEl.innerHTML = `<div style="color: #facc15; font-weight: bold; margin-bottom: 10px; text-transform: uppercase; font-size: 0.9rem;">⚠️ Bestätigung erforderlich</div>${preview.text}`;
+            }
+
+            const buttonsContainer = document.getElementById('options-buttons');
+            const buttons = buttonsContainer.querySelectorAll('.option-btn');
+            
+            // Alle Buttons verstecken
+            buttons.forEach(b => b.style.display = 'none');
+
+            // Button 1: Abbrechen / Zurück
+            const backBtn = buttons[0];
+            backBtn.style.display = 'block';
+            const freshBack = backBtn.cloneNode(false);
+            freshBack.textContent = 'Zurück / Abbrechen';
+            freshBack.className = backBtn.className;
+            backBtn.parentNode.replaceChild(freshBack, backBtn);
+            freshBack.addEventListener('click', () => renderPhase1());
+
+            // Button 2: Bestätigen & Ausführen
+            const confirmBtn = buttons[1];
+            confirmBtn.style.display = 'block';
+            const freshConfirm = confirmBtn.cloneNode(false);
+            freshConfirm.textContent = 'Risiko akzeptieren & Ausführen';
+            freshConfirm.className = confirmBtn.className;
+            freshConfirm.style.borderColor = '#facc15';
+            confirmBtn.parentNode.replaceChild(freshConfirm, confirmBtn);
+            freshConfirm.addEventListener('click', () => {
+                container.style.display = 'none';
+                // Wir führen die Aktion mit dem berechneten Risiko aus
+                onSelectCb(key, { ...opt, risk: preview.risk });
+            });
+        };
+
+        renderPhase1();
         container.style.display = 'block';
     }
 

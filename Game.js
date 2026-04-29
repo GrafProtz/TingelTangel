@@ -1,4 +1,5 @@
 import { MapData } from './MapData.js';
+import { STRINGS } from './GameStrings.js';
 
 /**
  * Game - Die Logik-Schicht.
@@ -25,7 +26,8 @@ class Game {
             moveCount: 0,
             missionPhase: 1,
             infoMenuOpenUntilMove: -1,
-            isInfoMenuOpen: false
+            isInfoMenuOpen: false,
+            logbook: []
         };
 
         this._stateChangeCallbacks  = [];
@@ -70,25 +72,61 @@ class Game {
     }
 
     _notifyTargetReached() {
-        // Risiko-Daten berechnen
         const targetNode = this._mapData.getNode(this._state.targetPubNodeId);
-        let riskData = { riskMalus: 0, activeStations: 0 };
-        if (targetNode) {
-            riskData = this._mapData.getPoliceRiskModifier([targetNode.lat, targetNode.lon]);
-        }
+        const cityName = this._mapData.cityName || 'dieser Stadt';
+        const pubName = targetNode?.tags?.name || 'Unbekannte Kneipe';
 
-        // Optionen mit dynamischem Risiko
+        // Optionen aus GameStrings.js laden
         const optionsData = {
-            A: { text: `Sprich mit dem Barkeeper. Wenn du ihm 50 Euro Trinkgeld gibst, erzählt er dir vielleicht, wie die Polizei in ${this._mapData.cityName || 'dieser Stadt'} organisiert ist.`,
-                 cost: 50, risk: 0 },
-            B: { text: 'Ein unseriös wirkender Gast bietet dir an, dich fachkundig über Einbruchsmöglichkeiten in der Stadt für ein einmaliges Beratungshonorar von 75 Euro und einer 20-prozentigen Gewinnbeteiligung zu beraten.', 
-                 cost: 75, risk: 0 },
-            C: { text: 'Straßenraub',    reward: 300, risk: Math.min(100, 85 + riskData.riskMalus) },
-            D: { text: 'Nur Infos kaufen (Sicher)', cost: 10, risk: 0 }
+            A: { 
+                text: STRINGS.interactions.pub.optionA(cityName),
+                cost: 50, 
+                risk: 0 
+            },
+            B: { 
+                text: STRINGS.interactions.pub.optionB('?'), // Platzhalter, da Risiko erst in Phase 2 fixiert wird
+                requiresConfirmation: true,
+                cost: 75 
+            },
+            C: { 
+                text: STRINGS.interactions.pub.optionC('?'), 
+                requiresConfirmation: true,
+                reward: 300 
+            },
+            D: { 
+                text: STRINGS.interactions.pub.optionD, 
+                cost: 10, 
+                risk: 0 
+            }
         };
 
-        console.log('\ud83d\udea8 Risiko-Daten:', riskData, 'Optionen:', optionsData);
+        const riskData = targetNode ? this._mapData.getPoliceRiskModifier([targetNode.lat, targetNode.lon]) : { riskMalus: 0, activeStations: 0 };
+        
+        console.log('--- POI ERREICHT ---', pubName);
         this._targetReachedCallbacks.forEach(cb => cb(this._state.targetPubNodeId, optionsData, riskData));
+    }
+
+    /**
+     * Berechnet die Risiko-Vorschau für eine zweistufige Interaktion.
+     * @param {string} key - B oder C
+     */
+    getInteractionPreview(key) {
+        const targetNode = this._mapData.getNode(this._state.targetPubNodeId);
+        if (!targetNode) return null;
+
+        const riskData = this._mapData.getPoliceRiskModifier([targetNode.lat, targetNode.lon]);
+        const baseRisk = (key === 'B') ? 20 : 85;
+        const finalRisk = Math.min(100, baseRisk + riskData.riskMalus);
+
+        let previewText = '';
+        if (key === 'B') previewText = STRINGS.interactions.pub.previewB(finalRisk);
+        if (key === 'C') previewText = STRINGS.interactions.pub.previewC(finalRisk);
+
+        return {
+            key,
+            risk: finalRisk,
+            text: previewText
+        };
     }
 
     /** Callback für den allerersten erfolgreichen Zug. */
@@ -115,7 +153,8 @@ class Game {
             moveCount: 0,
             missionPhase: 1,
             infoMenuOpenUntilMove: -1,
-            isInfoMenuOpen: false
+            isInfoMenuOpen: false,
+            logbook: []
         };
         this._firstMoveFired = false;
         console.log('🎯 MISSION GESTARTET! Ziel-ID gesetzt auf:', this._state.targetPubNodeId);
@@ -318,6 +357,14 @@ class Game {
         // Cooldown setzen und Steuerung reaktivieren
         this._state.lastPubVisitTime = Date.now();
         this._state.gameActive = true;
+
+        // Im Logbuch speichern
+        this._state.logbook.push({ 
+            time: Date.now(), 
+            text: msg, 
+            type: (roll < (opt.risk || 0)) ? 'fail' : 'success' 
+        });
+
         this._notify();
 
         // UI-Timeouts für Cooldown-Text

@@ -13,6 +13,8 @@ export const STRINGS = {
             optionB: (risk) => `Ein unseriös wirkender Gast bietet dir an, dich fachkundig über Einbruchsmöglichkeiten in der Stadt für ein einmaliges Beratungshonorar von 75 Euro und einer 20-prozentigen Gewinnbeteiligung zu beraten (Risiko: ${risk}%).`,
             optionC: (risk) => `Straßenraub (Risiko: ${risk}%)`,
             optionD: 'Nur Infos kaufen (Sicher) (10 €)',
+            previewB: (risk) => `Dein geschätztes Risiko für den Einbruch liegt aktuell bei ${risk}%. Willst du fortfahren?`,
+            previewC: (risk) => `Die Straße ist belebt. Das Risiko für einen Überfall beträgt ${risk}%. Jetzt zuschlagen?`,
             success: (task, reward) => `✅ Erfolg! Du kassierst ${reward} € für "${task}".`,
             caught: (fine) => `🚨 ERWISCHT! Strafe: ${fine} €.`,
             alreadyHaveRadar: '📡 Du hast die Polizeifrequenz bereits!',
