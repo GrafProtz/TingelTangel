@@ -292,7 +292,7 @@ class MapData {
      * @returns {{ riskMalus: number, activeStations: number }}
      */
     getPoliceRiskModifier(poiCoords) {
-        const MAX_RADIUS = 3000;             // Meter (3km für Großstädte)
+        const MAX_RADIUS = 1000;             // Meter (angepasst an Overpass-Range)
         const MAX_MALUS_PER_STATION = 30;    // Prozentpunkte bei 0m Distanz
         const HARD_CAP = 40;                 // Maximaler Gesamt-Aufschlag
         const DIMINISHING = [1.0, 0.5, 0.25]; // Gewichtung pro Station

@@ -201,8 +201,9 @@ async function initApp() {
 
     // ----- Start-Button -----
     document.querySelector('.start-btn')?.addEventListener('click', async () => {
-        const idx = document.getElementById('city-dropdown-intro').value;
-        if (idx === '') return;
+        const val = document.getElementById('city-dropdown-intro').value;
+        if (val === '') return;
+        const idx = parseInt(val, 10);
 
         const city = CITIES[idx];
         mapView.showNotification('LADEN …', `Lade Daten für ${city.name} …`);
