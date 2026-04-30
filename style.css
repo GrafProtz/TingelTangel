@@ -408,13 +408,41 @@ html, body {
 }
 
 .door-animation::after {
-    content: '🚪';
+    content: ''; /* Das Emoji ist jetzt endgültig weg */
     position: absolute;
     top: 50%;
     left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 80px;
-    animation: lockpickPulse 1s infinite ease-in-out;
+    width: 100px; /* Physische Breite für das Vektor-Icon */
+    height: 120px; /* Physische Höhe für das Vektor-Icon */
+    /* Professionelles, goldenes Tür-SVG direkt eingebettet */
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23facc15"><path d="M19 19V4h-4V3H5v16H3v2h18v-2h-2zm-8-9h2v2h-2v-2z"/></svg>');
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    /* Scharnier für die 3D-Drehung exakt an die linke Kante setzen */
+    transform-origin: 0% 50%; 
+    animation: doorSwingOpen 1.5s forwards ease-in-out;
     filter: drop-shadow(0 0 15px #facc15);
+}
+
+@keyframes doorSwingOpen {
+    0% { 
+        transform: translate(-50%, -50%) perspective(400px) rotateY(0deg) scale(0.8);
+        opacity: 0; 
+    }
+    15% { 
+        opacity: 1; 
+        transform: translate(-50%, -50%) perspective(400px) rotateY(0deg) scale(1); 
+    }
+    70% { 
+        opacity: 1; 
+        /* Tür schwingt um 85 Grad auf, Kamera zoomt leicht rein */
+        transform: translate(-50%, -50%) perspective(400px) rotateY(-85deg) scale(1.5); 
+    }
+    100% { 
+        opacity: 0; 
+        /* Spieler geht "durch" die offene Tür, extremer Zoom und Fade-out */
+        transform: translate(-50%, -50%) perspective(400px) rotateY(-90deg) scale(3); 
+    }
 }
 
