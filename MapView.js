@@ -133,40 +133,73 @@ class MapView {
     /**
      * Rendert Nachbar-Kreuzungen als klickbare Marker.
      * @param {Array} neighbors - Objekte mit { id, lat, lon, edgeData }
+     * @param {string} targetNodeId - ID des aktuellen Hauptziels (Pub)
      * @param {Function} onClickCb - Wird mit der nodeId aufgerufen
      */
-    renderNeighbors(neighbors, onClickCb) {
+    renderNeighbors(neighbors, targetNodeId, onClickCb) {
         this._clearNeighbors();
+        if (this._neighborTimeout) clearTimeout(this._neighborTimeout);
 
-        neighbors.forEach(nb => {
-            const targetId = String(nb.id);
+        // Task: Marker schrittweise (animiert) einblenden
+        let currentIndex = 0;
+        const total = neighbors.length;
 
-            const marker = L.marker([nb.lat, nb.lon], {
-                icon: L.divIcon({
-                    className: 'neighbor-marker',
-                    iconSize: [12, 12]
-                })
-            }).addTo(this._map);
+        const drawNext = () => {
+            if (currentIndex >= total) return;
 
-            // Klick → Bewegung auslösen
-            marker.on('click', (e) => {
-                L.DomEvent.stopPropagation(e);
-                this._clearGhostPath();
-                onClickCb(targetId);
-            });
+            const nb = neighbors[currentIndex];
+            const nbId = String(nb.id);
 
-            // Hover → Ghost-Path zeichnen
-            marker.on('mouseover', () => {
-                if (nb.edgeData?.path) {
-                    this._drawGhostPath(nb.edgeData.path);
+            // Spezialfall: Dieser Nachbar ist unser Ziel (die Kneipe)
+            if (nbId === String(targetNodeId) && this._targetMarker) {
+                // Task: Wenn der Zeichen-Punkt das Ziel "berührt", Ziel aktivieren
+                const el = this._targetMarker.getElement();
+                if (el) {
+                    el.classList.add('marker-active');
+                    el.style.pointerEvents = 'auto';
+                    el.style.zIndex = '10000';
+                    // Der Ziel-Marker selbst wird zum Klick-Trigger für die Bewegung
+                    el.addEventListener('pointerdown', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this._clearGhostPath();
+                        onClickCb(nbId);
+                    }, { once: true });
                 }
-            });
-            marker.on('mouseout', () => {
-                this._clearGhostPath();
-            });
+            } else {
+                // Normaler grüner Punkt
+                const marker = L.marker([nb.lat, nb.lon], {
+                    icon: L.divIcon({
+                        className: 'neighbor-marker',
+                        iconSize: [12, 12]
+                    })
+                }).addTo(this._map);
 
-            this._neighborMarkers.push(marker);
-        });
+                // Klick → Bewegung auslösen
+                marker.on('click', (e) => {
+                    L.DomEvent.stopPropagation(e);
+                    this._clearGhostPath();
+                    onClickCb(nbId);
+                });
+
+                // Hover → Ghost-Path zeichnen
+                marker.on('mouseover', () => {
+                    if (nb.edgeData?.path) {
+                        this._drawGhostPath(nb.edgeData.path);
+                    }
+                });
+                marker.on('mouseout', () => {
+                    this._clearGhostPath();
+                });
+
+                this._neighborMarkers.push(marker);
+            }
+
+            currentIndex++;
+            this._neighborTimeout = setTimeout(drawNext, 40);
+        };
+
+        drawNext();
     }
 
     _clearNeighbors() {
@@ -262,6 +295,7 @@ class MapView {
             zIndexOffset: 2000,
             interactive: false
         }).addTo(this._map);
+
     }
 
     /** Triggert die Ankunfts-Animation (Pulse) auf dem Ziel-Marker. */
@@ -343,29 +377,14 @@ class MapView {
      * @param {Function} onMarkerClick 
      */
     onTargetReached(targetNodeId, onMarkerClick) {
-        console.log('[DEBUG MAP] onTargetReached aufgerufen. Suche Marker für ID:', targetNodeId);
-        
         if (!this._targetMarker) return;
-
-        // 1. Die CSS-Klasse permanent in das Leaflet-Icon brennen (verhindert Überschreiben durch Redraw)
-        const currentIcon = this._targetMarker.options.icon;
-        if (currentIcon && currentIcon.options) {
-            currentIcon.options.className = (currentIcon.options.className || '') + ' marker-active';
-            this._targetMarker.setIcon(currentIcon);
-        }
-
-        // 2. Element holen und Klick binden
         const el = this._targetMarker.getElement();
         if (el) {
             el.style.pointerEvents = 'auto';
             el.style.zIndex = '9999';
-
-            console.log('[DEBUG MAP] Binde nativen Event-Listener an das pulsierende Element...');
-
             el.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('[DEBUG MAP] 🎯 POINTERDOWN GEFEUERT!');
                 onMarkerClick();
             }, { once: true });
         }

@@ -60,7 +60,7 @@ async function initApp() {
         }
 
         const neighbors = mapData.getNeighbors(state.currentPlayerNodeId);
-        mapView.renderNeighbors(neighbors, (clickedId) => {
+        mapView.renderNeighbors(neighbors, state.targetPubNodeId, (clickedId) => {
             game.moveToNode(clickedId);
         });
 
@@ -115,58 +115,55 @@ async function initApp() {
         const name = missionPOI?.poiData?.tags?.name || 'Unbekannte Gaststätte';
         mapView.showNotification('ANGEKOMMEN', `Du hast "${name}" erreicht!`);
 
-        // Cinematic-Vorbereitung (Task 8): Marker aktiv setzen und auf Klick warten
-        mapView.onTargetReached(targetNodeId, () => {
-            game._state.gameActive = false;
-            // KEIN game._notify() hier!
+        // Task: Automatischer Eintritt (kein extra Klick mehr nötig)
+        game._state.gameActive = false;
 
-            // Cinematic-Loop: Zoom + Sperre (Tür-Symbol)
-            mapView.playCinematicSequence('door', 1500, () => {
-                // Erst JETZT das Overlay öffnen (Task 9 mit Callback-Brücke)
-                mapView.showInteractionOverlay(optionsData, riskData, (key, opt) => {
-                    const msg = game.handleInteractionDecision(key, opt);
-                    
-                    // Ergebnis anzeigen (Task 10)
-                    mapView.showInteractionResult(msg, msg.includes('✅') ? 'success' : 'fail');
+        // Cinematic-Loop: Zoom + Sperre (Tür-Symbol)
+        mapView.playCinematicSequence('door', 1500, () => {
+            // Erst JETZT das Overlay öffnen
+            mapView.showInteractionOverlay(optionsData, riskData, (key, opt) => {
+                const msg = game.handleInteractionDecision(key, opt);
+                
+                // Ergebnis anzeigen
+                mapView.showInteractionResult(msg, msg.includes('✅') ? 'success' : 'fail');
 
-                    // Spezielle Logik für Option B (Consultant)
-                    if (key === 'B' && msg.includes('✅')) {
-                        mapView.showInvestmentDialog(mapData.cityName, (type) => {
-                            game._state.budget -= 75;
-                            game._state.consultantActive = true;
-                            const pNode = mapData.getNode(game.getState().currentPlayerNodeId);
-                            const playerCoords = pNode ? [pNode.lat, pNode.lon] : null;
-                            const targetIds = mapData.getCrimeTargets(type, 3, playerCoords);
-                            game._state.activeCrimeTargets = targetIds;
-                            game._state.missionPhase = 3;
-                            game._notify();
-                        }, () => {
-                            game._state.gameActive = true;
-                            game._notify();
-                        });
-                    } 
-                    // Spezielle Logik für Option A (Radar)
-                    else if (key === 'A' && game.getState().radarUnlocked) {
-                        game._state.gameActive = false; 
-                        mapView.showRadarTutorialDialog(() => {
-                            mapView.showPoliceRadar(mapData._policeStations).then(() => {
-                                mapView.animateInfoToMenu('NEUE FUNKTION', 'Radar-Frequenzen gespeichert!', () => {
-                                    game._state.missionPhase = 2;
-                                    game._state.lastRadarTime = Date.now();
-                                    game._state.gameActive = true;
-                                    game.triggerNewInfo(); 
-                                    game._notify();
-                                });
-                            });
-                        });
-                    } 
-                    // Standard-Fallback für C, D oder wenn A wegen Geldmangel fehlschlägt
-                    else {
+                // Spezielle Logik für Option B (Consultant)
+                if (key === 'B' && msg.includes('✅')) {
+                    mapView.showInvestmentDialog(mapData.cityName, (type) => {
+                        game._state.budget -= 75;
+                        game._state.consultantActive = true;
+                        const pNode = mapData.getNode(game.getState().currentPlayerNodeId);
+                        const playerCoords = pNode ? [pNode.lat, pNode.lon] : null;
+                        const targetIds = mapData.getCrimeTargets(type, 3, playerCoords);
+                        game._state.activeCrimeTargets = targetIds;
+                        game._state.missionPhase = 3;
+                        game._notify();
+                    }, () => {
                         game._state.gameActive = true;
                         game._notify();
-                    }
-                }, (key) => game.getInteractionPreview(key));
-            });
+                    });
+                } 
+                // Spezielle Logik für Option A (Radar)
+                else if (key === 'A' && game.getState().radarUnlocked) {
+                    game._state.gameActive = false; 
+                    mapView.showRadarTutorialDialog(() => {
+                        mapView.showPoliceRadar(mapData._policeStations).then(() => {
+                            mapView.animateInfoToMenu('NEUE FUNKTION', 'Radar-Frequenzen gespeichert!', () => {
+                                game._state.missionPhase = 2;
+                                game._state.lastRadarTime = Date.now();
+                                game._state.gameActive = true;
+                                game.triggerNewInfo(); 
+                                game._notify();
+                            });
+                        });
+                    });
+                } 
+                // Standard-Fallback für C, D oder wenn A wegen Geldmangel fehlschlägt
+                else {
+                    game._state.gameActive = true;
+                    game._notify();
+                }
+            }, (key) => game.getInteractionPreview(key));
         });
     });
 
@@ -253,7 +250,7 @@ async function initApp() {
                     // Nach Tutorial: Mission starten und Nachbarn zeigen
                     game.startMission(scenario.startNodeId, scenario.targetNodeId);
                     const neighbors = mapData.getNeighbors(scenario.startNodeId);
-                    mapView.renderNeighbors(neighbors, (clickedId) => {
+                    mapView.renderNeighbors(neighbors, scenario.targetNodeId, (clickedId) => {
                         game.moveToNode(clickedId);
                     });
                 }
