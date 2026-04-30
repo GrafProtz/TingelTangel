@@ -17,7 +17,7 @@ class MapView {
         this._playerMarker    = null;
         this._neighborMarkers = [];
         this._ghostPath       = null;
-        this._targetMarker    = null;
+        this._activePOIMarkers = [];
         this._radarMarkers    = [];
 
         // Globaler Klick-Spion zur Fehlersuche (QA Task)
@@ -262,40 +262,96 @@ class MapView {
     //  Ziel-Marker (POI)
     // ----------------------------------------------------------------
 
-    /** Rendert das Missions-Ziel als Bierglas-Icon auf der Karte. */
-    renderTarget(poiNode, isCooldown = false) {
-        if (this._targetMarker) this._map.removeLayer(this._targetMarker);
+    /**
+     * Universelle Methode zum Rendern aller interaktiven Ziele auf der Karte.
+     * @param {Array} poiArray - [{ id, lat, lon, type, onClickCallback, isPrimary }]
+     */
+    renderPOIs(poiArray) {
+        // 1. Alle alten Marker entfernen
+        this._activePOIMarkers.forEach(m => this._map.removeLayer(m));
+        this._activePOIMarkers = [];
 
-        const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='36' height='36'>`
-            + `<g stroke='#333' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'>`
-            + `<path fill='none' d='M16 9h2.5a2.5 2.5 0 0 1 2.5 2.5v3a2.5 2.5 0 0 1-2.5 2.5H16'/>`
-            + `<path fill='#FFD700' d='M6 6h10v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6z'/>`
-            + `<path fill='none' d='M9 8v9M13 8v9'/>`
-            + `<path fill='#FFF' d='M5 6c0-1.5 1.5-2.5 3-2.5 1 0 1.5.5 2.5.5s1.5-.5 2.5-.5c1.5 0 3 1 3 2.5 0 1-1 1.5-1 2.5H6c0-1-1-1.5-1-2.5z'/>`
-            + `</g></svg>`;
-
-        // Wrapper: Leaflet positioniert den äußeren, Animation läuft nur auf dem inneren
-        const cooldownClass = isCooldown ? 'poi-cooldown' : '';
-        const html = `
-            <div class="target-marker-wrapper ${cooldownClass}">
-                <div class="target-marker-inner" style="display: inline-block;">
-                    ${svg}
+        // 2. Neue Marker zeichnen
+        poiArray.forEach(poi => {
+            const svg = this._getPOISVG(poi.type || 'pub');
+            const html = `
+                <div class="target-marker-wrapper">
+                    <div class="target-marker-inner" style="display: inline-block;">
+                        ${svg}
+                    </div>
                 </div>
-            </div>
-        `;
+            `;
 
-        this._targetMarker = L.marker([poiNode.lat, poiNode.lon], {
-            icon: L.divIcon({
-                className: 'target-marker',
-                html: html,
-                iconSize: [36, 36],
-                iconAnchor: [18, 18]
-            }),
-            pane: 'popupPane',
-            zIndexOffset: 2000,
-            interactive: false
-        }).addTo(this._map);
+            const marker = L.marker([poi.lat, poi.lon], {
+                icon: L.divIcon({
+                    className: 'target-marker',
+                    html: html,
+                    iconSize: [36, 36],
+                    iconAnchor: [18, 18]
+                }),
+                pane: 'popupPane',
+                zIndexOffset: 2000,
+                interactive: !!poi.onClickCallback
+            }).addTo(this._map);
 
+            if (poi.onClickCallback) {
+                const el = marker.getElement();
+                if (el) {
+                    el.style.pointerEvents = 'auto';
+                    el.addEventListener('pointerdown', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        poi.onClickCallback();
+                    });
+                }
+            }
+
+            this._activePOIMarkers.push(marker);
+            
+            // Für Kompatibilität mit Pulse-Methoden
+            if (poi.type === 'pub' || poi.isPrimary) {
+                this._targetMarker = marker;
+            }
+        });
+    }
+
+    /** Zentrales Icon-Mapping für alle POI-Typen. */
+    _getPOISVG(type) {
+        let color = '#FFD700';
+        let pathData = '';
+
+        switch (type) {
+            case 'residential': // Wohnung 🏠
+                color = '#4ade80';
+                pathData = 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z';
+                break;
+            case 'commercial': // Gewerbe 🏢
+                color = '#38bdf8';
+                pathData = 'M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8V9h8v10zm-2-8h-4v2h4v-2zm0 4h-4v2h4v-2z';
+                break;
+            case 'public': // Öffentliche Einrichtungen 🏛️
+                color = '#f87171';
+                pathData = 'M4 10h3v7H4zM10.5 10h3v7h-3zM2 19h20v3H2zM17 10h3v7h-3zM12 1L2 6v2h20V6L12 1z';
+                break;
+            case 'allotments': // Schrebergärten 🏕️
+                color = '#fbbf24';
+                pathData = 'M10 6.73L14.71 14H5.29L10 6.73M10 3L2 15h3v7h10v-7h3L10 3z';
+                break;
+            default: // Pub (Standard) 🍺
+                return `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='36' height='36'>`
+                    + `<g stroke='#333' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'>`
+                    + `<path fill='none' d='M16 9h2.5a2.5 2.5 0 0 1 2.5 2.5v3a2.5 2.5 0 0 1-2.5 2.5H16'/>`
+                    + `<path fill='#FFD700' d='M6 6h10v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6z'/>`
+                    + `<path fill='none' d='M9 8v9M13 8v9'/>`
+                    + `<path fill='#FFF' d='M5 6c0-1.5 1.5-2.5 3-2.5 1 0 1.5.5 2.5.5s1.5-.5 2.5-.5c1.5 0 3 1 3 2.5 0 1-1 1.5-1 2.5H6c0-1-1-1.5-1-2.5z'/>`
+                    + `</g></svg>`;
+        }
+
+        return `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='36' height='36'>`
+            + `<g stroke='#1e293b' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'>`
+            + `<circle cx="12" cy="12" r="11" fill="white" opacity="0.2" />`
+            + `<path fill='${color}' d='${pathData}'/>`
+            + `</g></svg>`;
     }
 
     /** Triggert die Ankunfts-Animation (Pulse) auf dem Ziel-Marker. */

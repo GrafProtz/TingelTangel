@@ -1,4 +1,5 @@
 import { MapData } from './MapData.js';
+import { CONFIG } from './GameConfig.js';
 import { Game } from './Game.js';
 import { MapView } from './MapView.js';
 
@@ -53,11 +54,61 @@ async function initApp() {
         const node = mapData.getNode(state.currentPlayerNodeId);
         if (node) mapView.renderPlayer([node.lat, node.lon]);
 
+        // Task: Alle POIs (Kneipe + Einbruchsziele) über die universelle Methode rendern
+        const poiList = [];
+        
         const targetNode = mapData.getNode(state.targetPubNodeId);
         if (targetNode) {
-            const isCooldown = (Date.now() - state.lastPubVisitTime < 180000);
-            mapView.renderTarget(targetNode, isCooldown);
+            poiList.push({
+                ...targetNode,
+                type: 'pub',
+                isPrimary: true
+            });
         }
+
+        if (state.activeCrimeTargets) {
+            state.activeCrimeTargets.forEach(target => {
+                poiList.push({
+                    ...target,
+                    onClickCallback: () => {
+                        console.log("[DEBUG INTERACTION] Gebäude geklickt:", target.id);
+                        
+                        // 1. Distanzprüfung
+                        const playerNode = mapData.getNode(state.currentPlayerNodeId);
+                        if (!playerNode) return;
+                        const dist = mapData.calculateDistance(playerNode, target);
+                        
+                        if (dist > CONFIG.PROXIMITY_TRIGGER_DISTANCE) { // 40m -> 50m Toleranz aus Config
+                            mapView.showNotification("ZU WEIT WEG", STRINGS.interactions.burglary.tooFar);
+                            return;
+                        }
+
+                        // 2. Einbruch starten
+                        game.pause();
+                        mapView.playCinematicSequence('lockpick', 2000, () => {
+                            const burgData = game.getBurglaryData(target.id);
+                            if (!burgData) return;
+
+                            mapView.showInteractionOverlay(
+                                burgData.options, 
+                                null, 
+                                (key, opt) => {
+                                    const msg = game.handleInteractionDecision(key, opt);
+                                    mapView.showInteractionResult(msg, msg.includes('✅') ? 'success' : 'fail');
+                                    game.resume();
+                                },
+                                (key) => {
+                                    const opt = burgData.options[key];
+                                    return { key, risk: opt.risk, text: opt.preview(opt.risk) };
+                                }
+                            );
+                        });
+                    }
+                });
+            });
+        }
+
+        mapView.renderPOIs(poiList);
 
         const neighbors = mapData.getNeighbors(state.currentPlayerNodeId);
         mapView.renderNeighbors(neighbors, state.targetPubNodeId, (clickedId) => {
@@ -116,7 +167,7 @@ async function initApp() {
         mapView.showNotification('ANGEKOMMEN', `Du hast "${name}" erreicht!`);
 
         // Task: Automatischer Eintritt (kein extra Klick mehr nötig)
-        game._state.gameActive = false;
+        game.pause();
 
         // Cinematic-Loop: Zoom + Sperre (Tür-Symbol)
         mapView.playCinematicSequence('door', 1500, () => {
@@ -126,23 +177,20 @@ async function initApp() {
                 if (key === 'B') {
                     if (game.canAfford(75)) {
                         game.deductBudget(75);
-                        game._notify(); // UI aktualisieren
 
                         // SOFORT den Folge-Dialog laden!
                         mapView.showInvestmentDialog("diesem Viertel", (targetType) => {
                             console.log("[DEBUG] Spieler wählte Zieltyp:", targetType);
-                            // Hier folgt später die Logik zum Markieren der Ziele auf der Karte
-                            game._state.gameActive = true;
-                            game._notify();
+                            // Task: Ziele im Umkreis generieren
+                            game.spawnTargets(targetType, game.getState().targetPubNodeId);
+                            game.resume();
                         }, () => {
                             // Abbrechen geklickt
-                            game._state.gameActive = true;
-                            game._notify();
+                            game.resume();
                         });
                     } else {
                         alert("Nicht genug Geld für den Berater!");
-                        game._state.gameActive = true;
-                        game._notify();
+                        game.resume();
                     }
                     return; // Beendet den Callback für B
                 }
@@ -153,21 +201,20 @@ async function initApp() {
 
                 // Option A (Radar)
                 if (key === 'A' && game.getState().radarUnlocked) {
-                    game._state.gameActive = false; 
+                    game.pause(); 
                     mapView.showRadarTutorialDialog(() => {
                         mapView.showPoliceRadar(mapData._policeStations).then(() => {
                             mapView.animateInfoToMenu('NEUE FUNKTION', 'Radar-Frequenzen gespeichert!', () => {
-                                game._state.missionPhase = 2;
-                                game._state.lastRadarTime = Date.now();
-                                game._state.gameActive = true;
+                                const s = game.getState();
+                                s.missionPhase = 2;
+                                s.lastRadarTime = Date.now();
+                                game.resume();
                                 game.triggerNewInfo(); 
-                                game._notify();
                             });
                         });
                     });
                 } else {
-                    game._state.gameActive = true;
-                    game._notify();
+                    game.resume();
                 }
             }, (key) => game.getInteractionPreview(key));
         });
@@ -184,7 +231,7 @@ async function initApp() {
             return;
         }
         if (result === 'cooldown') {
-            const remaining = Math.ceil((300_000 - (Date.now() - game.getState().lastRadarTime)) / 1000);
+            const remaining = Math.ceil((CONFIG.RADAR_COOLDOWN - (Date.now() - game.getState().lastRadarTime)) / 1000);
             mapView.showNotification('COOLDOWN', `📡 Radar lädt noch auf! (${remaining} Sek.)`);
             return;
         }
@@ -241,7 +288,9 @@ async function initApp() {
         // Spieler und Ziel rendern
         mapView.renderPlayer(scenario.startCoords);
         const targetNode = mapData.getNode(scenario.targetNodeId);
-        if (targetNode) mapView.renderTarget(targetNode);
+        if (targetNode) {
+            mapView.renderPOIs([{ ...targetNode, type: 'pub', isPrimary: true }]);
+        }
 
         // Kamera zum Start
         mapView.focusLocation(scenario.startCoords);

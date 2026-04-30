@@ -1,8 +1,7 @@
+import { CONFIG } from './GameConfig.js';
+
 /**
  * MapData - Der Data-Layer der Engine.
- * Baut einen Makro-Graphen aus OSM-Daten: Nur echte Kreuzungen und
- * Sackgassen werden zu begehbaren Knoten; die Kurvenpunkte dazwischen
- * werden als "Geometrie-Pfad" in den Kanten gespeichert.
  */
 class MapData {
     constructor() {
@@ -35,14 +34,10 @@ class MapData {
             way["highway"](${s},${w},${n},${e});
             node["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
             way["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
+            way["building"](${s},${w},${n},${e});
             node["amenity"~"police|police_station"](${s},${w},${n},${e});
             way["amenity"~"police|police_station"](${s},${w},${n},${e});
             relation["amenity"~"police|police_station"](${s},${w},${n},${e});
-            way["building"="police"](${s},${w},${n},${e});
-            relation["building"="police"](${s},${w},${n},${e});
-            node["police"](${s},${w},${n},${e});
-            way["police"](${s},${w},${n},${e});
-            relation["police"](${s},${w},${n},${e});
             node["office"="government"]["government"="police"](${s},${w},${n},${e});
             way["office"="government"]["government"="police"](${s},${w},${n},${e});
             relation["office"="government"]["government"="police"](${s},${w},${n},${e});
@@ -292,9 +287,9 @@ class MapData {
      * @returns {{ riskMalus: number, activeStations: number }}
      */
     getPoliceRiskModifier(poiCoords) {
-        const MAX_RADIUS = 1000;             // Meter (angepasst an Overpass-Range)
-        const MAX_MALUS_PER_STATION = 30;    // Prozentpunkte bei 0m Distanz
-        const HARD_CAP = 40;                 // Maximaler Gesamt-Aufschlag
+        const MAX_RADIUS = CONFIG.POLICE_MAX_RADIUS;             // Meter
+        const MAX_MALUS_PER_STATION = CONFIG.POLICE_MAX_MALUS;    // Prozentpunkte bei 0m Distanz
+        const HARD_CAP = CONFIG.POLICE_HARD_CAP;                 // Maximaler Gesamt-Aufschlag
         const DIMINISHING = [1.0, 0.5, 0.25]; // Gewichtung pro Station
 
         const poi = { lat: poiCoords[0], lon: poiCoords[1] };

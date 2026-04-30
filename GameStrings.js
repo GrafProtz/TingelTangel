@@ -19,7 +19,19 @@ export const STRINGS = {
             caught: (fine) => `🚨 ERWISCHT! Strafe: ${fine} €.`,
             alreadyHaveRadar: '📡 Du hast die Polizeifrequenz bereits!',
             noMoney: (cost) => `❌ Nicht genug Geld! Du brauchst ${cost} €.`,
-            barkeeperInfo: (count) => `Der Barkeeper meint, dass hier ${count} Polizeiwache(n) in der Umgebung sind.`
+        barkeeperInfo: (count) => `Der Barkeeper meint, dass hier ${count} Polizeiwache(n) in der Umgebung sind.`
+        },
+        burglary: {
+            title: (type) => `Einbruch: ${type}`,
+            optionA: 'Leise durch das Fenster einsteigen (Niedriges Risiko)',
+            optionB: 'Haustür aufbrechen (Mittleres Risiko)',
+            optionC: 'Tresor suchen und knacken (Hohes Risiko)',
+            previewA: (risk) => `Leises Einsteigen: Dein geschätztes Entdeckungsrisiko liegt bei ${risk}%.`,
+            previewB: (risk) => `Tür aufhebeln: Dein geschätztes Entdeckungsrisiko liegt bei ${risk}%.`,
+            previewC: (risk) => `Tresor-Knacken: Risiko ${risk}%. Das ist extrem gefährlich, aber lukrativ!`,
+            success: (reward) => `✅ Erfolg! Du hast Beute im Wert von ${reward} € gemacht.`,
+            caught: (fine) => `🚨 ERWISCHT! Die Polizei hat dich gestellt. Strafe: ${fine} €.`,
+            tooFar: 'Du bist zu weit weg! Tritt näher an das Gebäude heran.'
         }
     },
     tutorial: {

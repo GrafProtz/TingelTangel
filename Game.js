@@ -1,4 +1,5 @@
 import { MapData } from './MapData.js';
+import { CONFIG } from './GameConfig.js';
 import { STRINGS } from './GameStrings.js';
 
 /**
@@ -13,11 +14,10 @@ class Game {
         this._mapData = mapData;
 
         this._state = {
-            budget: 300,
+            budget: CONFIG.INITIAL_BUDGET,
             currentPlayerNodeId: null,
             gameActive: false,
             isMoving: false,
-            moveCounter: 0,
             targetPubNodeId: null,
             radarUnlocked: false,
             lastRadarTime: 0,
@@ -84,8 +84,8 @@ class Game {
                 risk: 0 
             },
             B: { 
-                text: STRINGS.interactions.pub.optionB('?'), // Platzhalter, da Risiko erst in Phase 2 fixiert wird
-                requiresConfirmation: true,
+                text: STRINGS.interactions.pub.optionB(0), // Risiko ist 0 für diese Option
+                requiresConfirmation: false,
                 cost: 75 
             },
             C: { 
@@ -140,11 +140,10 @@ class Game {
 
     startMission(startNodeId, targetNodeId) {
         this._state = {
-            budget: 300,
+            budget: CONFIG.INITIAL_BUDGET,
             currentPlayerNodeId: String(startNodeId),
             gameActive: true,
             isMoving: false,
-            moveCounter: 0,
             targetPubNodeId: String(targetNodeId),
             radarUnlocked: false,
             lastRadarTime: 0,
@@ -157,7 +156,53 @@ class Game {
             logbook: []
         };
         this._firstMoveFired = false;
-        console.log('🎯 MISSION GESTARTET! Ziel-ID gesetzt auf:', this._state.targetPubNodeId);
+        console.log('🎯 MISSION GESTARTET! Ziel-ID:', this._state.targetPubNodeId);
+        this._notify();
+    }
+
+    pause() {
+        this._state.gameActive = false;
+        this._notify();
+    }
+
+    resume() {
+        this._state.gameActive = true;
+        this._notify();
+    }
+
+    setGameActive(active) {
+        this._state.gameActive = !!active;
+        this._notify();
+    }
+
+    isGameActive() {
+        return this._state.gameActive;
+    }
+
+    getBudget() {
+        return this._state.budget;
+    }
+
+    getState() {
+        return { ...this._state };
+    }
+
+    toggleInfoMenu() {
+        this._state.isInfoMenuOpen = !this._state.isInfoMenuOpen;
+        this._notify();
+    }
+
+    canAfford(amount) {
+        return this._state.budget >= amount;
+    }
+
+    deductBudget(amount) {
+        this._state.budget = Math.max(0, this._state.budget - amount);
+        this._notify();
+    }
+
+    addReward(amount) {
+        this._state.budget += amount;
         this._notify();
     }
 
@@ -303,8 +348,7 @@ class Game {
      */
     triggerRadar() {
         if (!this._state.radarUnlocked) return null;
-        const COOLDOWN = 300_000; // 5 Minuten
-        if (Date.now() - this._state.lastRadarTime < COOLDOWN) return 'cooldown';
+        if (Date.now() - this._state.lastRadarTime < CONFIG.RADAR_COOLDOWN) return 'cooldown';
         this._state.lastRadarTime = Date.now();
         this._notify();
         return [...this._mapData._policeStations];
@@ -323,8 +367,8 @@ class Game {
         if (key === 'A') {
             if (this._state.radarUnlocked) {
                 msg = '📡 Du hast die Frequenz bereits!';
-            } else if (this._state.budget >= 50) {
-                this._state.budget -= 50;
+            } else if (this._state.budget >= CONFIG.RADAR_COST) {
+                this._state.budget -= CONFIG.RADAR_COST;
                 this._state.radarUnlocked = true;
                 
                 const currentNode = this._mapData.getNode(this._state.currentPlayerNodeId);
@@ -335,7 +379,7 @@ class Game {
                 // Menü automatisch für neue Infos öffnen
                 this.triggerNewInfo();
             } else {
-                msg = '❌ Nicht genug Geld! Du brauchst 50 €.';
+                msg = `❌ Nicht genug Geld! Du brauchst ${CONFIG.RADAR_COST} €.`;
             }
         } else if (key === 'D') {
             const cost = opt.cost || 10;
@@ -348,10 +392,10 @@ class Game {
         } else if (roll < opt.risk) {
             const fine = Math.ceil(opt.reward * 0.5);
             this._state.budget = Math.max(0, this._state.budget - fine);
-            msg = `🚨 ERWISCHT! Strafe: ${fine} €.`;
+            msg = opt.caughtMsg ? opt.caughtMsg(fine) : `🚨 ERWISCHT! Strafe: ${fine} €.`;
         } else {
             this._state.budget += opt.reward;
-            msg = `✅ Erfolg! Du kassierst ${opt.reward} € für "${opt.text}".`;
+            msg = opt.successMsg ? opt.successMsg(opt.reward) : `✅ Erfolg! Du kassierst ${opt.reward} € für "${opt.text}".`;
         }
 
         // Cooldown setzen und Steuerung reaktivieren
@@ -394,7 +438,7 @@ class Game {
      */
     triggerNewInfo() {
         this._state.isInfoMenuOpen = true;
-        this._state.infoMenuOpenUntilMove = this._state.moveCount + 5;
+        this._state.infoMenuOpenUntilMove = this._state.moveCount + CONFIG.INFO_MENU_AUTO_OPEN_TURNS;
         this._notify();
     }
 
@@ -414,6 +458,114 @@ class Game {
     /** Zieht einen Betrag vom Budget ab. */
     deductBudget(amount) {
         this._state.budget = Math.max(0, this._state.budget - amount);
+    }
+
+    /**
+     * Wählt 3 reale Gebäude aus den OSM-Rohdaten anhand ihrer Tags und Distanz aus.
+     * @param {string} targetType - 'residential', 'commercial', 'public', 'allotments'
+     * @param {string} centerNodeId 
+     */
+    spawnTargets(targetType, centerNodeId) {
+        const centerNode = this._mapData.getNode(centerNodeId);
+        if (!centerNode) return;
+
+        console.log(`[GAME] Suche reale Gebäude vom Typ "${targetType}"...`);
+
+        // Tag-Mapping für OSM "building"-Werte
+        const tagMap = {
+            'residential': ['residential', 'apartments', 'house', 'detached', 'terrace', 'residential_complex'],
+            'commercial':  ['commercial', 'office', 'retail', 'supermarket', 'bank', 'hotel', 'industrial'],
+            'public':      ['public', 'civic', 'government', 'hospital', 'school', 'university', 'kindergarten', 'townhall', 'church'],
+            'allotments':  ['allotment_house', 'shed', 'cabin', 'bungalow', 'garden_house', 'farm_auxiliary']
+        };
+
+        const allowedTags = tagMap[targetType] || [];
+        const candidates = [];
+
+        // Wir iterieren über die rohen Ways (Karten-Features), nicht den Graphen!
+        this._mapData._ways.forEach((way, id) => {
+            const bTag = way.tags?.building;
+            if (!bTag || !allowedTags.includes(bTag)) return;
+
+            // Zentrum des Gebäudes nutzen (aus Overpass center)
+            const lat = way.center?.lat || (this._mapData._nodes.get(String(way.nodes?.[0]))?.lat);
+            const lon = way.center?.lon || (this._mapData._nodes.get(String(way.nodes?.[0]))?.lon);
+            if (!lat || !lon) return;
+
+            const dist = this._mapData.calculateDistance(centerNode, { lat, lon });
+            
+            // Gebäude im Umkreis von 50m bis 250m (Radius leicht erhöht für echte Treffer)
+            if (dist >= 50 && dist <= 250) {
+                candidates.push({
+                    id: `bldg_${id}`,
+                    lat: lat,
+                    lon: lon,
+                    type: targetType,
+                    name: way.tags.name || `${targetType}-Gebäude`
+                });
+            }
+        });
+
+        console.log(`[GAME] ${candidates.length} passende Gebäude gefunden.`);
+
+        // Randomisiert 3 auswählen
+        const shuffled = candidates.sort(() => 0.5 - Math.random());
+        const selected = shuffled.slice(0, 3);
+
+        // Debug-Log für die gefundenen Ziele
+        console.log("[DEBUG TARGETS] Gefilterte Gebäude für Typ", targetType, ":", selected);
+
+        // Im State registrieren
+        this._state.activeCrimeTargets = selected;
+        this._state.missionPhase = 3;
+        this._notify();
+    }
+
+    /**
+     * Berechnet Optionen und Risiken für einen Einbruch in ein spezifisches Gebäude.
+     * @param {string} targetId 
+     */
+    getBurglaryData(targetId) {
+        const target = this._state.activeCrimeTargets?.find(t => t.id === targetId);
+        if (!target) return null;
+
+        const riskData = this._mapData.getPoliceRiskModifier([target.lat, target.lon]);
+        
+        // Multiplikator je nach Gebäudetyp
+        let mult = 1.0;
+        if (target.type === 'commercial') mult = 1.2;
+        if (target.type === 'public') mult = 1.5;
+        if (target.type === 'allotments') mult = 0.6;
+
+        return {
+            title: STRINGS.interactions.burglary.title(target.type),
+            options: {
+                A: { 
+                    text: STRINGS.interactions.burglary.optionA, 
+                    risk: Math.min(95, Math.round((15 + riskData.riskMalus) * mult)), 
+                    reward: 180, 
+                    preview: STRINGS.interactions.burglary.previewA,
+                    successMsg: STRINGS.interactions.burglary.success,
+                    caughtMsg: STRINGS.interactions.burglary.caught
+                },
+                B: { 
+                    text: STRINGS.interactions.burglary.optionB, 
+                    risk: Math.min(95, Math.round((35 + riskData.riskMalus) * mult)), 
+                    reward: 450, 
+                    preview: STRINGS.interactions.burglary.previewB,
+                    successMsg: STRINGS.interactions.burglary.success,
+                    caughtMsg: STRINGS.interactions.burglary.caught
+                },
+                C: { 
+                    text: STRINGS.interactions.burglary.optionC, 
+                    risk: Math.min(98, Math.round((70 + riskData.riskMalus) * mult)), 
+                    reward: 1350, 
+                    preview: STRINGS.interactions.burglary.previewC,
+                    successMsg: STRINGS.interactions.burglary.success,
+                    caughtMsg: STRINGS.interactions.burglary.caught
+                }
+            }
+        };
     }
 }
 
