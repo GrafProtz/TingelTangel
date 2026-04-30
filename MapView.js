@@ -151,7 +151,14 @@ class MapView {
             const nb = neighbors[currentIndex];
             const nbId = String(nb.id);
 
-            // Spezialfall: Dieser Nachbar ist unser Ziel (die Kneipe)
+            // Task: Wenn ein Nachbar-Knoten der Zugangsknoten eines POIs ist, Marker pulsieren lassen
+            this._activePOIMarkers.forEach(poiMarker => {
+                if (String(poiMarker.accessNodeId) === nbId) {
+                    const el = poiMarker.getElement();
+                    if (el) el.classList.add('marker-active');
+                }
+            });
+
             if (nbId === String(targetNodeId) && this._targetMarker) {
                 // Task: Wenn der Zeichen-Punkt das Ziel "berührt", Ziel aktivieren
                 const el = this._targetMarker.getElement();
@@ -324,6 +331,7 @@ class MapView {
             }
 
             this._activePOIMarkers.push(marker);
+            marker.accessNodeId = poi.accessNodeId; // ID für Proximity-Blinken
             
             // Für Kompatibilität mit Pulse-Methoden
             if (poi.type === 'pub' || poi.isPrimary) {
