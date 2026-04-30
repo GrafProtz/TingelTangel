@@ -27,6 +27,7 @@ class Game {
             missionPhase: 1,
             infoMenuOpenUntilMove: -1,
             isInfoMenuOpen: false,
+            activeCrimeTargets: [],
             logbook: []
         };
 
@@ -204,6 +205,12 @@ class Game {
     addReward(amount) {
         this._state.budget += amount;
         this._notify();
+    }
+
+    resetBurglaryState() {
+        this._state.activeCrimeTargets = [];
+        this._state.missionPhase = 1;
+        this.resume();
     }
 
     // ----------------------------------------------------------------
@@ -434,6 +441,54 @@ class Game {
     }
 
     /**
+     * Berechnet das Risiko für ein spezifisches Ziel basierend auf Typ und Polizeinähe.
+     * @param {Object} targetNode - Das Ziel-Node-Objekt mit .type, .lat und .lon.
+     * @returns {Object} { totalRisk, successProbability, policePenalty, baseQuote }
+     */
+    calculateTargetRisk(targetNode) {
+        if (!targetNode) return { totalRisk: 0, successProbability: 100, policePenalty: 0, baseQuote: 0 };
+
+        // 1. Basis-Risiko (Aufklärungsquote nach Gebäudetyp)
+        const baseMapping = {
+            'commercial': 30,
+            'residential': 15,
+            'public': 40,
+            'allotments': 5
+        };
+        const baseQuote = baseMapping[targetNode.type] || 20;
+
+        // 2. Polizei-Aufschlag (Distanz zur nächsten Wache)
+        let minPoliceDist = Infinity;
+        // Zugriff auf die geladenen Polizeistationen aus MapData
+        const stations = this._mapData._policeStations || [];
+        
+        stations.forEach(station => {
+            const dist = this._mapData.calculateDistance(
+                { lat: targetNode.lat, lon: targetNode.lon },
+                { lat: station.lat, lon: station.lon }
+            );
+            if (dist < minPoliceDist) minPoliceDist = dist;
+        });
+
+        let policePenalty = 0;
+        if (minPoliceDist < 1000) {
+            // Linear abnehmend: 10% bei 0m, 0% bei 1000m
+            policePenalty = 10 * (1 - (minPoliceDist / 1000));
+        }
+
+        // 3. Finale Berechnung
+        const totalRisk = baseQuote + policePenalty;
+        const successProbability = 100 - totalRisk;
+
+        return {
+            totalRisk: Number(totalRisk.toFixed(2)),
+            successProbability: Number(successProbability.toFixed(2)),
+            policePenalty: Number(policePenalty.toFixed(2)),
+            baseQuote: baseQuote
+        };
+    }
+
+    /**
      * Öffnet das Info-Menü automatisch für die nächsten 5 Züge.
      */
     triggerNewInfo() {
@@ -467,7 +522,7 @@ class Game {
      */
     spawnTargets(targetType, centerNodeId) {
         const centerNode = this._mapData.getNode(centerNodeId);
-        if (!centerNode) return;
+        if (!centerNode) return false;
 
         console.log(`[GAME] Suche reale Gebäude vom Typ "${targetType}"...`);
 
@@ -494,13 +549,28 @@ class Game {
 
             const dist = this._mapData.calculateDistance(centerNode, { lat, lon });
             
-            // Gebäude im Umkreis von 50m bis 250m (Radius leicht erhöht für echte Treffer)
+            // Gebäude im Umkreis von 50m bis 250m
             if (dist >= 50 && dist <= 250) {
+                // Zugangsknoten (nächste Straßenkreuzung) ermitteln
+                let accessNodeId = null;
+                let minDistToNode = Infinity;
+                
+                this._mapData._macroGraph.forEach((edges, nodeId) => {
+                    const node = this._mapData.getNode(nodeId);
+                    if (!node) return;
+                    const d = this._mapData.calculateDistance({ lat, lon }, node);
+                    if (d < minDistToNode) {
+                        minDistToNode = d;
+                        accessNodeId = nodeId;
+                    }
+                });
+
                 candidates.push({
                     id: `bldg_${id}`,
                     lat: lat,
                     lon: lon,
                     type: targetType,
+                    accessNodeId: accessNodeId,
                     name: way.tags.name || `${targetType}-Gebäude`
                 });
             }
@@ -516,9 +586,12 @@ class Game {
         console.log("[DEBUG TARGETS] Gefilterte Gebäude für Typ", targetType, ":", selected);
 
         // Im State registrieren
+        if (selected.length === 0) return false;
+
         this._state.activeCrimeTargets = selected;
         this._state.missionPhase = 3;
         this._notify();
+        return true;
     }
 
     /**

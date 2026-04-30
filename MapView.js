@@ -19,6 +19,7 @@ class MapView {
         this._ghostPath       = null;
         this._activePOIMarkers = [];
         this._radarMarkers    = [];
+        this._debugLines      = [];
 
         // Globaler Klick-Spion zur Fehlersuche (QA Task)
         document.addEventListener('click', (e) => { 
@@ -267,12 +268,28 @@ class MapView {
      * @param {Array} poiArray - [{ id, lat, lon, type, onClickCallback, isPrimary }]
      */
     renderPOIs(poiArray) {
-        // 1. Alle alten Marker entfernen
+        // 1. Alle alten Marker und Debug-Linien entfernen
         this._activePOIMarkers.forEach(m => this._map.removeLayer(m));
         this._activePOIMarkers = [];
+        this._debugLines.forEach(l => this._map.removeLayer(l));
+        this._debugLines = [];
 
         // 2. Neue Marker zeichnen
         poiArray.forEach(poi => {
+            // Debug-Linie zum Zugangsknoten zeichnen
+            if (poi.accessNodeCoords) {
+                const line = L.polyline([
+                    [poi.lat, poi.lon],
+                    [poi.accessNodeCoords.lat, poi.accessNodeCoords.lon]
+                ], {
+                    color: 'red',
+                    weight: 1,
+                    opacity: 0.8,
+                    dashArray: '5, 5'
+                }).addTo(this._map);
+                this._debugLines.push(line);
+            }
+
             const svg = this._getPOISVG(poi.type || 'pub');
             const html = `
                 <div class="target-marker-wrapper">
@@ -645,6 +662,69 @@ class MapView {
         };
         overlay.appendChild(cancelBtn);
 
+        document.body.appendChild(overlay);
+    }
+
+    /**
+     * Erzeugt ein generisches modales Dialog-Fenster für Interaktionen.
+     * @param {string} title - Der Titel des Dialogs
+     * @param {string} text - Der Beschreibungstext
+     * @param {Array} buttonsArray - Array von Objekten [{text, callback}]
+     */
+    showInteractionDialog(title, text, buttonsArray) {
+        const overlay = document.createElement('div');
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            background: 'rgba(0, 0, 0, 0.8)', display: 'flex', justifyContent: 'center',
+            alignItems: 'center', zIndex: '99999', backdropFilter: 'blur(4px)'
+        });
+
+        const dialog = document.createElement('div');
+        Object.assign(dialog.style, {
+            background: '#1e293b', border: '2px solid #38bdf8', borderRadius: '12px',
+            padding: '25px', width: '350px', color: 'white', boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+            fontFamily: 'sans-serif', textAlign: 'center'
+        });
+
+        const h3 = document.createElement('h3');
+        h3.innerText = title;
+        h3.style.color = '#38bdf8';
+        h3.style.marginTop = '0';
+        dialog.appendChild(h3);
+
+        const p = document.createElement('p');
+        p.innerText = text;
+        p.style.lineHeight = '1.5';
+        p.style.fontSize = '14px';
+        p.style.marginBottom = '25px';
+        dialog.appendChild(p);
+
+        const btnContainer = document.createElement('div');
+        btnContainer.style.display = 'flex';
+        btnContainer.style.flexDirection = 'column';
+        btnContainer.style.gap = '10px';
+
+        buttonsArray.forEach(btnData => {
+            const btn = document.createElement('button');
+            btn.innerText = btnData.text;
+            Object.assign(btn.style, {
+                padding: '12px', background: '#334155', border: '1px solid #475569',
+                color: 'white', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold',
+                transition: 'all 0.2s'
+            });
+            
+            btn.onmouseover = () => { btn.style.background = '#475569'; btn.style.borderColor = '#38bdf8'; };
+            btn.onmouseout = () => { btn.style.background = '#334155'; btn.style.borderColor = '#475569'; };
+
+            btn.onclick = () => {
+                overlay.remove();
+                if (btnData.callback) btnData.callback();
+            };
+            btnContainer.appendChild(btn);
+        });
+
+        dialog.appendChild(btnContainer);
+        overlay.appendChild(dialog);
         document.body.appendChild(overlay);
     }
 

@@ -68,41 +68,72 @@ async function initApp() {
 
         if (state.activeCrimeTargets) {
             state.activeCrimeTargets.forEach(target => {
+                const accessNode = mapData.getNode(target.accessNodeId);
                 poiList.push({
                     ...target,
+                    accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                     onClickCallback: () => {
-                        console.log("[DEBUG INTERACTION] Gebäude geklickt:", target.id);
-                        
-                        // 1. Distanzprüfung
+                        // 1. Hybrid-Distanzprüfung (ID-Match oder physische Nähe zum Zugangsknoten)
                         const playerNode = mapData.getNode(state.currentPlayerNodeId);
-                        if (!playerNode) return;
-                        const dist = mapData.calculateDistance(playerNode, target);
-                        
-                        if (dist > CONFIG.PROXIMITY_TRIGGER_DISTANCE) { // 40m -> 50m Toleranz aus Config
-                            mapView.showNotification("ZU WEIT WEG", STRINGS.interactions.burglary.tooFar);
+                        if (!playerNode || !accessNode) return;
+
+                        const isExactNode = String(state.currentPlayerNodeId) === String(target.accessNodeId);
+                        const dist = mapData.calculateDistance(playerNode, accessNode);
+                        const isCloseEnough = dist <= 20; // 20 Meter Toleranz-Radius zum Zugangsknoten
+
+                        console.log("[DEBUG KOLLISION] Distanz Spieler -> Zugangsknoten: " + Math.round(dist) + "m. Erlaubt: 20m");
+
+                        if (!isExactNode && !isCloseEnough) {
+                            mapView.showNotification("ZU WEIT WEG", "Du musst näher an das Gebäude heran. Bewege dich zum Zugangsknoten (roter Strich).");
                             return;
                         }
 
-                        // 2. Einbruch starten
-                        game.pause();
-                        mapView.playCinematicSequence('lockpick', 2000, () => {
-                            const burgData = game.getBurglaryData(target.id);
-                            if (!burgData) return;
+                        // 2. Risiko-Daten ermitteln
+                        const riskData = game.calculateTargetRisk(target);
+                        const text = "Die Aufklärungsquote für diesen Gebäudetyp liegt bei " + riskData.baseQuote + " %. Durch die Polizeipräsenz in der Nähe steigt das Risiko um " + riskData.policePenalty + " %. Deine Chance auf einen erfolgreichen Einbruch liegt bei " + riskData.successProbability + " %.";
 
-                            mapView.showInteractionOverlay(
-                                burgData.options, 
-                                null, 
-                                (key, opt) => {
-                                    const msg = game.handleInteractionDecision(key, opt);
-                                    mapView.showInteractionResult(msg, msg.includes('✅') ? 'success' : 'fail');
-                                    game.resume();
+                        // 3. Risiko-Dialog aufrufen
+                        game.pause();
+                        mapView.showInteractionDialog(
+                            "Einbruch planen",
+                            text,
+                            [
+                                { 
+                                    text: "Einbruch durchführen", 
+                                    callback: () => {
+                                        // 1. Feedback: Einbruch läuft
+                                        mapView.showNotification("AKTION", "Einbruch läuft... bleib wachsam!");
+
+                                        // 2. Timer (2000ms)
+                                        setTimeout(() => {
+                                            // 3. Würfel-Logik (1-100)
+                                            const roll = Math.floor(Math.random() * 100) + 1;
+                                            const isSuccess = roll <= riskData.successProbability;
+
+                                            // 4. Ergebnis-Dialoge
+                                            if (isSuccess) {
+                                                game.addReward(100);
+                                                mapView.showInteractionDialog(
+                                                    "Erfolg!", 
+                                                    "Du hast gewonnen! Die Beute wurde deinem Budget gutgeschrieben.", 
+                                                    [{ text: "Hervorragend", callback: () => {} }]
+                                                );
+                                            } else {
+                                                mapView.showInteractionDialog(
+                                                    "Fehlschlag!", 
+                                                    "Du hast verloren! Die Polizei war schneller und du konntest gerade noch entkommen.", 
+                                                    [{ text: "Verdammt", callback: () => {} }]
+                                                );
+                                            }
+
+                                            // 5. State aufräumen
+                                            game.resetBurglaryState();
+                                        }, 2000);
+                                    } 
                                 },
-                                (key) => {
-                                    const opt = burgData.options[key];
-                                    return { key, risk: opt.risk, text: opt.preview(opt.risk) };
-                                }
-                            );
-                        });
+                                { text: "Abbrechen", callback: () => { game.resume(); } }
+                            ]
+                        );
                     }
                 });
             });
