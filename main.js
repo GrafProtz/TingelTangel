@@ -122,29 +122,37 @@ async function initApp() {
         mapView.playCinematicSequence('door', 1500, () => {
             // Erst JETZT das Overlay öffnen
             mapView.showInteractionOverlay(optionsData, riskData, (key, opt) => {
-                const msg = game.handleInteractionDecision(key, opt);
-                
-                // Ergebnis anzeigen
-                mapView.showInteractionResult(msg, msg.includes('✅') ? 'success' : 'fail');
+                // Spezialfall: Option B (Berater)
+                if (key === 'B') {
+                    if (game.canAfford(75)) {
+                        game.deductBudget(75);
+                        game._notify(); // UI aktualisieren
 
-                // Spezielle Logik für Option B (Consultant)
-                if (key === 'B' && msg.includes('✅')) {
-                    mapView.showInvestmentDialog(mapData.cityName, (type) => {
-                        game._state.budget -= 75;
-                        game._state.consultantActive = true;
-                        const pNode = mapData.getNode(game.getState().currentPlayerNodeId);
-                        const playerCoords = pNode ? [pNode.lat, pNode.lon] : null;
-                        const targetIds = mapData.getCrimeTargets(type, 3, playerCoords);
-                        game._state.activeCrimeTargets = targetIds;
-                        game._state.missionPhase = 3;
-                        game._notify();
-                    }, () => {
+                        // SOFORT den Folge-Dialog laden!
+                        mapView.showInvestmentDialog("diesem Viertel", (targetType) => {
+                            console.log("[DEBUG] Spieler wählte Zieltyp:", targetType);
+                            // Hier folgt später die Logik zum Markieren der Ziele auf der Karte
+                            game._state.gameActive = true;
+                            game._notify();
+                        }, () => {
+                            // Abbrechen geklickt
+                            game._state.gameActive = true;
+                            game._notify();
+                        });
+                    } else {
+                        alert("Nicht genug Geld für den Berater!");
                         game._state.gameActive = true;
                         game._notify();
-                    });
-                } 
-                // Spezielle Logik für Option A (Radar)
-                else if (key === 'A' && game.getState().radarUnlocked) {
+                    }
+                    return; // Beendet den Callback für B
+                }
+
+                // Standard-Abwicklung für alle anderen Optionen (A, C, D)
+                const msg = game.handleInteractionDecision(key, opt);
+                mapView.showInteractionResult(msg, msg.includes('✅') ? 'success' : 'fail');
+
+                // Option A (Radar)
+                if (key === 'A' && game.getState().radarUnlocked) {
                     game._state.gameActive = false; 
                     mapView.showRadarTutorialDialog(() => {
                         mapView.showPoliceRadar(mapData._policeStations).then(() => {
@@ -157,9 +165,7 @@ async function initApp() {
                             });
                         });
                     });
-                } 
-                // Standard-Fallback für C, D oder wenn A wegen Geldmangel fehlschlägt
-                else {
+                } else {
                     game._state.gameActive = true;
                     game._notify();
                 }

@@ -405,6 +405,16 @@ class Game {
     getState() {
         return { ...this._state };
     }
+
+    /** Prüft, ob genug Budget vorhanden ist. */
+    canAfford(amount) {
+        return this._state.budget >= amount;
+    }
+
+    /** Zieht einen Betrag vom Budget ab. */
+    deductBudget(amount) {
+        this._state.budget = Math.max(0, this._state.budget - amount);
+    }
 }
 
 export { Game };
