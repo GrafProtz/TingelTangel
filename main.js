@@ -20,9 +20,8 @@ async function initApp() {
     let missionPOI = null;
 
     // ----- Frame-genaue Positions-Updates -----
-    game.onPositionUpdate((lat, lon, budget) => {
+    game.onPositionUpdate((lat, lon) => {
         mapView.updatePlayerPosition([lat, lon]);
-        mapView.updateBudget(`Budget: ${budget} €`);
     });
 
     // ----- Tutorial-Panel ausblenden nach erstem Zug -----
@@ -54,7 +53,7 @@ async function initApp() {
         const node = mapData.getNode(state.currentPlayerNodeId);
         if (node) mapView.renderPlayer([node.lat, node.lon]);
 
-        // Task: Alle POIs (Kneipe + Einbruchsziele) über die universelle Methode rendern
+        // Alle POIs (Kneipe + Einbruchsziele) über die universelle Methode rendern
         const poiList = [];
         
         const targetNode = mapData.getNode(state.targetPubNodeId);
@@ -80,8 +79,6 @@ async function initApp() {
                         const isExactNode = String(state.currentPlayerNodeId) === String(target.accessNodeId);
                         const dist = mapData.calculateDistance(playerNode, accessNode);
                         const isCloseEnough = dist <= 20; // 20 Meter Toleranz-Radius zum Zugangsknoten
-
-                        console.log("[DEBUG KOLLISION] Distanz Spieler -> Zugangsknoten: " + Math.round(dist) + "m. Erlaubt: 20m");
 
                         if (!isExactNode && !isCloseEnough) {
                             mapView.showNotification("ZU WEIT WEG", "Du musst näher an das Gebäude heran. Bewege dich zum Zugangsknoten (roter Strich).");
@@ -198,7 +195,7 @@ async function initApp() {
         const name = missionPOI?.poiData?.tags?.name || 'Unbekannte Gaststätte';
         mapView.showNotification('ANGEKOMMEN', `Du hast "${name}" erreicht!`);
 
-        // Task: Automatischer Eintritt (kein extra Klick mehr nötig)
+        // Automatischer Eintritt (kein extra Klick mehr nötig)
         game.pause();
 
         // Cinematic-Loop: Zoom + Sperre (Tür-Symbol)
@@ -212,9 +209,8 @@ async function initApp() {
 
                         // SOFORT den Folge-Dialog laden!
                         mapView.showInvestmentDialog("diesem Viertel", (targetType) => {
-                            console.log("[DEBUG] Spieler wählte Zieltyp:", targetType);
-                            // Task: Ziele im Umkreis generieren
-                            game.spawnTargets(targetType, game.getState().targetPubNodeId);
+                            // Ziele im Umkreis generieren
+                            game.spawnTargets(targetType, targetNodeId);
                             game.resume();
                         }, () => {
                             // Abbrechen geklickt
