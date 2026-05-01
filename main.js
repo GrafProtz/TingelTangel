@@ -112,10 +112,11 @@ async function initApp() {
 
                                             // 4. Ergebnis-Dialoge
                                             if (isSuccess) {
-                                                game.addReward(100);
+                                                const amount = game.calculateLoot(target.type);
+                                                game.addReward(amount);
                                                 mapView.showInteractionDialog(
                                                     "Erfolg!", 
-                                                    "Du hast gewonnen! Die Beute wurde deinem Budget gutgeschrieben.", 
+                                                    `Du hast ${amount} € erbeutet! Die Beute wurde deinem Budget gutgeschrieben.`, 
                                                     [{ text: "Hervorragend", callback: () => {} }]
                                                 );
                                             } else {
@@ -293,7 +294,6 @@ async function initApp() {
         try {
             await mapData.loadCityData(city.coords);
         } catch (err) {
-            mapView.hideNotification();
             alert(`Fehler beim Laden der Karte: ${err.message}\n\nBitte prüfe deine Internetverbindung oder versuche es später erneut.`);
             return;
         }
@@ -301,7 +301,6 @@ async function initApp() {
         // Tutorial-Szenario erzeugen (100-200m Abstand)
         const scenario = mapData.spawnTutorialScenario();
         if (!scenario) {
-            mapView.hideNotification();
             alert('Konnte kein gültiges Start-Szenario mit Kneipe generieren.');
             return;
         }
@@ -314,8 +313,6 @@ async function initApp() {
         mapView.setUIState('info-toggle-btn', true);
         mapView.setUIState('budget-panel', true);
         
-        mapView.hideNotification();
-
         // Spieler und Ziel rendern
         mapView.renderPlayer(scenario.startCoords);
         const targetNode = mapData.getNode(scenario.targetNodeId);
@@ -327,21 +324,19 @@ async function initApp() {
         mapView.focusLocation(scenario.startCoords);
 
         // Tutorial-Kamerafahrt starten (Spieler kann noch nicht klicken)
-        mapView.onMapReady(() => {
-            mapView.playTutorialSequence(
-                scenario.startCoords,
-                scenario.targetCoords,
-                scenario.poiName,
-                () => {
-                    // Nach Tutorial: Mission starten und Nachbarn zeigen
-                    game.startMission(scenario.startNodeId, scenario.targetNodeId);
-                    const neighbors = mapData.getNeighbors(scenario.startNodeId);
-                    mapView.renderNeighbors(neighbors, scenario.targetNodeId, (clickedId) => {
-                        game.moveToNode(clickedId);
-                    });
-                }
-            );
-        });
+        mapView.playTutorialSequence(
+            scenario.startCoords,
+            scenario.targetCoords,
+            scenario.poiName,
+            () => {
+                // Nach Tutorial: Mission starten und Nachbarn zeigen
+                game.startMission(scenario.startNodeId, scenario.targetNodeId);
+                const neighbors = mapData.getNeighbors(scenario.startNodeId);
+                mapView.renderNeighbors(neighbors, scenario.targetNodeId, (clickedId) => {
+                    game.moveToNode(clickedId);
+                });
+            }
+        );
     });
 
     // ----- Hauptmenü -----

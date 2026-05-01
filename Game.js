@@ -595,6 +595,22 @@ class Game {
     }
 
     /**
+     * Berechnet die Beute für einen erfolgreichen Einbruch basierend auf dem Gebäudetyp.
+     * @param {string} targetType 
+     */
+    calculateLoot(targetType) {
+        const ranges = {
+            'residential': { min: 150, max: 1500 },
+            'commercial':  { min: 300, max: 2000 },
+            'public':      { min: 200, max: 1500 },
+            'allotments':  { min: 100, max: 1000 }
+        };
+
+        const config = ranges[targetType] || { min: 50, max: 500 };
+        return Math.floor(Math.random() * (config.max - config.min + 1)) + config.min;
+    }
+
+    /**
      * Berechnet Optionen und Risiken für einen Einbruch in ein spezifisches Gebäude.
      * @param {string} targetId 
      */

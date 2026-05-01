@@ -259,9 +259,7 @@ class MapView {
         }
     }
 
-    hideNotification() {
-        // Notifications are now part of the info-panel and handled by toggleInfoMenu
-    }
+
 
     // ----------------------------------------------------------------
     //  Ziel-Marker (POI)
@@ -376,21 +374,7 @@ class MapView {
             + `</g></svg>`;
     }
 
-    /** Triggert die Ankunfts-Animation (Pulse) auf dem Ziel-Marker. */
-    animateTargetMarker() {
-        if (this._targetMarker) {
-            const el = this._targetMarker.getElement();
-            if (el) {
-                // Icon sofort groß machen und leuchten lassen
-                el.innerHTML = '<div style="font-size: 30px; transition: all 0.3s ease; transform: scale(2); filter: drop-shadow(0 0 10px yellow); display: flex; justify-content: center; align-items: center;">🍺</div>';
-                
-                // Nach 600ms wieder auf Normalgröße schrumpfen
-                setTimeout(() => {
-                    el.innerHTML = '<div style="font-size: 24px; transition: all 0.3s ease; transform: scale(1); display: flex; justify-content: center; align-items: center;">🍺</div>';
-                }, 600);
-            }
-        }
-    }
+
 
     /** Lässt das Ziel-Icon hell aufleuchten und pulsieren. */
     highlightTarget() {
@@ -447,26 +431,7 @@ class MapView {
         }, 10000);
     }
 
-    /**
-     * Markiert das Ziel visuell und macht es anklickbar.
-     * Nutzt native DOM-Events (pointerdown), da Leaflet-Klicks bei minimalen Bewegungen 
-     * oft als Drag-Event verschluckt werden.
-     * @param {string} targetNodeId 
-     * @param {Function} onMarkerClick 
-     */
-    onTargetReached(targetNodeId, onMarkerClick) {
-        if (!this._targetMarker) return;
-        const el = this._targetMarker.getElement();
-        if (el) {
-            el.style.pointerEvents = 'auto';
-            el.style.zIndex = '9999';
-            el.addEventListener('pointerdown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onMarkerClick();
-            }, { once: true });
-        }
-    }
+
 
     /**
      * Punkt 2 & 4: Cinematic Loop mit Kamera-Zoom und Sperre.
@@ -861,9 +826,7 @@ class MapView {
         this.toggleInfoMenu(true);
     }
 
-    hideTutorialPanel() {
-        this.toggleInfoMenu(false);
-    }
+
 
     /**
      * Aktualisiert die rechte Infotafel mit permanenten Informationen.
@@ -874,10 +837,6 @@ class MapView {
         const panel = document.getElementById('info-panel');
         if (!panel) return;
         panel.innerHTML = ''; // Zwingend erforderlich: Löscht alte Einträge restlos
-
-        // Wir hängen neue Infos als Karten an oder leeren es?
-        // Für den permanenten Status leeren wir es und befüllen es neu.
-        panel.innerHTML = '';
         
         lines.forEach(line => {
             const card = document.createElement('div');
@@ -998,9 +957,7 @@ class MapView {
         run();
     }
 
-    onMapReady(callback) {
-        this._map.once('moveend', callback);
-    }
+
 }
 
 export { MapView };
