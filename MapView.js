@@ -21,10 +21,7 @@ class MapView {
         this._radarMarkers    = [];
         this._debugLines      = [];
 
-        // Globaler Klick-Spion zur Fehlersuche (QA Task)
-        document.addEventListener('click', (e) => { 
-            console.log('[DEBUG DOM] Klick auf Element:', e.target.tagName, '| ID:', e.target.id, '| Klassen:', e.target.className); 
-        });
+
     }
 
     // ----------------------------------------------------------------
