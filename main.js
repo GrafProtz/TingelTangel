@@ -72,16 +72,12 @@ async function initApp() {
                     ...target,
                     accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                     onClickCallback: () => {
-                        // 1. Hybrid-Distanzprüfung (ID-Match oder physische Nähe zum Zugangsknoten)
-                        const playerNode = mapData.getNode(state.currentPlayerNodeId);
-                        if (!playerNode || !accessNode) return;
+                        // 1. 1:1 Übernahme der Kneipen-Logik: Prüfung der visuellen Aktivierung (Blinken)
+                        const markerEl = document.querySelector(`.target-marker[data-node-id="${target.accessNodeId}"]`);
+                        const isAtAccessNode = markerEl?.classList.contains('marker-active');
 
-                        const isExactNode = String(state.currentPlayerNodeId) === String(target.accessNodeId);
-                        const dist = mapData.calculateDistance(playerNode, accessNode);
-                        const isCloseEnough = dist <= 20; // 20 Meter Toleranz-Radius zum Zugangsknoten
-
-                        if (!isExactNode && !isCloseEnough) {
-                            mapView.showNotification("ZU WEIT WEG", "Du musst näher an das Gebäude heran. Bewege dich zum Zugangsknoten (roter Strich).");
+                        if (!isAtAccessNode) {
+                            mapView.showNotification("ZU WEIT WEG", "Du musst exakt am Zugangsknoten (blinkendes Icon) stehen, um den Einbruch zu starten.");
                             return;
                         }
 

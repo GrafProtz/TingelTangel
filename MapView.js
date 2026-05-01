@@ -301,20 +301,44 @@ class MapView {
                 </div>
             `;
 
-            const marker = L.marker([poi.lat, poi.lon], {
-                icon: L.divIcon({
-                    className: 'target-marker',
-                    html: html,
-                    iconSize: [36, 36],
-                    iconAnchor: [18, 18]
-                }),
-                pane: 'popupPane',
-                zIndexOffset: 2000,
-                interactive: !!poi.onClickCallback
-            }).addTo(this._map);
+            // WICHTIG: Dynamische Unterscheidung zwischen Marker (Punkt) und Polygon (Fläche)
+            let marker, polygon;
+            
+            if (poi.type === 'allotments' && poi.nodes) {
+                // Polygon-Rendering für Schrebergärten
+                const coords = poi.nodes.map(nodeId => {
+                    const n = this._mapData._nodes.get(String(nodeId));
+                    return n ? [n.lat, n.lon] : null;
+                }).filter(c => c !== null);
+                
+                polygon = L.polygon(coords, {
+                    color: '#fbbf24',
+                    fillColor: '#fbbf24',
+                    fillOpacity: 0.5,
+                    weight: 2,
+                    interactive: !!poi.onClickCallback,
+                    className: 'target-marker'
+                }).addTo(this._map);
+                if (polygon.getElement()) polygon.getElement().setAttribute('data-node-id', poi.accessNodeId);
+            } else {
+                // Standard-Marker für alles andere Ziele
+                marker = L.marker([poi.lat, poi.lon], {
+                    icon: L.divIcon({
+                        className: 'target-marker',
+                        html: html,
+                        iconSize: [36, 36],
+                        iconAnchor: [18, 18]
+                    }),
+                    pane: 'popupPane',
+                    zIndexOffset: 2000,
+                    interactive: !!poi.onClickCallback
+                }).addTo(this._map);
+                if (marker.getElement()) marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
+            }
 
             if (poi.onClickCallback) {
-                const el = marker.getElement();
+                const layer = typeof marker !== 'undefined' ? marker : polygon;
+                const el = layer.getElement();
                 if (el) {
                     el.style.pointerEvents = 'auto';
                     el.addEventListener('pointerdown', (e) => {
@@ -325,12 +349,15 @@ class MapView {
                 }
             }
 
-            this._activePOIMarkers.push(marker);
-            marker.accessNodeId = poi.accessNodeId; // ID für Proximity-Blinken
+            const activeLayer = typeof marker !== 'undefined' ? marker : (typeof polygon !== 'undefined' ? polygon : null);
+            if (activeLayer) {
+                activeLayer.accessNodeId = poi.accessNodeId;
+                this._activePOIMarkers.push(activeLayer);
+            }
             
             // Für Kompatibilität mit Pulse-Methoden
             if (poi.type === 'pub' || poi.isPrimary) {
-                this._targetMarker = marker;
+                this._targetMarker = activeLayer;
             }
         });
     }
