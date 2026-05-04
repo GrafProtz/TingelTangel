@@ -1,3 +1,25 @@
+:root {
+    /* Color Palette */
+    --color-bg: #0f172a;
+    --color-bg-alt: #1e293b;
+    --color-primary: #22c55e;
+    --color-primary-hover: #16a34a;
+    --color-secondary: #3b82f6;
+    --color-secondary-hover: #2563eb;
+    --color-accent: #facc15;
+    --color-danger: #ef4444;
+    --color-text: #f8fafc;
+    --color-text-muted: #94a3b8;
+    
+    /* Effects */
+    --glass-bg: rgba(30, 41, 59, 0.8);
+    --glass-blur: blur(16px);
+    --glass-border: 1px solid rgba(255, 255, 255, 0.1);
+    --panel-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+    --transition-fast: 0.2s ease;
+    --transition-mid: 0.3s ease-in-out;
+}
+
 /* Grund-Layout */
 html, body {
     margin: 0;
@@ -6,7 +28,26 @@ html, body {
     height: 100%;
     overflow: hidden;
     font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    background: #0f172a;
+    background: var(--color-bg);
+    color: var(--color-text);
+}
+
+/* Utility Classes */
+.glass-panel {
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    border: var(--glass-border);
+    box-shadow: var(--panel-shadow);
+    border-radius: 12px;
+}
+
+.btn-base {
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    border: 1px solid transparent;
 }
 
 /* Flex-Container: Karte + Tutorial-Panel nebeneinander */
