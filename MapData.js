@@ -23,6 +23,9 @@ class MapData {
         // Spatial Index
         this._spatialIndex = new Map();
         this._gridSize = 0.001;
+
+        // API Resilienz
+        this._abortController = null;
     }
 
     // ----------------------------------------------------------------
@@ -30,6 +33,27 @@ class MapData {
     // ----------------------------------------------------------------
 
     async loadCityData(coords) {
+        // 1. Session Caching
+        const cacheKey = `osm_data_${this.cityName.replace(/\s+/g, '_')}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        
+        if (cached) {
+            console.log(`MapData: Lade "${this.cityName}" aus dem Cache …`);
+            try {
+                const data = JSON.parse(cached);
+                this._parseOSMData(data);
+                this._buildMacroGraph();
+                return;
+            } catch (err) {
+                console.warn('MapData: Cache korrupt, lade neu …');
+                sessionStorage.removeItem(cacheKey);
+            }
+        }
+
+        // 2. API Resilienz (Vorherigen Request abbrechen)
+        if (this._abortController) this._abortController.abort();
+        this._abortController = new AbortController();
+
         const range = 0.008;
         const s = coords[0] - range, w = coords[1] - range;
         const n = coords[0] + range, e = coords[1] + range;
@@ -48,29 +72,38 @@ class MapData {
         );(._;>;);out body center;`;
 
         try {
-            console.log('MapData: Starte Overpass-Abfrage …');
+            console.log(`MapData: Starte Overpass-Abfrage für "${this.cityName}" …`);
             const resp = await fetch('https://overpass-api.de/api/interpreter', {
                 method: 'POST',
-                body: 'data=' + encodeURIComponent(query)
+                body: 'data=' + encodeURIComponent(query),
+                signal: this._abortController.signal
             });
+
             if (!resp.ok) throw new Error(`HTTP-Fehler: ${resp.status}`);
 
             const data = await resp.json();
             if (!data.elements || data.elements.length === 0) {
-                throw new Error('Keine Daten von OpenStreetMap erhalten (Overpass-Abfrage leer).');
+                throw new Error('Keine Daten von OpenStreetMap erhalten.');
             }
+
+            // In Cache speichern
+            sessionStorage.setItem(cacheKey, JSON.stringify(data));
 
             this._parseOSMData(data);
             this._buildMacroGraph();
 
             if (this._macroGraph.size === 0) {
-                throw new Error('Es konnten keine befahrbaren Straßen im gewählten Bereich gefunden werden.');
+                throw new Error('Keine befahrbaren Straßen gefunden.');
             }
-
-            console.log(`MapData: Makro-Graph mit ${this._macroGraph.size} Kreuzungen erstellt.`);
         } catch (err) {
+            if (err.name === 'AbortError') {
+                console.log('MapData: Request wurde abgebrochen.');
+                return;
+            }
             console.error('MapData: Overpass-Fehler', err);
             throw err;
+        } finally {
+            this._abortController = null;
         }
     }
 
@@ -251,16 +284,23 @@ class MapData {
 
         let best = null, bestD = Infinity;
 
+        // Smart Spatial Query: Prüfe Zielzelle + 8 Nachbarn
         for (let dr = -1; dr <= 1; dr++) {
             for (let dc = -1; dc <= 1; dc++) {
                 const key = `${baseRow + dr}_${baseCol + dc}`;
                 const ids = this._spatialIndex.get(key) || [];
-                ids.forEach(id => {
+                
+                for (const id of ids) {
                     const n = this._nodes.get(id);
-                    if (!n) return;
+                    if (!n) continue;
+                    
+                    // Pythagoras (Quadrat reicht für Vergleich)
                     const d = (n.lat - lat) ** 2 + (n.lon - lon) ** 2;
-                    if (d < bestD) { bestD = d; best = n; }
-                });
+                    if (d < bestD) {
+                        bestD = d;
+                        best = n;
+                    }
+                }
             }
         }
 
@@ -392,59 +432,6 @@ class MapData {
         return connected[Math.floor(Math.random() * connected.length)];
     }
 
-    /**
-     * Erzeugt ein Tutorial-Szenario: POI als Ziel, Startknoten 100-200m entfernt.
-     * @returns {{ startNodeId, targetNodeId, poiName, startCoords, targetCoords }|null}
-     */
-    spawnTutorialScenario() {
-        if (this._pubs.length === 0) return null;
-
-        const connected = Array.from(this._macroGraph.entries())
-            .filter(([, edges]) => edges.length > 0)
-            .map(([id]) => id);
-        if (connected.length === 0) return null;
-
-        const shuffledPubs = [...this._pubs].sort(() => Math.random() - 0.5);
-
-        for (const poi of shuffledPubs) {
-            let snapId = null, snapDist = Infinity;
-            connected.forEach(id => {
-                const nd = this._nodes.get(id);
-                if (!nd) return;
-                const d = this.calculateDistance(poi, nd);
-                if (d < snapDist) { snapDist = d; snapId = id; }
-            });
-            if (!snapId) continue;
-
-            const targetNode = this._nodes.get(snapId);
-
-            const candidates = connected.filter(id => {
-                if (id === snapId) return false;
-                const nd = this._nodes.get(id);
-                if (!nd) return false;
-                const d = this.calculateDistance(targetNode, nd);
-                return d >= 100 && d <= 200;
-            });
-
-            if (candidates.length === 0) continue;
-
-            const startId = candidates[Math.floor(Math.random() * candidates.length)];
-            const startNode = this._nodes.get(startId);
-            const poiName = poi.tags?.name || 'Unbekannte Gaststätte';
-
-            console.log(`MapData: Tutorial-Szenario → Start ${startId}, Ziel ${snapId} ("${poiName}")`);
-
-            return {
-                startNodeId: startId,
-                targetNodeId: snapId,
-                poiName,
-                startCoords: [startNode.lat, startNode.lon],
-                targetCoords: [targetNode.lat, targetNode.lon]
-            };
-        }
-
-        return null;
-    }
 }
 
 export { MapData };

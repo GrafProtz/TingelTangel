@@ -4,6 +4,7 @@ import { MapView } from './MapView.js';
 import { HUDManager } from './HUDManager.js';
 import { InteractionManager } from './InteractionManager.js';
 import { NotificationManager } from './NotificationManager.js';
+import { MissionService } from './MissionService.js';
 import { eventBus } from './EventBus.js';
 
 const CITIES = [
@@ -21,9 +22,11 @@ async function initApp() {
     const hud     = new HUDManager();
     const interaction = new InteractionManager();
     const notification = new NotificationManager();
+    const missionService = new MissionService(mapData);
 
     let missionPOI = null;
 
+    // ----- Core Game Events -----
     game.onPositionUpdate((lat, lon) => {
         mapView.updatePlayerPosition([lat, lon]);
     });
@@ -32,6 +35,18 @@ async function initApp() {
         eventBus.emit('TOGGLE_INFO', false);
     });
 
+    // ----- Mission & Target Spawning -----
+    eventBus.subscribe('SPAWN_TARGETS', ({ targetType, centerNodeId }) => {
+        const targets = missionService.spawnTargets(targetType, centerNodeId);
+        if (targets.length > 0) {
+            game.setCrimeTargets(targets);
+            eventBus.emit('SHOW_TOAST', { msg: `${targets.length} Ziele in der Nähe markiert!`, type: 'success' });
+        } else {
+            eventBus.emit('SHOW_TOAST', { msg: "Keine passenden Gebäude gefunden.", type: 'fail' });
+        }
+    });
+
+    // ----- State Handling -----
     game.onStateChange((state) => {
         if (state.currentPlayerNodeId === null) return;
         
@@ -60,22 +75,17 @@ async function initApp() {
                         const isAtAccessNode = markerEl?.classList.contains('marker-active');
 
                         if (!isAtAccessNode) {
-                            eventBus.emit('SHOW_TOAST', { 
-                                msg: "Du musst exakt am blinkenden Icon stehen!", 
-                                type: 'fail' 
-                            });
+                            eventBus.emit('SHOW_TOAST', { msg: "Du musst exakt am Icon stehen!", type: 'fail' });
                             return;
                         }
 
                         const riskData = game.calculateTargetRisk(target);
-                        const text = `Risiko-Analyse: ${riskData.successProbability}% Erfolg.`;
-
                         game.pause();
                         eventBus.emit('SHOW_DIALOG', {
                             title: 'Einbruch planen',
-                            text: text,
+                            text: `Erfolgswahrscheinlichkeit: ${riskData.successProbability}%`,
                             buttons: [
-                                { text: 'Einbruch durchführen', event: 'START_BURGLARY', payload: { target, riskData } },
+                                { text: 'Durchführen', event: 'START_BURGLARY', payload: { target, riskData } },
                                 { text: 'Abbrechen', event: 'RESUME_GAME' }
                             ]
                         });
@@ -90,29 +100,18 @@ async function initApp() {
         mapView.renderNeighbors(neighbors, state.targetPubNodeId, (clickedId) => {
             game.moveToNode(clickedId);
         });
-
-        if (!state.gameActive && state.budget <= 0) {
-            eventBus.emit('SHOW_DIALOG', {
-                title: 'MISSION GESCHEITERT',
-                text: 'Dein Budget ist aufgebraucht.',
-                buttons: [{ text: 'Neu starten', event: 'RELOAD_GAME' }]
-            });
-        }
     });
 
     eventBus.subscribe('RELOAD_GAME', () => location.reload());
 
     game.onTargetReached((targetNodeId) => {
-        const name = missionPOI?.poiData?.tags?.name || 'Unbekannte Gaststätte';
         game.pause();
-        
-        eventBus.emit('SHOW_TOAST', { msg: `Du hast "${name}" erreicht!`, type: 'success' });
-
         mapView.playCinematicSequence('door', 1500, () => {
-            // OPEN_INTERACTION wird automatisch gefeuert
+            // OPEN_INTERACTION via Game.js _notifyTargetReached
         });
     });
 
+    // ----- UI Handlers -----
     document.addEventListener('keydown', (e) => {
         if (e.key.toLowerCase() !== 'p') return;
         const result = game.triggerRadar();
@@ -127,7 +126,9 @@ async function initApp() {
         mapData.cityName = city.name;
         
         await mapData.loadCityData(city.coords);
-        const scenario = mapData.spawnTutorialScenario();
+        
+        // Nutze den MissionService für das Tutorial
+        const scenario = missionService.spawnTutorialScenario();
         if (!scenario) return;
 
         missionPOI = { poiData: { tags: { name: scenario.poiName } }, graphNodeId: scenario.targetNodeId };

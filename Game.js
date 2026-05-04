@@ -73,7 +73,7 @@ class Game {
         });
 
         eventBus.subscribe('INVESTMENT_SELECTED', (targetType) => {
-            this.spawnTargets(targetType, this._state.currentPlayerNodeId);
+            eventBus.emit('SPAWN_TARGETS', { targetType, centerNodeId: this._state.currentPlayerNodeId });
             this.resume();
         });
 
@@ -629,65 +629,6 @@ class Game {
     }
 
     /**
-     * Wählt 3 reale Gebäude aus den OSM-Rohdaten anhand ihrer Tags und Distanz aus.
-     * @param {string} targetType - 'residential', 'commercial', 'public', 'allotments'
-     * @param {string} centerNodeId 
-     */
-    spawnTargets(targetType, centerNodeId) {
-        const centerNode = this._mapData.getNode(centerNodeId);
-        if (!centerNode) return false;
-
-        console.log(`[GAME] Suche reale Gebäude vom Typ "${targetType}"...`);
-
-        // Tag-Mapping für OSM "building"-Werte
-        const tagMap = {
-            'residential': ['residential', 'apartments', 'house', 'detached', 'terrace', 'residential_complex'],
-            'commercial':  ['commercial', 'office', 'retail', 'supermarket', 'bank', 'hotel', 'industrial'],
-            'public':      ['public', 'civic', 'government', 'hospital', 'school', 'university', 'kindergarten', 'townhall', 'church'],
-            'allotments':  ['allotment_house', 'shed', 'cabin', 'bungalow', 'garden_house', 'farm_auxiliary']
-        };
-
-        const allowedTags = tagMap[targetType] || [];
-        const candidates = [];
-
-        // Wir iterieren über die rohen Ways (Karten-Features), nicht den Graphen!
-        this._mapData._ways.forEach((way, id) => {
-            const bTag = way.tags?.building;
-            if (!bTag || !allowedTags.includes(bTag)) return;
-
-            // Zentrum des Gebäudes nutzen (aus Overpass center)
-            const lat = way.center?.lat || (this._mapData._nodes.get(String(way.nodes?.[0]))?.lat);
-            const lon = way.center?.lon || (this._mapData._nodes.get(String(way.nodes?.[0]))?.lon);
-            if (!lat || !lon) return;
-
-            const dist = this._mapData.calculateDistance(centerNode, { lat, lon });
-            
-            // Gebäude im Umkreis von 50m bis 250m
-            if (dist >= 50 && dist <= 250) {
-                // Zugangsknoten (nächste Straßenkreuzung) ermitteln
-                let accessNodeId = null;
-                let minDistToNode = Infinity;
-                
-                this._mapData._macroGraph.forEach((edges, nodeId) => {
-                    const node = this._mapData.getNode(nodeId);
-                    if (!node) return;
-                    const d = this._mapData.calculateDistance({ lat, lon }, node);
-                    if (d < minDistToNode) {
-                        minDistToNode = d;
-                        accessNodeId = nodeId;
-                    }
-                });
-
-                candidates.push({
-                    id: `bldg_${id}`,
-                    lat: lat,
-                    lon: lon,
-                    type: targetType,
-                    accessNodeId: accessNodeId,
-                    name: way.tags.name || `${targetType}-Gebäude`
-                });
-            }
-        });
 
         console.log(`[GAME] ${candidates.length} passende Gebäude gefunden.`);
 
@@ -696,15 +637,14 @@ class Game {
         const selected = shuffled.slice(0, 3);
 
         // Debug-Log für die gefundenen Ziele
-        console.log("[DEBUG TARGETS] Gefilterte Gebäude für Typ", targetType, ":", selected);
-
-        // Im State registrieren
-        if (selected.length === 0) return false;
-
-        this._state.activeCrimeTargets = selected;
+        
+    /**
+     * Setzt die aktiven Einbruchsziele (von externen Services generiert).
+     */
+    setCrimeTargets(targets) {
+        this._state.activeCrimeTargets = targets;
         this._state.missionPhase = 3;
         this._notify();
-        return true;
     }
 
     /**
