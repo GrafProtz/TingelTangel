@@ -21,6 +21,13 @@ export const CONFIG = {
     POLICE_MAX_MALUS: 30,
     POLICE_HARD_CAP: 40,
     
+    // Risiko-Balancing (Basis-Prozentwerte)
+    RISK_PUB_EASY: 20,
+    RISK_PUB_HARD: 85,
+    RISK_BURGLARY_EASY: 15,
+    RISK_BURGLARY_MEDIUM: 35,
+    RISK_BURGLARY_HARD: 70,
+    
     // Gameplay
     INFO_MENU_AUTO_OPEN_TURNS: 5,
     PROXIMITY_TRIGGER_DISTANCE: 50 // Meter

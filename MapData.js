@@ -24,8 +24,9 @@ class MapData {
         this._spatialIndex = new Map();
         this._gridSize = 0.001;
 
-        // API Resilienz
+        // API Resilienz & Caching
         this._abortController = null;
+        this._memoryCache = new Map();
     }
 
     // ----------------------------------------------------------------
@@ -33,21 +34,13 @@ class MapData {
     // ----------------------------------------------------------------
 
     async loadCityData(coords) {
-        // 1. Session Caching
-        const cacheKey = `osm_data_${this.cityName.replace(/\s+/g, '_')}`;
-        const cached = sessionStorage.getItem(cacheKey);
-        
-        if (cached) {
-            console.log(`MapData: Lade "${this.cityName}" aus dem Cache …`);
-            try {
-                const data = JSON.parse(cached);
-                this._parseOSMData(data);
-                this._buildMacroGraph();
-                return;
-            } catch (err) {
-                console.warn('MapData: Cache korrupt, lade neu …');
-                sessionStorage.removeItem(cacheKey);
-            }
+        // 1. RAM Caching
+        if (this._memoryCache.has(this.cityName)) {
+            console.log(`MapData: Lade "${this.cityName}" aus dem RAM-Cache …`);
+            const data = this._memoryCache.get(this.cityName);
+            this._parseOSMData(data);
+            this._buildMacroGraph();
+            return;
         }
 
         // 2. API Resilienz (Vorherigen Request abbrechen)
@@ -87,7 +80,7 @@ class MapData {
             }
 
             // In Cache speichern
-            sessionStorage.setItem(cacheKey, JSON.stringify(data));
+            this._memoryCache.set(this.cityName, data);
 
             this._parseOSMData(data);
             this._buildMacroGraph();

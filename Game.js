@@ -174,6 +174,15 @@ class Game {
         const currentNode = this._mapData.getNode(this._state.currentPlayerNodeId);
         const riskData = this._mapData.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
         
+        // Visuelle Warnung hinzufügen, wenn Risiko erhöht ist
+        if (riskData.riskMalus > 0) {
+            ['B', 'C'].forEach(k => {
+                if (optionsData[k]) {
+                    optionsData[k].text = `🚨 ${optionsData[k].text} (Erhöhtes Risiko!)`;
+                }
+            });
+        }
+
         eventBus.emit('OPEN_INTERACTION', { 
             optionsData, 
             riskData, 
@@ -191,13 +200,20 @@ class Game {
         const targetNode = this._mapData.getNode(this._state.targetPubNodeId);
         if (!targetNode) return null;
 
-        const riskData = this._mapData.getPoliceRiskModifier([targetNode.lat, targetNode.lon]);
-        const baseRisk = (key === 'B') ? 20 : 85;
+        const baseRisk = (key === 'B') ? CONFIG.RISK_PUB_EASY : CONFIG.RISK_PUB_HARD;
         const finalRisk = Math.min(100, baseRisk + riskData.riskMalus);
 
         let previewText = '';
         if (key === 'B') previewText = STRINGS.interactions.pub.previewB(finalRisk);
         if (key === 'C') previewText = STRINGS.interactions.pub.previewC(finalRisk);
+
+        if (riskData.riskMalus > 0) {
+            previewText = `<div style="color: #ef4444; font-weight: bold; margin-bottom: 8px;">🚨 WARNUNG: Erhöhte Polizeipräsenz im Viertel!</div>${previewText}`;
+        }
+
+        if (riskData.riskMalus > 0) {
+            previewText = `🚨 <b>WARNUNG:</b> Erhöhte Polizeipräsenz in diesem Viertel!<br>${previewText}`;
+        }
 
         return {
             key,
@@ -440,6 +456,12 @@ class Game {
      * @returns {string} Ergebnismeldung
      */
     handleInteractionDecision(key, opt) {
+        const targetNode = this._mapData.getNode(this._state.targetPubNodeId);
+        const riskData = targetNode ? this._mapData.getPoliceRiskModifier([targetNode.lat, targetNode.lon]) : { riskMalus: 0 };
+        
+        // Risiko-Wert dynamisch anpassen, falls nicht bereits in 'opt' (Vorschau-Flow) enthalten
+        const finalRisk = opt.risk !== undefined ? opt.risk : Math.min(100, (opt.risk || 0) + riskData.riskMalus);
+        
         const roll = Math.random() * 100;
         let msg = '';
 
@@ -679,30 +701,33 @@ class Game {
         if (target.type === 'public') mult = 1.5;
         if (target.type === 'allotments') mult = 0.6;
 
+        const warning = riskData.riskMalus > 0 ? '🚨 ' : '';
+        const warningSuffix = riskData.riskMalus > 0 ? ' (Hohe Polizeipräsenz!)' : '';
+
         return {
             title: STRINGS.interactions.burglary.title(target.type),
             options: {
                 A: { 
-                    text: STRINGS.interactions.burglary.optionA, 
-                    risk: Math.min(95, Math.round((15 + riskData.riskMalus) * mult)), 
+                    text: `${warning}${STRINGS.interactions.burglary.optionA}${warningSuffix}`, 
+                    risk: Math.min(95, Math.round((CONFIG.RISK_BURGLARY_EASY + riskData.riskMalus) * mult)), 
                     reward: 180, 
-                    preview: STRINGS.interactions.burglary.previewA,
+                    preview: (warning ? `<div style="color: #ef4444; font-weight: bold;">🚨 WARNUNG: Hohes Risiko durch Polizei!</div>` : '') + STRINGS.interactions.burglary.previewA,
                     successMsg: STRINGS.interactions.burglary.success,
                     caughtMsg: STRINGS.interactions.burglary.caught
                 },
                 B: { 
-                    text: STRINGS.interactions.burglary.optionB, 
-                    risk: Math.min(95, Math.round((35 + riskData.riskMalus) * mult)), 
+                    text: `${warning}${STRINGS.interactions.burglary.optionB}${warningSuffix}`, 
+                    risk: Math.min(95, Math.round((CONFIG.RISK_BURGLARY_MEDIUM + riskData.riskMalus) * mult)), 
                     reward: 450, 
-                    preview: STRINGS.interactions.burglary.previewB,
+                    preview: (warning ? `<div style="color: #ef4444; font-weight: bold;">🚨 WARNUNG: Hohes Risiko durch Polizei!</div>` : '') + STRINGS.interactions.burglary.previewB,
                     successMsg: STRINGS.interactions.burglary.success,
                     caughtMsg: STRINGS.interactions.burglary.caught
                 },
                 C: { 
-                    text: STRINGS.interactions.burglary.optionC, 
-                    risk: Math.min(98, Math.round((70 + riskData.riskMalus) * mult)), 
+                    text: `${warning}${STRINGS.interactions.burglary.optionC}${warningSuffix}`, 
+                    risk: Math.min(98, Math.round((CONFIG.RISK_BURGLARY_HARD + riskData.riskMalus) * mult)), 
                     reward: 1350, 
-                    preview: STRINGS.interactions.burglary.previewC,
+                    preview: (warning ? `<div style="color: #ef4444; font-weight: bold;">🚨 WARNUNG: Hohes Risiko durch Polizei!</div>` : '') + STRINGS.interactions.burglary.previewC,
                     successMsg: STRINGS.interactions.burglary.success,
                     caughtMsg: STRINGS.interactions.burglary.caught
                 }
