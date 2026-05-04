@@ -2,6 +2,11 @@ import { CONFIG } from './GameConfig.js';
 
 /**
  * MapData - Der Data-Layer der Engine.
+ *
+ * BUGFIX: getNearestNode() sucht jetzt in einem 3×3-Zellen-Raster um die
+ * angeklickte Position. Vorher wurde nur die exakte Grid-Zelle durchsucht,
+ * was bei Klicks knapp hinter einer Zellgrenze zu "toten Klicks" führte,
+ * weil der nächste Knoten in der Nachbarzelle lag und nie gefunden wurde.
  */
 class MapData {
     constructor() {
@@ -29,7 +34,6 @@ class MapData {
         const s = coords[0] - range, w = coords[1] - range;
         const n = coords[0] + range, e = coords[1] + range;
 
-        // Erweiterte Suche nach Polizei (Stationen, Präsidien, Verwaltung, Kasernen)
         const query = `[out:json][timeout:25];(
             way["highway"](${s},${w},${n},${e});
             node["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
@@ -50,7 +54,7 @@ class MapData {
                 body: 'data=' + encodeURIComponent(query)
             });
             if (!resp.ok) throw new Error(`HTTP-Fehler: ${resp.status}`);
-            
+
             const data = await resp.json();
             if (!data.elements || data.elements.length === 0) {
                 throw new Error('Keine Daten von OpenStreetMap erhalten (Overpass-Abfrage leer).');
@@ -66,7 +70,7 @@ class MapData {
             console.log(`MapData: Makro-Graph mit ${this._macroGraph.size} Kreuzungen erstellt.`);
         } catch (err) {
             console.error('MapData: Overpass-Fehler', err);
-            throw err; // Fehler nach oben weiterreichen
+            throw err;
         }
     }
 
@@ -91,10 +95,10 @@ class MapData {
             const gov      = el.tags?.government;
 
             const isPolice = (
-                amenity === 'police' || 
-                amenity === 'police_station' || 
-                building === 'police' || 
-                police !== undefined || 
+                amenity === 'police' ||
+                amenity === 'police_station' ||
+                building === 'police' ||
+                police !== undefined ||
                 (office === 'government' && gov === 'police')
             );
             const isPub = (amenity === 'pub' || amenity === 'bar' || amenity === 'restaurant');
@@ -108,7 +112,6 @@ class MapData {
 
             } else if (el.type === 'way') {
                 this._ways.set(safeId, el);
-                // Center-Koordinaten aus "out center" oder Fallback auf ersten Knoten
                 const cLat = el.center?.lat ?? this._nodes.get(String(el.nodes?.[0]))?.lat;
                 const cLon = el.center?.lon ?? this._nodes.get(String(el.nodes?.[0]))?.lon;
                 if (isPub && cLat != null) {
@@ -119,7 +122,6 @@ class MapData {
                 }
 
             } else if (el.type === 'relation') {
-                // Relations: Nur Center-Koordinaten nutzen
                 const cLat = el.center?.lat;
                 const cLon = el.center?.lon;
                 if (isPolice && cLat != null) {
@@ -139,7 +141,7 @@ class MapData {
         // 1. Zähle, wie oft jeder Knoten in allen Wegen vorkommt
         const nodeUsage = new Map();
         this._ways.forEach(way => {
-            if (!way.tags?.highway) return;           // Nur Straßen
+            if (!way.tags?.highway) return;
             way.nodes.forEach(rawId => {
                 const id = String(rawId);
                 nodeUsage.set(id, (nodeUsage.get(id) || 0) + 1);
@@ -148,8 +150,8 @@ class MapData {
 
         // 2. Entscheidungsknoten-Check
         const isDecision = (id, way, idx) => {
-            if (nodeUsage.get(id) > 1) return true;              // Kreuzung
-            if (idx === 0 || idx === way.nodes.length - 1) return true;  // Endpunkt
+            if (nodeUsage.get(id) > 1) return true;
+            if (idx === 0 || idx === way.nodes.length - 1) return true;
             return false;
         };
 
@@ -160,7 +162,7 @@ class MapData {
             const ids = way.nodes.map(n => String(n));
 
             let lastDecision = ids[0];
-            let pathCoords   = [];   // Zwischen-Koordinaten (ohne Start-Kreuzung)
+            let pathCoords   = [];
             let segDist      = 0;
 
             for (let i = 1; i < ids.length; i++) {
@@ -172,12 +174,9 @@ class MapData {
                 pathCoords.push([curr.lat, curr.lon]);
 
                 if (isDecision(ids[i], way, i)) {
-                    // Vorwärts-Kante
                     this._addMacroEdge(lastDecision, ids[i], pathCoords, segDist);
-                    // Rückwärts-Kante (Pfad umkehren)
                     this._addMacroEdge(ids[i], lastDecision, [...pathCoords].reverse(), segDist);
 
-                    // Reset
                     lastDecision = ids[i];
                     pathCoords   = [];
                     segDist      = 0;
@@ -187,10 +186,9 @@ class MapData {
     }
 
     _addMacroEdge(from, to, path, dist) {
-        if (from === to) return;                                 // Selbst-Schleifen ignorieren
+        if (from === to) return;
         if (!this._macroGraph.has(from)) this._macroGraph.set(from, []);
 
-        // Duplikat-Vermeidung: kürzere Kante gewinnt
         const list = this._macroGraph.get(from);
         const existing = list.find(e => e.to === to);
         if (existing) {
@@ -232,15 +230,40 @@ class MapData {
         return `${Math.floor(lat / this._gridSize)}_${Math.floor(lon / this._gridSize)}`;
     }
 
+    /**
+     * Findet den nächsten Straßenknoten zur angeklickten Kartenposition.
+     *
+     * BUGFIX: Durchsucht jetzt ein 3×3-Zellen-Raster um die Zielzelle.
+     * Vorher wurde nur die exakte Zelle der Klick-Koordinate abgefragt.
+     * Da Knoten an oder knapp hinter einer Zellgrenze in der Nachbarzelle
+     * liegen, wurden sie nie gefunden – der Klick lief ins Leere.
+     * Die 3×3-Suche ist der Standardansatz für Grid-basierte Spatial Indices
+     * und hat keinen nennenswerten Performance-Einfluss, da pro Zelle
+     * nur wenige Knoten gespeichert sind.
+     *
+     * @param {number} lat
+     * @param {number} lon
+     * @returns {Object|null} Nächster Node oder null
+     */
     getNearestNode(lat, lon) {
-        const ids = this._spatialIndex.get(this._gridKey(lat, lon)) || [];
+        const baseRow = Math.floor(lat / this._gridSize);
+        const baseCol = Math.floor(lon / this._gridSize);
+
         let best = null, bestD = Infinity;
-        ids.forEach(id => {
-            const n = this._nodes.get(id);
-            if (!n) return;
-            const d = (n.lat - lat) ** 2 + (n.lon - lon) ** 2;
-            if (d < bestD) { bestD = d; best = n; }
-        });
+
+        for (let dr = -1; dr <= 1; dr++) {
+            for (let dc = -1; dc <= 1; dc++) {
+                const key = `${baseRow + dr}_${baseCol + dc}`;
+                const ids = this._spatialIndex.get(key) || [];
+                ids.forEach(id => {
+                    const n = this._nodes.get(id);
+                    if (!n) return;
+                    const d = (n.lat - lat) ** 2 + (n.lon - lon) ** 2;
+                    if (d < bestD) { bestD = d; best = n; }
+                });
+            }
+        }
+
         return best;
     }
 
@@ -287,14 +310,13 @@ class MapData {
      * @returns {{ riskMalus: number, activeStations: number }}
      */
     getPoliceRiskModifier(poiCoords) {
-        const MAX_RADIUS = CONFIG.POLICE_MAX_RADIUS;             // Meter
-        const MAX_MALUS_PER_STATION = CONFIG.POLICE_MAX_MALUS;    // Prozentpunkte bei 0m Distanz
-        const HARD_CAP = CONFIG.POLICE_HARD_CAP;                 // Maximaler Gesamt-Aufschlag
-        const DIMINISHING = [1.0, 0.5, 0.25]; // Gewichtung pro Station
+        const MAX_RADIUS = CONFIG.POLICE_MAX_RADIUS;
+        const MAX_MALUS_PER_STATION = CONFIG.POLICE_MAX_MALUS;
+        const HARD_CAP = CONFIG.POLICE_HARD_CAP;
+        const DIMINISHING = [1.0, 0.5, 0.25];
 
         const poi = { lat: poiCoords[0], lon: poiCoords[1] };
 
-        // Malus-Werte aller Stationen im Radius sammeln
         const malusValues = [];
         this._policeStations.forEach(station => {
             const dist = this.calculateDistance(poi, station);
@@ -304,10 +326,8 @@ class MapData {
             }
         });
 
-        // Absteigend sortieren (nächste Wache = höchster Malus zuerst)
         malusValues.sort((a, b) => b - a);
 
-        // Diminishing Returns anwenden (max. 3 Wachen berücksichtigt)
         let total = 0;
         for (let i = 0; i < Math.min(malusValues.length, DIMINISHING.length); i++) {
             total += malusValues[i] * DIMINISHING[i];
@@ -326,7 +346,6 @@ class MapData {
         const start = this._nodes.get(String(startNodeId));
         if (!start || this._pubs.length === 0) return null;
 
-        // Nur Kreuzungen mit echten Nachbarn kommen als Snap-Ziele in Frage
         const reachable = Array.from(this._macroGraph.entries())
             .filter(([, edges]) => edges.length > 0)
             .map(([id]) => id);
@@ -344,7 +363,6 @@ class MapData {
 
         if (!bestPoi) return null;
 
-        // Snap auf die nächste erreichbare Kreuzung
         let snapId = null, snapDist = Infinity;
         reachable.forEach(id => {
             const nd = this._nodes.get(id);
@@ -359,7 +377,7 @@ class MapData {
         return {
             poiData: bestPoi,
             graphNodeId: snapId,
-            snapCoords: [snapNode.lat, snapNode.lon]   // Exakte Graph-Koordinaten
+            snapCoords: [snapNode.lat, snapNode.lon]
         };
     }
 
@@ -381,17 +399,14 @@ class MapData {
     spawnTutorialScenario() {
         if (this._pubs.length === 0) return null;
 
-        // Erreichbare Kreuzungen
         const connected = Array.from(this._macroGraph.entries())
             .filter(([, edges]) => edges.length > 0)
             .map(([id]) => id);
         if (connected.length === 0) return null;
 
-        // Zufälligen POI wählen und auf nächste Kreuzung snappen
         const shuffledPubs = [...this._pubs].sort(() => Math.random() - 0.5);
 
         for (const poi of shuffledPubs) {
-            // Snap POI auf nächste erreichbare Kreuzung
             let snapId = null, snapDist = Infinity;
             connected.forEach(id => {
                 const nd = this._nodes.get(id);
@@ -403,7 +418,6 @@ class MapData {
 
             const targetNode = this._nodes.get(snapId);
 
-            // Kandidaten für den Start: Kreuzungen im Umkreis 100-200m vom Ziel
             const candidates = connected.filter(id => {
                 if (id === snapId) return false;
                 const nd = this._nodes.get(id);

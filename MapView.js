@@ -1,6 +1,11 @@
 /**
  * MapView - Die visuelle Schicht (View).
  * Kapselt Leaflet, Marker-Rendering und Ghost-Path-Preview.
+ *
+ * BUGFIX: renderPOIs greift nicht mehr auf this._mapData zu (existierte nie).
+ * Polygon-Koordinaten für Flächen-Ziele (z.B. Schrebergärten) werden jetzt
+ * vom Controller (main.js) vorab aufgelöst und als `poi.resolvedCoords`
+ * übergeben. Die View bleibt damit sauber vom Model getrennt (MVC).
  */
 class MapView {
     /**
@@ -20,8 +25,6 @@ class MapView {
         this._activePOIMarkers = [];
         this._radarMarkers    = [];
         this._debugLines      = [];
-
-
     }
 
     // ----------------------------------------------------------------
@@ -35,18 +38,15 @@ class MapView {
      * @returns {Promise} Resolved nach 5 Sek. wenn die Kreise verschwinden
      */
     showPoliceRadar(policeStations) {
-        // Alte Radar-Marker entfernen
         this._radarMarkers.forEach(c => this._map.removeLayer(c));
         this._radarMarkers = [];
 
         if (policeStations.length === 0) return Promise.resolve();
 
-        // Bounds berechnen und Kamera herauszoomen
         const latLngs = policeStations.map(s => [s.lat, s.lon]);
         const bounds = L.latLngBounds(latLngs);
         this._map.flyToBounds(bounds, { duration: 1.5, padding: [20, 20] });
 
-        // Blaulicht-Icon
         const sirenIcon = L.divIcon({
             html: '<div class="police-siren"></div>',
             className: '',
@@ -54,7 +54,6 @@ class MapView {
             iconAnchor: [4, 4]
         });
 
-        // Rote Kreise + Sirenen-Marker rendern
         policeStations.forEach(station => {
             const circle = L.circle([station.lat, station.lon], {
                 radius: 150,
@@ -73,7 +72,6 @@ class MapView {
             this._radarMarkers.push(siren);
         });
 
-        // Nach 5 Sekunden alles entfernen
         return new Promise(resolve => {
             setTimeout(() => {
                 this._radarMarkers.forEach(c => this._map.removeLayer(c));
@@ -120,7 +118,6 @@ class MapView {
             return;
         }
         this._playerMarker.setLatLng(coords);
-        // Sanftes Kamera-Mitziehen ohne "harte" Sprünge
         this._map.panTo(coords, { animate: false });
     }
 
@@ -138,7 +135,6 @@ class MapView {
         this._clearNeighbors();
         if (this._neighborTimeout) clearTimeout(this._neighborTimeout);
 
-        // Task: Marker schrittweise (animiert) einblenden
         let currentIndex = 0;
         const total = neighbors.length;
 
@@ -148,7 +144,6 @@ class MapView {
             const nb = neighbors[currentIndex];
             const nbId = String(nb.id);
 
-            // Task: Wenn ein Nachbar-Knoten der Zugangsknoten eines POIs ist, Marker pulsieren lassen
             this._activePOIMarkers.forEach(poiMarker => {
                 if (String(poiMarker.accessNodeId) === nbId) {
                     const el = poiMarker.getElement();
@@ -157,13 +152,11 @@ class MapView {
             });
 
             if (nbId === String(targetNodeId) && this._targetMarker) {
-                // Task: Wenn der Zeichen-Punkt das Ziel "berührt", Ziel aktivieren
                 const el = this._targetMarker.getElement();
                 if (el) {
                     el.classList.add('marker-active');
                     el.style.pointerEvents = 'auto';
                     el.style.zIndex = '10000';
-                    // Der Ziel-Marker selbst wird zum Klick-Trigger für die Bewegung
                     el.addEventListener('pointerdown', (e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -172,7 +165,6 @@ class MapView {
                     }, { once: true });
                 }
             } else {
-                // Normaler grüner Punkt
                 const marker = L.marker([nb.lat, nb.lon], {
                     icon: L.divIcon({
                         className: 'neighbor-marker',
@@ -180,14 +172,12 @@ class MapView {
                     })
                 }).addTo(this._map);
 
-                // Klick → Bewegung auslösen
                 marker.on('click', (e) => {
                     L.DomEvent.stopPropagation(e);
                     this._clearGhostPath();
                     onClickCb(nbId);
                 });
 
-                // Hover → Ghost-Path zeichnen
                 marker.on('mouseover', () => {
                     if (nb.edgeData?.path) {
                         this._drawGhostPath(nb.edgeData.path);
@@ -259,15 +249,24 @@ class MapView {
         }
     }
 
-
-
     // ----------------------------------------------------------------
     //  Ziel-Marker (POI)
     // ----------------------------------------------------------------
 
     /**
      * Universelle Methode zum Rendern aller interaktiven Ziele auf der Karte.
-     * @param {Array} poiArray - [{ id, lat, lon, type, onClickCallback, isPrimary }]
+     *
+     * BUGFIX: Diese Methode greift NICHT mehr auf this._mapData zu.
+     * Für Flächen-Ziele (type === 'allotments') erwartet sie stattdessen
+     * fertig aufgelöste Koordinaten in `poi.resolvedCoords` ([lat, lon][]).
+     * Der Controller (main.js) ist dafür zuständig, diese vorab aus
+     * mapData.getNode() zu befüllen.
+     *
+     * @param {Array} poiArray - [{
+     *   id, lat, lon, type, onClickCallback, isPrimary,
+     *   accessNodeId, accessNodeCoords?,
+     *   resolvedCoords?   // Pflichtfeld für type === 'allotments'
+     * }]
      */
     renderPOIs(poiArray) {
         // 1. Alle alten Marker und Debug-Linien entfernen
@@ -301,27 +300,41 @@ class MapView {
                 </div>
             `;
 
-            // WICHTIG: Dynamische Unterscheidung zwischen Marker (Punkt) und Polygon (Fläche)
             let marker, polygon;
-            
-            if (poi.type === 'allotments' && poi.nodes) {
-                // Polygon-Rendering für Schrebergärten
-                const coords = poi.nodes.map(nodeId => {
-                    const n = this._mapData._nodes.get(String(nodeId));
-                    return n ? [n.lat, n.lon] : null;
-                }).filter(c => c !== null);
-                
-                polygon = L.polygon(coords, {
-                    color: '#fbbf24',
-                    fillColor: '#fbbf24',
-                    fillOpacity: 0.5,
-                    weight: 2,
-                    interactive: !!poi.onClickCallback,
-                    className: 'target-marker'
-                }).addTo(this._map);
-                if (polygon.getElement()) polygon.getElement().setAttribute('data-node-id', poi.accessNodeId);
+
+            if (poi.type === 'allotments') {
+                // BUGFIX: Koordinaten kommen jetzt als poi.resolvedCoords vom Controller,
+                // nicht mehr über this._mapData._nodes (das hier nie existiert hat).
+                const coords = poi.resolvedCoords ?? [];
+
+                if (coords.length === 0) {
+                    // Kein Polygon-Rendering möglich – Fallback auf Standard-Marker
+                    console.warn(`MapView.renderPOIs: Keine resolvedCoords für allotments-POI ${poi.id}. Fallback auf Punkt-Marker.`);
+                    marker = L.marker([poi.lat, poi.lon], {
+                        icon: L.divIcon({
+                            className: 'target-marker',
+                            html: html,
+                            iconSize: [36, 36],
+                            iconAnchor: [18, 18]
+                        }),
+                        pane: 'popupPane',
+                        zIndexOffset: 2000,
+                        interactive: !!poi.onClickCallback
+                    }).addTo(this._map);
+                    if (marker.getElement()) marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
+                } else {
+                    polygon = L.polygon(coords, {
+                        color: '#fbbf24',
+                        fillColor: '#fbbf24',
+                        fillOpacity: 0.5,
+                        weight: 2,
+                        interactive: !!poi.onClickCallback,
+                        className: 'target-marker'
+                    }).addTo(this._map);
+                    if (polygon.getElement()) polygon.getElement().setAttribute('data-node-id', poi.accessNodeId);
+                }
             } else {
-                // Standard-Marker für alles andere Ziele
+                // Standard-Marker für alle anderen Ziele
                 marker = L.marker([poi.lat, poi.lon], {
                     icon: L.divIcon({
                         className: 'target-marker',
@@ -338,7 +351,7 @@ class MapView {
 
             if (poi.onClickCallback) {
                 const layer = typeof marker !== 'undefined' ? marker : polygon;
-                const el = layer.getElement();
+                const el = layer?.getElement();
                 if (el) {
                     el.style.pointerEvents = 'auto';
                     el.addEventListener('pointerdown', (e) => {
@@ -354,8 +367,7 @@ class MapView {
                 activeLayer.accessNodeId = poi.accessNodeId;
                 this._activePOIMarkers.push(activeLayer);
             }
-            
-            // Für Kompatibilität mit Pulse-Methoden
+
             if (poi.type === 'pub' || poi.isPrimary) {
                 this._targetMarker = activeLayer;
             }
@@ -368,23 +380,23 @@ class MapView {
         let pathData = '';
 
         switch (type) {
-            case 'residential': // Wohnung 🏠
+            case 'residential':
                 color = '#4ade80';
                 pathData = 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z';
                 break;
-            case 'commercial': // Gewerbe 🏢
+            case 'commercial':
                 color = '#38bdf8';
                 pathData = 'M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8V9h8v10zm-2-8h-4v2h4v-2zm0 4h-4v2h4v-2z';
                 break;
-            case 'public': // Öffentliche Einrichtungen 🏛️
+            case 'public':
                 color = '#f87171';
                 pathData = 'M4 10h3v7H4zM10.5 10h3v7h-3zM2 19h20v3H2zM17 10h3v7h-3zM12 1L2 6v2h20V6L12 1z';
                 break;
-            case 'allotments': // Schrebergärten 🏕️
+            case 'allotments':
                 color = '#fbbf24';
                 pathData = 'M10 6.73L14.71 14H5.29L10 6.73M10 3L2 15h3v7h10v-7h3L10 3z';
                 break;
-            default: // Pub (Standard) 🍺
+            default:
                 return `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='36' height='36'>`
                     + `<g stroke='#333' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'>`
                     + `<path fill='none' d='M16 9h2.5a2.5 2.5 0 0 1 2.5 2.5v3a2.5 2.5 0 0 1-2.5 2.5H16'/>`
@@ -401,11 +413,8 @@ class MapView {
             + `</g></svg>`;
     }
 
-
-
     /** Lässt das Ziel-Icon hell aufleuchten und pulsieren. */
     highlightTarget() {
-        // CSS-Animation einmalig ins Dokument injizieren
         if (!document.getElementById('pulse-glow-style')) {
             const style = document.createElement('style');
             style.id = 'pulse-glow-style';
@@ -422,7 +431,6 @@ class MapView {
             document.head.appendChild(style);
         }
 
-        // Klasse auf das INNERE Element anwenden (nicht auf den Leaflet-Marker!)
         if (this._targetMarker?._icon) {
             const inner = this._targetMarker._icon.querySelector('.target-marker-inner');
             if (inner) inner.classList.add('target-pulse');
@@ -442,38 +450,28 @@ class MapView {
             document.body.appendChild(toast);
         }
 
-        // Text und initiale Klasse setzen
         toast.textContent = msg;
         toast.className = `toast-center ${type}`;
-        
-        // Sichtbarkeit herstellen (wird per CSS gesteuert)
         toast.style.display = 'block';
 
-        // Nach 10 Sekunden den Flug ins Menü triggern
         setTimeout(() => {
             toast.classList.add('toast-sail-right');
-            
-            // Punkt 6: Kamera zurück in die Übersicht
             this.returnCameraToOverview();
         }, 10000);
     }
 
-
-
     /**
-     * Punkt 2 & 4: Cinematic Loop mit Kamera-Zoom und Sperre.
+     * Cinematic Loop mit Kamera-Zoom und Sperre.
      */
     playCinematicSequence(seqType, durationMs, callback) {
         const overlay = document.getElementById('cinema-overlay');
         if (!overlay) return;
 
-        // Sperrbildschirm einblenden (Punkt 2)
         overlay.style.display = 'block';
-        overlay.className = ''; 
+        overlay.className = '';
         if (seqType === 'lockpick') overlay.classList.add('lockpick-animation');
         if (seqType === 'door') overlay.classList.add('door-animation');
 
-        // Kamera-Zoom (Punkt 3)
         if (this._targetMarker) {
             this._map.flyTo(this._targetMarker.getLatLng(), 18, {
                 animate: true,
@@ -481,7 +479,6 @@ class MapView {
             });
         }
 
-        // Nach Ablauf: Sperre aufheben und weiter im Plan (Punkt 5)
         setTimeout(() => {
             overlay.style.display = 'none';
             if (callback) callback();
@@ -489,7 +486,7 @@ class MapView {
     }
 
     /**
-     * Punkt 6: Zoomt zurück zur Spiel-Übersicht.
+     * Zoomt zurück zur Spiel-Übersicht.
      */
     returnCameraToOverview() {
         if (this._playerMarker) {
@@ -509,13 +506,12 @@ class MapView {
      * @param {Object} optionsData - { A: { text, reward|cost, risk, requiresConfirmation }, ... }
      * @param {Object} riskData - { riskMalus, activeStations }
      * @param {Function} onSelectCb - Wird mit 'A','B','C','D' aufgerufen
-     * @param {Function} getPreviewCb - Callback zur Risiko-Vorschau aus dem Model (Task 9)
+     * @param {Function} getPreviewCb - Callback zur Risiko-Vorschau aus dem Model
      */
     showInteractionOverlay(optionsData, riskData, onSelectCb, getPreviewCb) {
         const container = document.getElementById('options-container');
         if (!container) return;
 
-        // Hilfsfunktion zum Rendern der ersten Phase (Übersicht der Aktionen)
         const renderPhase1 = () => {
             const textEl = document.getElementById('options-text');
             if (textEl) {
@@ -529,7 +525,7 @@ class MapView {
             buttons.forEach((btn, i) => {
                 const key = keys[i];
                 const opt = optionsData[key];
-                
+
                 if (!opt) {
                     btn.style.display = 'none';
                     return;
@@ -552,9 +548,7 @@ class MapView {
             });
         };
 
-        // Hilfsfunktion zum Rendern der zweiten Phase (Risiko-Warnung und Bestätigung)
         const renderPhase2 = (key, opt) => {
-            // Task 9: Callback statt direktem Zugriff auf 'game'
             const preview = getPreviewCb(key);
             if (!preview) return;
 
@@ -565,11 +559,9 @@ class MapView {
 
             const buttonsContainer = document.getElementById('options-buttons');
             const buttons = buttonsContainer.querySelectorAll('.option-btn');
-            
-            // Alle Buttons verstecken
+
             buttons.forEach(b => b.style.display = 'none');
 
-            // Button 1: Abbrechen / Zurück
             const backBtn = buttons[0];
             backBtn.style.display = 'block';
             const freshBack = backBtn.cloneNode(false);
@@ -578,7 +570,6 @@ class MapView {
             backBtn.parentNode.replaceChild(freshBack, backBtn);
             freshBack.addEventListener('click', () => renderPhase1());
 
-            // Button 2: Bestätigen & Ausführen
             const confirmBtn = buttons[1];
             confirmBtn.style.display = 'block';
             const freshConfirm = confirmBtn.cloneNode(false);
@@ -588,7 +579,6 @@ class MapView {
             confirmBtn.parentNode.replaceChild(freshConfirm, confirmBtn);
             freshConfirm.addEventListener('click', () => {
                 container.style.display = 'none';
-                // Wir führen die Aktion mit dem berechneten Risiko aus
                 onSelectCb(key, { ...opt, risk: preview.risk });
             });
         };
@@ -603,7 +593,7 @@ class MapView {
     showInvestmentDialog(cityName, onSelectCb, onCancelCb) {
         const overlay = document.createElement('div');
         overlay.id = 'investment-dialog-overlay';
-        
+
         Object.assign(overlay.style, {
             position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
             background: '#1e293b', border: '3px solid #f59e0b', padding: '30px',
@@ -636,9 +626,9 @@ class MapView {
             });
             btn.onmouseover = () => btn.style.background = '#475569';
             btn.onmouseout = () => btn.style.background = '#334155';
-            
+
             btn.innerHTML = `<div style="font-weight: bold; font-size: 16px;">${opt.icon} ${opt.title}</div><div style="font-size: 12px; color: #cbd5e1;">${opt.desc}</div>`;
-            
+
             btn.onclick = () => {
                 overlay.remove();
                 onSelectCb(opt.type);
@@ -709,7 +699,7 @@ class MapView {
                 color: 'white', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold',
                 transition: 'all 0.2s'
             });
-            
+
             btn.onmouseover = () => { btn.style.background = '#475569'; btn.style.borderColor = '#38bdf8'; };
             btn.onmouseout = () => { btn.style.background = '#334155'; btn.style.borderColor = '#475569'; };
 
@@ -727,13 +717,11 @@ class MapView {
 
     /**
      * Zeigt einen eigenständigen Erklär-Dialog nach dem Kauf des Radars an.
-     * Erstellt ein dynamisches Overlay, um bestehende UI-Elemente nicht zu beeinflussen.
      */
     showRadarTutorialDialog(onConfirmCb) {
         const overlay = document.createElement('div');
         overlay.id = 'radar-tutorial-overlay';
-        
-        // Styling direkt per JS für maximale Unabhängigkeit
+
         Object.assign(overlay.style, {
             position: 'fixed',
             top: '50%',
@@ -789,8 +777,7 @@ class MapView {
     animateInfoToMenu(title, text, callback) {
         const div = document.createElement('div');
         div.className = 'flying-info-card';
-        
-        // Initiales Styling (zentriert)
+
         Object.assign(div.style, {
             position: 'fixed',
             top: '50%',
@@ -813,15 +800,12 @@ class MapView {
         div.innerHTML = `<div style="color: #38bdf8; font-weight: bold; margin-bottom: 8px;">${title}</div><div>${text}</div>`;
         document.body.appendChild(div);
 
-        // 1. Wartezeit zum Lesen (1.5s)
         setTimeout(() => {
-            // 2. Flug-Ziel setzen
             div.style.top = '70px';
             div.style.left = 'calc(100% - 150px)';
             div.style.transform = 'translate(0, 0) scale(0.1)';
             div.style.opacity = '0';
 
-            // 3. Nach Ende der Animation (1s) entfernen
             setTimeout(() => {
                 div.remove();
                 if (callback) callback();
@@ -841,19 +825,17 @@ class MapView {
     updateTutorialPanel(text, clearFirst = false) {
         const panel = document.getElementById('info-panel');
         if (!panel) return;
-        
+
         if (clearFirst) panel.innerHTML = '';
-        
+
         const card = document.createElement('div');
         card.className = 'info-card';
         card.innerHTML = `<div class="info-header">Mission</div><div class="info-body">${text}</div>`;
         panel.appendChild(card);
-        
+
         panel.style.display = 'block';
         this.toggleInfoMenu(true);
     }
-
-
 
     /**
      * Aktualisiert die rechte Infotafel mit permanenten Informationen.
@@ -863,8 +845,8 @@ class MapView {
     updateInfoPanel(title, lines) {
         const panel = document.getElementById('info-panel');
         if (!panel) return;
-        panel.innerHTML = ''; // Zwingend erforderlich: Löscht alte Einträge restlos
-        
+        panel.innerHTML = '';
+
         lines.forEach(line => {
             const card = document.createElement('div');
             card.className = 'info-card';
@@ -883,7 +865,7 @@ class MapView {
         const panel = document.getElementById('info-panel');
         const btn = document.getElementById('info-toggle-btn');
         if (!panel || !btn) return;
-        
+
         let shouldOpen;
         if (typeof forceState === 'boolean') {
             shouldOpen = forceState;
@@ -915,7 +897,6 @@ class MapView {
     animateRewardToMenu(text, callback) {
         const sheet = document.createElement('div');
         sheet.innerText = text;
-        // Styling für die mittige Tafel
         sheet.style.cssText = `
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: rgba(30, 41, 59, 0.95); border: 2px solid #38bdf8;
@@ -927,15 +908,12 @@ class MapView {
         `;
         document.body.appendChild(sheet);
 
-        // 10 Sekunden Lesezeit
         setTimeout(() => {
-            // Flug in die obere rechte Ecke (Position des Info-Panels)
-            sheet.style.left = 'calc(100% - 165px)'; 
+            sheet.style.left = 'calc(100% - 165px)';
             sheet.style.top = '100px';
             sheet.style.transform = 'translate(0, 0) scale(0.1)';
             sheet.style.opacity = '0';
 
-            // Nach 800ms Flugzeit: Element löschen und Spiel fortsetzen
             setTimeout(() => {
                 sheet.remove();
                 if (callback) callback();
@@ -951,7 +929,6 @@ class MapView {
         const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
         const run = async () => {
-            // 1. Tutorial-Text anzeigen (clearFirst=true löscht "Lade Daten...")
             this.updateTutorialPanel(
                 `🚶 <b>Bewegung:</b> Klicke auf grüne Punkte.<br>`
                 + `💰 10 Meter kosten 1 €.<br>`
@@ -961,30 +938,23 @@ class MapView {
 
             await wait(2500);
 
-            // 2. Zum Ziel fliegen (Zoom 16.5 für Icon-Sichtbarkeit)
             this._map.flyTo(targetCoords, 16.5, { duration: 1.5 });
             await new Promise(r => this._map.once('moveend', r));
 
-            // 3. Ziel pulsieren lassen
             this.highlightTarget();
             this.updateTutorialPanel(`👆 Da ist <b>"${poiName}"</b>!`);
             await wait(2000);
 
-            // 4. Zurück zum Spieler fliegen
             this._map.flyTo(startCoords, 16.5, { duration: 1.5 });
             await new Promise(r => this._map.once('moveend', r));
 
-            // 5. Abschluss-Text anhängen
             this.updateTutorialPanel(`Los geht's! 🍺`);
 
-            // 6. Kontrolle übergeben
             if (onComplete) onComplete();
         };
 
         run();
     }
-
-
 }
 
 export { MapView };
