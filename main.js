@@ -116,7 +116,7 @@ async function initApp() {
         if (e.key.toLowerCase() !== 'p') return;
         const result = game.triggerRadar();
         if (result === null || result === 'cooldown') return;
-        mapView.showPoliceRadar(result);
+        mapView.showPoliceRadar(result.stations, result.playerCoords);
     });
 
     document.querySelector('.start-btn')?.addEventListener('click', async () => {

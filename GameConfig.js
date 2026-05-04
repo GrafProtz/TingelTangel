@@ -27,6 +27,12 @@ export const CONFIG = {
     RISK_BURGLARY_EASY: 15,
     RISK_BURGLARY_MEDIUM: 35,
     RISK_BURGLARY_HARD: 70,
+
+    // Gebäude-Kategorien Basis-Risiko
+    RISK_ALLOTMENTS: 10,
+    RISK_RESIDENTIAL: 25,
+    RISK_COMMERCIAL: 50,
+    RISK_PUBLIC: 70,
     
     // Gameplay
     INFO_MENU_AUTO_OPEN_TURNS: 5,

@@ -1,4 +1,5 @@
 import { eventBus } from './EventBus.js';
+import { CONFIG } from './GameConfig.js';
 
 /**
  * MapView - Die visuelle Schicht (View).
@@ -39,16 +40,16 @@ class MapView {
      * @param {Array} policeStations - [{ lat, lon }, ...]
      * @returns {Promise} Resolved nach 5 Sek. wenn die Kreise verschwinden
      */
-    showPoliceRadar(policeStations) {
+    showPoliceRadar(policeStations, playerCoords) {
         this._radarMarkers.forEach(c => this._map.removeLayer(c));
         this._radarMarkers = [];
 
         if (policeStations.length === 0) return Promise.resolve();
 
-        const latLngs = policeStations.map(s => [s.lat, s.lon]);
-        const bounds = L.latLngBounds(latLngs);
-        this._map.flyToBounds(bounds, { duration: 1.5, padding: [20, 20] });
-
+        // Bounding Box aufspannen (Spieler + alle Wachen)
+        const bounds = L.latLngBounds();
+        if (playerCoords) bounds.extend(playerCoords);
+        
         const sirenIcon = L.divIcon({
             html: '<div class="police-siren"></div>',
             className: '',
@@ -56,28 +57,48 @@ class MapView {
             iconAnchor: [4, 4]
         });
 
-        policeStations.forEach(station => {
-            const circle = L.circle([station.lat, station.lon], {
-                radius: 150,
-                color: '#ef4444',
-                fillColor: '#ef4444',
-                fillOpacity: 0.25,
-                weight: 2,
-                dashArray: '6 4'
-            }).addTo(this._map);
-            this._radarMarkers.push(circle);
+        // Feste Radien in Metern für bessere Spielbarkeit
+        const RADII_METERS = [450, 300, 150]; // Außen nach innen
+        const OPACITIES    = [0.05, 0.2, 0.4];
 
-            const siren = L.marker([station.lat, station.lon], {
+        policeStations.forEach(station => {
+            const pos = [station.lat, station.lon];
+            bounds.extend(pos);
+
+            // Zeichne 3 konzentrische Ringe für den Heatmap-Effekt
+            RADII_METERS.forEach((radius, idx) => {
+                const circle = L.circle(pos, {
+                    radius: radius,
+                    color: '#ef4444',
+                    stroke: false,
+                    fillColor: '#ef4444',
+                    fillOpacity: OPACITIES[idx],
+                    interactive: false
+                }).addTo(this._map);
+                this._radarMarkers.push(circle);
+            });
+
+            // Die Sirene im Zentrum
+            const siren = L.marker(pos, {
                 icon: sirenIcon,
                 interactive: false
             }).addTo(this._map);
             this._radarMarkers.push(siren);
         });
 
+        // Kamerafahrt zum Überblick
+        this._map.flyToBounds(bounds, { padding: [50, 50], duration: 1.5 });
+
         return new Promise(resolve => {
             setTimeout(() => {
                 this._radarMarkers.forEach(c => this._map.removeLayer(c));
                 this._radarMarkers = [];
+                
+                // Kamera-Reset zum Spieler
+                if (playerCoords) {
+                    this._map.flyTo(playerCoords, 16, { duration: 1.5 });
+                }
+                
                 resolve();
             }, 5000);
         });

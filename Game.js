@@ -43,30 +43,43 @@ class Game {
     }
 
     _setupInteractionListeners() {
-        eventBus.subscribe('INTERACTION_SELECTED', ({ key, option }) => {
+        eventBus.subscribe('INTERACTION_SELECTED', (payload) => {
+            console.log('TRACE 1: Verarbeitung gestartet mit Payload:', payload);
+            const { key, option } = payload;
             if (key === 'B') {
+                // Spezialfall: Investment Consultant
                 if (this.canAfford(75)) {
                     this.deductBudget(75);
                     eventBus.emit('OPEN_INVESTMENT', { cityName: this._mapData.cityName });
                 } else {
-                    eventBus.emit('SHOW_INTERACTION_RESULT', { msg: "Nicht genug Geld für den Berater!", type: 'fail' });
+                    eventBus.emit('SHOW_TOAST', { msg: "Nicht genug Geld für den Berater!", type: 'fail' });
                     this.resume();
                 }
             } else {
+                // Standard-Entscheidungen (A, C, D)
                 const msg = this.handleInteractionDecision(key, option);
-                eventBus.emit('SHOW_INTERACTION_RESULT', { 
-                    msg, 
-                    type: msg.includes('✅') ? 'success' : 'fail' 
-                });
+                console.log('TRACE 2: handleInteractionDecision erfolgreich. Ergebnis:', msg);
                 
-                // Spezialfall: Radar freigeschaltet
+                console.log('TRACE 3: Feuere SHOW_TOAST Event...');
+                eventBus.emit('SHOW_TOAST', { 
+                    msg, 
+                    type: (msg.includes('✅') || msg.includes('📡') || !msg.includes('❌')) ? 'success' : 'fail' 
+                });
+
+                // Modal schließen
+                eventBus.emit('CLOSE_INTERACTION');
+
+                // Spezialfall: Radar-Tutorial bei Erstkauf (Option A)
                 if (key === 'A' && this._state.radarUnlocked) {
-                    // Radar Tutorial etc. (könnte man auch in IM auslagern)
                     this._state.missionPhase = 2;
-                    this._state.lastRadarTime = Date.now();
-                    this.resume();
-                    this.triggerNewInfo();
+                    
+                    eventBus.emit('SHOW_DIALOG', {
+                        title: '📡 Radar freigeschaltet',
+                        text: 'Du hast die Polizeifrequenzen! Drücke ab jetzt jederzeit "P", um die Standorte der Polizei für 5 Sekunden auf der Karte aufzudecken. Nutze es weise!',
+                        buttons: [{ text: 'Verstanden', event: 'RESUME_GAME' }]
+                    });
                 } else {
+                    console.log('[GAME] Reaktivierung der Spielschleife...');
                     this.resume();
                 }
             }
@@ -87,7 +100,7 @@ class Game {
                 const isSuccess = roll <= riskData.successProbability;
 
                 if (isSuccess) {
-                    const amount = this.calculateLoot(target.type);
+                    const amount = this.calculateLoot(riskData.totalRisk);
                     this.addReward(amount);
                     eventBus.emit('SHOW_DIALOG', {
                         title: 'Erfolg!',
@@ -102,7 +115,7 @@ class Game {
                     });
                 }
                 this.resetBurglaryState();
-            }, 2000);
+            }, 500);
         });
 
         eventBus.subscribe('RESUME_GAME', () => this.resume());
@@ -446,7 +459,14 @@ class Game {
         if (Date.now() - this._state.lastRadarTime < CONFIG.RADAR_COOLDOWN) return 'cooldown';
         this._state.lastRadarTime = Date.now();
         this._notify();
-        return [...this._mapData._policeStations];
+
+        const playerNode = this._mapData.getNode(this._state.currentPlayerNodeId);
+        const playerCoords = playerNode ? [playerNode.lat, playerNode.lon] : [51.5, 7.5];
+
+        return {
+            stations: [...this._mapData._policeStations],
+            playerCoords
+        };
     }
 
     /**
@@ -582,12 +602,12 @@ class Game {
     calculateTargetRisk(targetNode) {
         if (!targetNode) return { totalRisk: 0, successProbability: 100, policePenalty: 0, baseQuote: 0 };
 
-        // 1. Basis-Risiko (Aufklärungsquote nach Gebäudetyp)
+        // 1. Basis-Risiko (Aufklärungsquote nach Gebäudetyp aus Config)
         const baseMapping = {
-            'commercial': 30,
-            'residential': 15,
-            'public': 40,
-            'allotments': 5
+            'commercial':  CONFIG.RISK_COMMERCIAL,
+            'residential': CONFIG.RISK_RESIDENTIAL,
+            'public':      CONFIG.RISK_PUBLIC,
+            'allotments':  CONFIG.RISK_ALLOTMENTS
         };
         const baseQuote = baseMapping[targetNode.type] || 20;
 
@@ -670,19 +690,18 @@ class Game {
     }
 
     /**
-     * Berechnet die Beute für einen erfolgreichen Einbruch basierend auf dem Gebäudetyp.
-     * @param {string} targetType 
+     * Berechnet die Beute für einen erfolgreichen Einbruch basierend auf dem Gesamtrisiko.
+     * Beute = Risiko * 20 (mit +/- 20% Zufallsvarianz).
+     * @param {number} totalRisk 
      */
-    calculateLoot(targetType) {
-        const ranges = {
-            'residential': { min: 150, max: 1500 },
-            'commercial':  { min: 300, max: 2000 },
-            'public':      { min: 200, max: 1500 },
-            'allotments':  { min: 100, max: 1000 }
-        };
-
-        const config = ranges[targetType] || { min: 50, max: 500 };
-        return Math.floor(Math.random() * (config.max - config.min + 1)) + config.min;
+    calculateLoot(totalRisk) {
+        // Basisbeute direkt proportional zum Risiko
+        const baseAmount = totalRisk * 20;
+        
+        // Zufallsvarianz (+/- 20%)
+        const variance = 0.8 + (Math.random() * 0.4);
+        
+        return Math.floor(baseAmount * variance);
     }
 
     /**

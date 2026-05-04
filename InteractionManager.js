@@ -14,7 +14,18 @@ export class InteractionManager {
         eventBus.subscribe('OPEN_INTERACTION', (data) => this.showInteractionOverlay(data));
         eventBus.subscribe('OPEN_INVESTMENT', (data) => this.showInvestmentDialog(data));
         eventBus.subscribe('SHOW_DIALOG', (data) => this.showGenericDialog(data));
-        eventBus.subscribe('SHOW_INTERACTION_RESULT', (data) => this.showInteractionResult(data));
+        eventBus.subscribe('CLOSE_INTERACTION', () => this.closeAllOverlays());
+    }
+
+    /**
+     * Schließt alle aktiven Overlays und Dialoge.
+     */
+    closeAllOverlays() {
+        if (this.overlayContainer) {
+            this.overlayContainer.style.display = 'none';
+        }
+        // Alle dynamisch erstellten Dialog-Overlays entfernen
+        document.querySelectorAll('.dialog-overlay, .glass-panel-overlay').forEach(el => el.remove());
     }
 
     /**

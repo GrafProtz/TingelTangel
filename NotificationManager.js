@@ -9,7 +9,10 @@ export class NotificationManager {
     }
 
     setupListeners() {
-        eventBus.subscribe('SHOW_TOAST', (data) => this.showToast(data));
+        eventBus.subscribe('SHOW_TOAST', (data) => {
+            console.log('TRACE 4: NotificationManager hat Event empfangen:', data);
+            this.showToast(data);
+        });
         eventBus.subscribe('FLYING_REWARD', (data) => this.animateRewardToMenu(data));
         eventBus.subscribe('FLYING_INFO', (data) => this.animateInfoToMenu(data));
     }
@@ -19,27 +22,43 @@ export class NotificationManager {
      * @param {Object} data - { msg, type }
      */
     showToast({ msg, type }) {
+        console.log('DOM-Check: Container ist', document.getElementById('toast-container'));
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            Object.assign(container.style, {
+                position: 'fixed',
+                bottom: '40px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+                zIndex: '100000',
+                pointerEvents: 'none'
+            });
+            document.body.appendChild(container);
+        }
+
         const toast = document.createElement('div');
         toast.className = 'glass-panel toast-notification';
         
         const borderColor = type === 'success' ? 'var(--color-primary)' : 'var(--color-danger)';
         
         Object.assign(toast.style, {
-            position: 'fixed',
-            bottom: '40px',
-            left: '50%',
-            transform: 'translateX(-50%)',
             padding: '15px 25px',
             borderRadius: '10px',
             color: 'white',
-            zIndex: '10000',
+            background: 'rgba(15, 23, 42, 0.9)',
             border: `2px solid ${borderColor}`,
             boxShadow: 'var(--panel-shadow)',
-            animation: 'fadeInUp 0.3s ease-out'
+            animation: 'fadeInUp 0.3s ease-out',
+            pointerEvents: 'auto'
         });
 
         toast.innerHTML = `<div>${msg}</div>`;
-        document.body.appendChild(toast);
+        container.appendChild(toast);
 
         setTimeout(() => {
             toast.style.animation = 'fadeOutDown 0.3s ease-in';
