@@ -1,3 +1,5 @@
+import { eventBus } from './EventBus.js';
+
 /**
  * MapView - Die visuelle Schicht (View).
  * Kapselt Leaflet, Marker-Rendering und Ghost-Path-Preview.
@@ -228,25 +230,9 @@ class MapView {
     //  HUD & UI
     // ----------------------------------------------------------------
 
-    updateBudget(text) {
-        const hud = document.getElementById('budget-panel');
-        if (hud) {
-            hud.innerText = text;
-            hud.style.display = 'block';
-        }
-    }
-
     setUIState(elementId, isVisible) {
         const el = document.getElementById(elementId);
         if (el) el.style.display = isVisible ? 'flex' : 'none';
-    }
-
-    showNotification(title, message) {
-        const c = document.getElementById('info-panel');
-        if (c) {
-            this.updateInfoPanel(title, [message]);
-            this.toggleInfoMenu(true);
-        }
     }
 
     // ----------------------------------------------------------------
@@ -498,428 +484,12 @@ class MapView {
     }
 
     // ----------------------------------------------------------------
-    //  Interaktions-Overlay (Kneipen-Dialog)
-    // ----------------------------------------------------------------
-
-    /**
-     * Zeigt den Kneipen-Dialog an und befüllt die Buttons dynamisch.
-     * @param {Object} optionsData - { A: { text, reward|cost, risk, requiresConfirmation }, ... }
-     * @param {Object} riskData - { riskMalus, activeStations }
-     * @param {Function} onSelectCb - Wird mit 'A','B','C','D' aufgerufen
-     * @param {Function} getPreviewCb - Callback zur Risiko-Vorschau aus dem Model
-     */
-    showInteractionOverlay(optionsData, riskData, onSelectCb, getPreviewCb) {
-        const container = document.getElementById('options-container');
-        if (!container) return;
-
-        const renderPhase1 = () => {
-            const textEl = document.getElementById('options-text');
-            if (textEl) {
-                textEl.innerHTML = 'Du hörst dich unauffällig um. Was tust du?';
-            }
-
-            const buttonsContainer = document.getElementById('options-buttons');
-            const buttons = buttonsContainer.querySelectorAll('.option-btn');
-            const keys = ['A', 'B', 'C', 'D'];
-
-            buttons.forEach((btn, i) => {
-                const key = keys[i];
-                const opt = optionsData[key];
-
-                if (!opt) {
-                    btn.style.display = 'none';
-                    return;
-                }
-
-                btn.style.display = 'block';
-                const fresh = btn.cloneNode(false);
-                fresh.textContent = `${key}: ${opt.text}`;
-                fresh.className = btn.className;
-                btn.parentNode.replaceChild(fresh, btn);
-
-                fresh.addEventListener('click', () => {
-                    if (opt.requiresConfirmation) {
-                        renderPhase2(key, opt);
-                    } else {
-                        container.style.display = 'none';
-                        onSelectCb(key, opt);
-                    }
-                });
-            });
-        };
-
-        const renderPhase2 = (key, opt) => {
-            const preview = getPreviewCb(key);
-            if (!preview) return;
-
-            const textEl = document.getElementById('options-text');
-            if (textEl) {
-                textEl.innerHTML = `<div style="color: #facc15; font-weight: bold; margin-bottom: 10px; text-transform: uppercase; font-size: 0.9rem;">⚠️ Bestätigung erforderlich</div>${preview.text}`;
-            }
-
-            const buttonsContainer = document.getElementById('options-buttons');
-            const buttons = buttonsContainer.querySelectorAll('.option-btn');
-
-            buttons.forEach(b => b.style.display = 'none');
-
-            const backBtn = buttons[0];
-            backBtn.style.display = 'block';
-            const freshBack = backBtn.cloneNode(false);
-            freshBack.textContent = 'Zurück / Abbrechen';
-            freshBack.className = backBtn.className;
-            backBtn.parentNode.replaceChild(freshBack, backBtn);
-            freshBack.addEventListener('click', () => renderPhase1());
-
-            const confirmBtn = buttons[1];
-            confirmBtn.style.display = 'block';
-            const freshConfirm = confirmBtn.cloneNode(false);
-            freshConfirm.textContent = 'Risiko akzeptieren & Ausführen';
-            freshConfirm.className = confirmBtn.className;
-            freshConfirm.style.borderColor = '#facc15';
-            confirmBtn.parentNode.replaceChild(freshConfirm, confirmBtn);
-            freshConfirm.addEventListener('click', () => {
-                container.style.display = 'none';
-                onSelectCb(key, { ...opt, risk: preview.risk });
-            });
-        };
-
-        renderPhase1();
-        container.style.display = 'block';
-    }
-
-    /**
-     * Investment-Banker Dialog für die Auswahl von Einbruchszielen.
-     */
-    showInvestmentDialog(cityName, onSelectCb, onCancelCb) {
-        const overlay = document.createElement('div');
-        overlay.id = 'investment-dialog-overlay';
-
-        Object.assign(overlay.style, {
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            background: '#1e293b', border: '3px solid #f59e0b', padding: '30px',
-            borderRadius: '15px', color: 'white', zIndex: '4000',
-            textAlign: 'left', width: '400px', boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
-            fontFamily: 'sans-serif', lineHeight: '1.4'
-        });
-
-        overlay.innerHTML = `
-            <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px; color: #f59e0b; text-align: center;">💼 Investment Consultant</div>
-            <p style="margin-bottom: 20px;"><i>"Ah, ein Investor! Lass uns einen Blick auf das Portfolio für ${cityName || 'diese Stadt'} werfen. Meine Konditionen: 75 Euro vorab, 20% vom Brutto-Gewinn für mich. Wähle dein Risikoprofil:"</i></p>
-            <div id="invest-options" style="display: flex; flex-direction: column; gap: 10px;"></div>
-        `;
-
-        const optionsContainer = overlay.querySelector('#invest-options');
-
-        const options = [
-            { type: 'residential', icon: '🏡', title: 'Wohnungen', desc: 'Der konservative Fonds. 52.000 Fälle/Jahr. 46-48% Abbruchquote (Hunde, gute Fenster). Aufklärungsquote: 16% (Verhaftung auf frischer Tat nur 2-3%).' },
-            { type: 'commercial', icon: '🏢', title: 'Gewerberäume', desc: 'Der Tech-ETF. 95.000 Fälle/Jahr. 40% Abbruchquote. Aufklärungsquote: 22% (Kameras, stille Alarme). Dafür extrem liquide Kassenbestände.' },
-            { type: 'public', icon: '🏛️', title: 'Öffentliche Einrichtungen', desc: 'Die riskante Staatsanleihe. 18.000 Fälle/Jahr. 35% Abbruchquote. Aufklärungsquote: 25% (Nachtwächter, Patrouillen). Sehr gut gesichert.' },
-            { type: 'allotments', icon: '🏕️', title: 'Schrebergärten', desc: 'Der Penny-Stock. Über 100.000 Fälle/Jahr. 25% Abbruchquote. Aufklärungsquote: 8-10%. Fast ein sicherer Hit, aber kleine Rendite.' }
-        ];
-
-        options.forEach(opt => {
-            const btn = document.createElement('button');
-            Object.assign(btn.style, {
-                background: '#334155', border: '1px solid #475569', borderRadius: '8px',
-                padding: '10px', color: 'white', cursor: 'pointer', textAlign: 'left',
-                display: 'flex', flexDirection: 'column', gap: '5px', transition: 'background 0.2s'
-            });
-            btn.onmouseover = () => btn.style.background = '#475569';
-            btn.onmouseout = () => btn.style.background = '#334155';
-
-            btn.innerHTML = `<div style="font-weight: bold; font-size: 16px;">${opt.icon} ${opt.title}</div><div style="font-size: 12px; color: #cbd5e1;">${opt.desc}</div>`;
-
-            btn.onclick = () => {
-                overlay.remove();
-                onSelectCb(opt.type);
-            };
-            optionsContainer.appendChild(btn);
-        });
-
-        const cancelBtn = document.createElement('button');
-        cancelBtn.textContent = 'Abbrechen';
-        Object.assign(cancelBtn.style, {
-            marginTop: '20px', width: '100%', background: '#ef4444', border: 'none',
-            padding: '10px', color: 'white', cursor: 'pointer', borderRadius: '8px',
-            fontWeight: 'bold'
-        });
-        cancelBtn.onclick = () => {
-            overlay.remove();
-            if (onCancelCb) onCancelCb();
-        };
-        overlay.appendChild(cancelBtn);
-
-        document.body.appendChild(overlay);
-    }
-
-    /**
-     * Erzeugt ein generisches modales Dialog-Fenster für Interaktionen.
-     * @param {string} title - Der Titel des Dialogs
-     * @param {string} text - Der Beschreibungstext
-     * @param {Array} buttonsArray - Array von Objekten [{text, callback}]
-     */
-    showInteractionDialog(title, text, buttonsArray) {
-        const overlay = document.createElement('div');
-        Object.assign(overlay.style, {
-            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
-            background: 'rgba(0, 0, 0, 0.8)', display: 'flex', justifyContent: 'center',
-            alignItems: 'center', zIndex: '99999', backdropFilter: 'blur(4px)'
-        });
-
-        const dialog = document.createElement('div');
-        Object.assign(dialog.style, {
-            background: '#1e293b', border: '2px solid #38bdf8', borderRadius: '12px',
-            padding: '25px', width: '350px', color: 'white', boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
-            fontFamily: 'sans-serif', textAlign: 'center'
-        });
-
-        const h3 = document.createElement('h3');
-        h3.innerText = title;
-        h3.style.color = '#38bdf8';
-        h3.style.marginTop = '0';
-        dialog.appendChild(h3);
-
-        const p = document.createElement('p');
-        p.innerText = text;
-        p.style.lineHeight = '1.5';
-        p.style.fontSize = '14px';
-        p.style.marginBottom = '25px';
-        dialog.appendChild(p);
-
-        const btnContainer = document.createElement('div');
-        btnContainer.style.display = 'flex';
-        btnContainer.style.flexDirection = 'column';
-        btnContainer.style.gap = '10px';
-
-        buttonsArray.forEach(btnData => {
-            const btn = document.createElement('button');
-            btn.innerText = btnData.text;
-            Object.assign(btn.style, {
-                padding: '12px', background: '#334155', border: '1px solid #475569',
-                color: 'white', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold',
-                transition: 'all 0.2s'
-            });
-
-            btn.onmouseover = () => { btn.style.background = '#475569'; btn.style.borderColor = '#38bdf8'; };
-            btn.onmouseout = () => { btn.style.background = '#334155'; btn.style.borderColor = '#475569'; };
-
-            btn.onclick = () => {
-                overlay.remove();
-                if (btnData.callback) btnData.callback();
-            };
-            btnContainer.appendChild(btn);
-        });
-
-        dialog.appendChild(btnContainer);
-        overlay.appendChild(dialog);
-        document.body.appendChild(overlay);
-    }
-
-    /**
-     * Zeigt einen eigenständigen Erklär-Dialog nach dem Kauf des Radars an.
-     */
-    showRadarTutorialDialog(onConfirmCb) {
-        const overlay = document.createElement('div');
-        overlay.id = 'radar-tutorial-overlay';
-
-        Object.assign(overlay.style, {
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            background: '#1e293b',
-            border: '3px solid #38bdf8',
-            padding: '30px',
-            borderRadius: '15px',
-            color: 'white',
-            zIndex: '4000',
-            textAlign: 'center',
-            width: '320px',
-            boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
-            fontFamily: 'sans-serif',
-            lineHeight: '1.5'
-        });
-
-        overlay.innerHTML = `
-            <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px; color: #38bdf8;">📡 Radar freigeschaltet</div>
-            <p><i>Der Barkeeper steckt das Geld ein und flüstert:</i></p>
-            <p>"Hier wimmelt es von Cops. Ich zeige dir unsere Frequenzen. 
-            Du hast <b>5 Sekunden</b>, um dir die Standorte zu merken. 
-            Danach dauert es 5 Minuten, bis der Empfang wieder steht."</p>
-        `;
-
-        const confirmBtn = document.createElement('button');
-        confirmBtn.textContent = 'Radar aktivieren';
-        Object.assign(confirmBtn.style, {
-            marginTop: '20px',
-            background: '#3b82f6',
-            border: 'none',
-            padding: '10px 20px',
-            color: 'white',
-            cursor: 'pointer',
-            borderRadius: '8px',
-            fontWeight: 'bold',
-            fontSize: '16px'
-        });
-
-        confirmBtn.addEventListener('click', () => {
-            overlay.remove();
-            onConfirmCb();
-        });
-
-        overlay.appendChild(confirmBtn);
-        document.body.appendChild(overlay);
-    }
-
-    /**
-     * Erstellt eine Info-Karte, die zur rechten Menüleiste fliegt.
-     */
-    animateInfoToMenu(title, text, callback) {
-        const div = document.createElement('div');
-        div.className = 'flying-info-card';
-
-        Object.assign(div.style, {
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%) scale(1)',
-            width: '280px',
-            background: '#1e293b',
-            border: '2px solid #38bdf8',
-            borderRadius: '12px',
-            padding: '20px',
-            color: 'white',
-            zIndex: '5000',
-            textAlign: 'center',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
-            fontFamily: 'sans-serif',
-            transition: 'all 1s cubic-bezier(0.25, 1, 0.5, 1)',
-            opacity: '1'
-        });
-
-        div.innerHTML = `<div style="color: #38bdf8; font-weight: bold; margin-bottom: 8px;">${title}</div><div>${text}</div>`;
-        document.body.appendChild(div);
-
-        setTimeout(() => {
-            div.style.top = '70px';
-            div.style.left = 'calc(100% - 150px)';
-            div.style.transform = 'translate(0, 0) scale(0.1)';
-            div.style.opacity = '0';
-
-            setTimeout(() => {
-                div.remove();
-                if (callback) callback();
-            }, 1000);
-        }, 1500);
-    }
-
-    // ----------------------------------------------------------------
     //  Tutorial-Sequenz
     // ----------------------------------------------------------------
 
-    /**
-     * Zeigt das Tutorial-Panel an und hängt Text an.
-     * @param {string} text - HTML-Text
-     * @param {boolean} clearFirst - Wenn true, wird der alte Inhalt gelöscht
-     */
-    updateTutorialPanel(text, clearFirst = false) {
-        const panel = document.getElementById('info-panel');
-        if (!panel) return;
 
-        if (clearFirst) panel.innerHTML = '';
 
-        const card = document.createElement('div');
-        card.className = 'info-card';
-        card.innerHTML = `<div class="info-header">Mission</div><div class="info-body">${text}</div>`;
-        panel.appendChild(card);
 
-        panel.style.display = 'block';
-        this.toggleInfoMenu(true);
-    }
-
-    /**
-     * Aktualisiert die rechte Infotafel mit permanenten Informationen.
-     * @param {string} title - Überschrift
-     * @param {Array} lines - Zeilen als Strings
-     */
-    updateInfoPanel(title, lines) {
-        const panel = document.getElementById('info-panel');
-        if (!panel) return;
-        panel.innerHTML = '';
-
-        lines.forEach(line => {
-            const card = document.createElement('div');
-            card.className = 'info-card';
-            card.innerHTML = `<div class="info-header">${title}</div><div class="info-body">${line}</div>`;
-            panel.appendChild(card);
-        });
-
-        panel.style.display = 'block';
-    }
-
-    /**
-     * Schaltet das Info-Menü ein oder aus.
-     * @param {boolean} forceState - Optionaler Zielzustand
-     */
-    toggleInfoMenu(forceState) {
-        const panel = document.getElementById('info-panel');
-        const btn = document.getElementById('info-toggle-btn');
-        if (!panel || !btn) return;
-
-        let shouldOpen;
-        if (typeof forceState === 'boolean') {
-            shouldOpen = forceState;
-        } else {
-            shouldOpen = !panel.classList.contains('open');
-        }
-
-        if (shouldOpen) {
-            panel.classList.add('open');
-            btn.classList.add('panel-open');
-            btn.innerText = '>>';
-        } else {
-            panel.classList.remove('open');
-            btn.classList.remove('panel-open');
-            btn.innerText = '<<';
-        }
-    }
-
-    /**
-     * Blendet das Tutorial-Panel langsam aus.
-     */
-    fadeTutorialPanelOut() {
-        this.toggleInfoMenu(false);
-    }
-
-    /**
-     * Erstellt ein fliegendes Info-Sheet, das ins Menü gleitet.
-     */
-    animateRewardToMenu(text, callback) {
-        const sheet = document.createElement('div');
-        sheet.innerText = text;
-        sheet.style.cssText = `
-            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            background: rgba(30, 41, 59, 0.95); border: 2px solid #38bdf8;
-            border-radius: 8px; padding: 20px; color: white; text-align: center;
-            z-index: 9999; width: 300px; font-family: sans-serif;
-            transition: all 0.8s cubic-bezier(0.68, -0.55, 0.27, 1.55);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-            line-height: 1.4; font-weight: bold; font-size: 16px;
-        `;
-        document.body.appendChild(sheet);
-
-        setTimeout(() => {
-            sheet.style.left = 'calc(100% - 165px)';
-            sheet.style.top = '100px';
-            sheet.style.transform = 'translate(0, 0) scale(0.1)';
-            sheet.style.opacity = '0';
-
-            setTimeout(() => {
-                sheet.remove();
-                if (callback) callback();
-            }, 800);
-        }, 10000);
-    }
 
     /**
      * Spielt die Tutorial-Kamerafahrt ab.
@@ -929,12 +499,12 @@ class MapView {
         const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
         const run = async () => {
-            this.updateTutorialPanel(
-                `🚶 <b>Bewegung:</b> Klicke auf grüne Punkte.<br>`
-                + `💰 10 Meter kosten 1 €.<br>`
-                + `🍺 Finde <b>"${poiName}"</b>!`,
-                true
-            );
+            eventBus.emit('SHOW_TUTORIAL', {
+                text: `🚶 <b>Bewegung:</b> Klicke auf grüne Punkte.<br>`
+                    + `💰 10 Meter kosten 1 €.<br>`
+                    + `🍺 Finde <b>"${poiName}"</b>!`,
+                clearFirst: true
+            });
 
             await wait(2500);
 
@@ -942,13 +512,13 @@ class MapView {
             await new Promise(r => this._map.once('moveend', r));
 
             this.highlightTarget();
-            this.updateTutorialPanel(`👆 Da ist <b>"${poiName}"</b>!`);
+            eventBus.emit('SHOW_TUTORIAL', { text: `👆 Da ist <b>"${poiName}"</b>!`, clearFirst: false });
             await wait(2000);
 
             this._map.flyTo(startCoords, 16.5, { duration: 1.5 });
             await new Promise(r => this._map.once('moveend', r));
 
-            this.updateTutorialPanel(`Los geht's! 🍺`);
+            eventBus.emit('SHOW_TUTORIAL', { text: `Los geht's! 🍺`, clearFirst: false });
 
             if (onComplete) onComplete();
         };

@@ -1,7 +1,10 @@
 import { MapData } from './MapData.js';
-import { CONFIG } from './GameConfig.js';
 import { Game } from './Game.js';
 import { MapView } from './MapView.js';
+import { HUDManager } from './HUDManager.js';
+import { InteractionManager } from './InteractionManager.js';
+import { NotificationManager } from './NotificationManager.js';
+import { eventBus } from './EventBus.js';
 
 const CITIES = [
     { name: "Berlin", coords: [52.5200, 13.4050] },
@@ -15,36 +18,23 @@ async function initApp() {
     const mapData = new MapData();
     const mapView = new MapView('map');
     const game    = new Game(mapData);
+    const hud     = new HUDManager();
+    const interaction = new InteractionManager();
+    const notification = new NotificationManager();
 
-    // Missions-Kontext (wird beim Start befüllt)
     let missionPOI = null;
 
-    // ----- Frame-genaue Positions-Updates -----
     game.onPositionUpdate((lat, lon) => {
         mapView.updatePlayerPosition([lat, lon]);
     });
 
-    // ----- Tutorial-Panel ausblenden nach erstem Zug -----
     game.onFirstMove(() => {
-        mapView.fadeTutorialPanelOut();
+        eventBus.emit('TOGGLE_INFO', false);
     });
-    // ----- Info-Toggle-Button -----
-    document.getElementById('info-toggle-btn')?.addEventListener('click', () => {
-        game.toggleInfoMenu();
-    });
-    // ----- Logische State-Changes -----
+
     game.onStateChange((state) => {
         if (state.currentPlayerNodeId === null) return;
         
-        // Menü-Status synchronisieren
-        mapView.toggleInfoMenu(state.isInfoMenuOpen);
-
-        // Wenn das Spiel pausiert ist (z.B. Kneipe betreten), zeige KEINE Basisinfos und leere das Panel sofort:
-        if (!state.gameActive) {
-            mapView.updateInfoPanel('', []); 
-            return; 
-        }
-
         if (state.isMoving) {
             mapView.renderNeighbors([], () => {});
             return;
@@ -53,16 +43,10 @@ async function initApp() {
         const node = mapData.getNode(state.currentPlayerNodeId);
         if (node) mapView.renderPlayer([node.lat, node.lon]);
 
-        // Alle POIs (Kneipe + Einbruchsziele) über die universelle Methode rendern
         const poiList = [];
-        
         const targetNode = mapData.getNode(state.targetPubNodeId);
         if (targetNode) {
-            poiList.push({
-                ...targetNode,
-                type: 'pub',
-                isPrimary: true
-            });
+            poiList.push({ ...targetNode, type: 'pub', isPrimary: true });
         }
 
         if (state.activeCrimeTargets) {
@@ -72,62 +56,29 @@ async function initApp() {
                     ...target,
                     accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                     onClickCallback: () => {
-                        // 1. 1:1 Übernahme der Kneipen-Logik: Prüfung der visuellen Aktivierung (Blinken)
                         const markerEl = document.querySelector(`.target-marker[data-node-id="${target.accessNodeId}"]`);
                         const isAtAccessNode = markerEl?.classList.contains('marker-active');
 
                         if (!isAtAccessNode) {
-                            mapView.showNotification("ZU WEIT WEG", "Du musst exakt am Zugangsknoten (blinkendes Icon) stehen, um den Einbruch zu starten.");
+                            eventBus.emit('SHOW_TOAST', { 
+                                msg: "Du musst exakt am blinkenden Icon stehen!", 
+                                type: 'fail' 
+                            });
                             return;
                         }
 
-                        // 2. Risiko-Daten ermitteln
                         const riskData = game.calculateTargetRisk(target);
-                        const text = "Die Aufklärungsquote für diesen Gebäudetyp liegt bei " + riskData.baseQuote + " %. Durch die Polizeipräsenz in der Nähe steigt das Risiko um " + riskData.policePenalty + " %. Deine Chance auf einen erfolgreichen Einbruch liegt bei " + riskData.successProbability + " %.";
+                        const text = `Risiko-Analyse: ${riskData.successProbability}% Erfolg.`;
 
-                        // 3. Risiko-Dialog aufrufen
                         game.pause();
-                        mapView.showInteractionDialog(
-                            "Einbruch planen",
-                            text,
-                            [
-                                { 
-                                    text: "Einbruch durchführen", 
-                                    callback: () => {
-                                        // 1. Feedback: Einbruch läuft
-                                        mapView.showNotification("AKTION", "Einbruch läuft... bleib wachsam!");
-
-                                        // 2. Timer (2000ms)
-                                        setTimeout(() => {
-                                            // 3. Würfel-Logik (1-100)
-                                            const roll = Math.floor(Math.random() * 100) + 1;
-                                            const isSuccess = roll <= riskData.successProbability;
-
-                                            // 4. Ergebnis-Dialoge
-                                            if (isSuccess) {
-                                                const amount = game.calculateLoot(target.type);
-                                                game.addReward(amount);
-                                                mapView.showInteractionDialog(
-                                                    "Erfolg!", 
-                                                    `Du hast ${amount} € erbeutet! Die Beute wurde deinem Budget gutgeschrieben.`, 
-                                                    [{ text: "Hervorragend", callback: () => {} }]
-                                                );
-                                            } else {
-                                                mapView.showInteractionDialog(
-                                                    "Fehlschlag!", 
-                                                    "Du hast verloren! Die Polizei war schneller und du konntest gerade noch entkommen.", 
-                                                    [{ text: "Verdammt", callback: () => {} }]
-                                                );
-                                            }
-
-                                            // 5. State aufräumen
-                                            game.resetBurglaryState();
-                                        }, 2000);
-                                    } 
-                                },
-                                { text: "Abbrechen", callback: () => { game.resume(); } }
+                        eventBus.emit('SHOW_DIALOG', {
+                            title: 'Einbruch planen',
+                            text: text,
+                            buttons: [
+                                { text: 'Einbruch durchführen', event: 'START_BURGLARY', payload: { target, riskData } },
+                                { text: 'Abbrechen', event: 'RESUME_GAME' }
                             ]
-                        );
+                        });
                     }
                 });
             });
@@ -140,164 +91,45 @@ async function initApp() {
             game.moveToNode(clickedId);
         });
 
-        // ----- Rechte Infotafel aktualisieren -----
-        const targetName = missionPOI?.poiData?.tags?.name || 'Unbekannte Gaststätte';
-        
-        // 1. Permanente Karten
-        let infoCards = [];
-        if (state.gameActive) {
-            if (state.missionPhase === 1) {
-                infoCards = [
-                    { title: 'AKTUELLES ZIEL', body: targetName },
-                    { title: 'AUFGABE', body: 'Erreiche die Kneipe, um Informationen zu sammeln.' },
-                    { title: 'STEUERUNG', body: 'Klicke auf die grünen Punkte, um dich durch die Stadt zu bewegen.' }
-                ];
-            } else if (state.missionPhase === 2) {
-                infoCards = [
-                    { title: 'RADAR-SYSTEM', body: 'Drücke "P", um Standorte der Polizei für 5 Sek. aufzudecken. (5 Min. Cooldown)' }
-                ];
-            }
-        }
-
-        // 2. Event-basierte Karten (unten anhängen)
-        if (state.showPubCooldownText) {
-            infoCards.push({ 
-                title: 'HINWEIS', 
-                body: 'Du kannst erst wieder in drei Minuten die Kneipe besuchen.' 
-            });
-        }
-
-        // Karten rendern
-        const panel = document.getElementById('info-panel');
-        if (panel) {
-            panel.innerHTML = '';
-            infoCards.forEach(card => {
-                const cardEl = document.createElement('div');
-                cardEl.className = 'info-card';
-                cardEl.innerHTML = `<div class="info-header">${card.title}</div><div class="info-body">${card.body}</div>`;
-                panel.appendChild(cardEl);
-            });
-        }
-
-        mapView.updateBudget(`Budget: ${state.budget} €`);
-
         if (!state.gameActive && state.budget <= 0) {
-            mapView.showNotification('MISSION GESCHEITERT', 'Dein Budget ist aufgebraucht.');
+            eventBus.emit('SHOW_DIALOG', {
+                title: 'MISSION GESCHEITERT',
+                text: 'Dein Budget ist aufgebraucht.',
+                buttons: [{ text: 'Neu starten', event: 'RELOAD_GAME' }]
+            });
         }
     });
 
-    // ----- Ziel erreicht → Kneipen-Dialog -----
-    game.onTargetReached((targetNodeId, optionsData, riskData) => {
+    eventBus.subscribe('RELOAD_GAME', () => location.reload());
+
+    game.onTargetReached((targetNodeId) => {
         const name = missionPOI?.poiData?.tags?.name || 'Unbekannte Gaststätte';
-        mapView.showNotification('ANGEKOMMEN', `Du hast "${name}" erreicht!`);
-
-        // Automatischer Eintritt (kein extra Klick mehr nötig)
         game.pause();
+        
+        eventBus.emit('SHOW_TOAST', { msg: `Du hast "${name}" erreicht!`, type: 'success' });
 
-        // Cinematic-Loop: Zoom + Sperre (Tür-Symbol)
         mapView.playCinematicSequence('door', 1500, () => {
-            // Erst JETZT das Overlay öffnen
-            mapView.showInteractionOverlay(optionsData, riskData, (key, opt) => {
-                // Spezialfall: Option B (Berater)
-                if (key === 'B') {
-                    if (game.canAfford(75)) {
-                        game.deductBudget(75);
-
-                        // SOFORT den Folge-Dialog laden!
-                        mapView.showInvestmentDialog("diesem Viertel", (targetType) => {
-                            // Ziele im Umkreis generieren
-                            game.spawnTargets(targetType, targetNodeId);
-                            game.resume();
-                        }, () => {
-                            // Abbrechen geklickt
-                            game.resume();
-                        });
-                    } else {
-                        alert("Nicht genug Geld für den Berater!");
-                        game.resume();
-                    }
-                    return; // Beendet den Callback für B
-                }
-
-                // Standard-Abwicklung für alle anderen Optionen (A, C, D)
-                const msg = game.handleInteractionDecision(key, opt);
-                mapView.showInteractionResult(msg, msg.includes('✅') ? 'success' : 'fail');
-
-                // Option A (Radar)
-                if (key === 'A' && game.getState().radarUnlocked) {
-                    game.pause(); 
-                    mapView.showRadarTutorialDialog(() => {
-                        mapView.showPoliceRadar(mapData._policeStations).then(() => {
-                            mapView.animateInfoToMenu('NEUE FUNKTION', 'Radar-Frequenzen gespeichert!', () => {
-                                const s = game.getState();
-                                s.missionPhase = 2;
-                                s.lastRadarTime = Date.now();
-                                game.resume();
-                                game.triggerNewInfo(); 
-                            });
-                        });
-                    });
-                } else {
-                    game.resume();
-                }
-            }, (key) => game.getInteractionPreview(key));
+            // OPEN_INTERACTION wird automatisch gefeuert
         });
     });
 
-    // ----- Hotkey: Polizei-Radar (P) -----
     document.addEventListener('keydown', (e) => {
         if (e.key.toLowerCase() !== 'p') return;
-
         const result = game.triggerRadar();
-
-        if (result === null) {
-            // Noch nicht freigeschaltet → keine Meldung
-            return;
-        }
-        if (result === 'cooldown') {
-            const remaining = Math.ceil((CONFIG.RADAR_COOLDOWN - (Date.now() - game.getState().lastRadarTime)) / 1000);
-            mapView.showNotification('COOLDOWN', `📡 Radar lädt noch auf! (${remaining} Sek.)`);
-            return;
-        }
-
-        // Aktuelle Spielerposition merken für Rückflug
-        const playerNode = mapData.getNode(game.getState().currentPlayerNodeId);
-        const playerCoords = playerNode ? [playerNode.lat, playerNode.lon] : null;
-
-        mapView.showNotification('RADAR', `📡 ${result.length} Polizeiwache(n) aufgespürt!`);
-        mapView.showPoliceRadar(result).then(() => {
-            // Nach 5 Sek.: Kamera zurück zum Spieler
-            if (playerCoords) {
-                mapView.focusLocation(playerCoords);
-            }
-        });
+        if (result === null || result === 'cooldown') return;
+        mapView.showPoliceRadar(result);
     });
 
-    // ----- Start-Button -----
     document.querySelector('.start-btn')?.addEventListener('click', async () => {
         const val = document.getElementById('city-dropdown-intro').value;
         if (val === '') return;
-        const idx = parseInt(val, 10);
-
-        const city = CITIES[idx];
-        mapView.showNotification('LADEN …', `Lade Daten für ${city.name} …`);
+        const city = CITIES[parseInt(val, 10)];
         mapData.cityName = city.name;
         
-        try {
-            await mapData.loadCityData(city.coords);
-        } catch (err) {
-            alert(`Fehler beim Laden der Karte: ${err.message}\n\nBitte prüfe deine Internetverbindung oder versuche es später erneut.`);
-            return;
-        }
-
-        // Tutorial-Szenario erzeugen (100-200m Abstand)
+        await mapData.loadCityData(city.coords);
         const scenario = mapData.spawnTutorialScenario();
-        if (!scenario) {
-            alert('Konnte kein gültiges Start-Szenario mit Kneipe generieren.');
-            return;
-        }
+        if (!scenario) return;
 
-        // Tutorial-Szenario verwenden
         missionPOI = { poiData: { tags: { name: scenario.poiName } }, graphNodeId: scenario.targetNodeId };
 
         mapView.setUIState('intro-overlay', false);
@@ -305,36 +137,15 @@ async function initApp() {
         mapView.setUIState('info-toggle-btn', true);
         mapView.setUIState('budget-panel', true);
         
-        // Spieler und Ziel rendern
         mapView.renderPlayer(scenario.startCoords);
-        const targetNode = mapData.getNode(scenario.targetNodeId);
-        if (targetNode) {
-            mapView.renderPOIs([{ ...targetNode, type: 'pub', isPrimary: true }]);
-        }
-
-        // Kamera zum Start
         mapView.focusLocation(scenario.startCoords);
 
-        // Tutorial-Kamerafahrt starten (Spieler kann noch nicht klicken)
-        mapView.playTutorialSequence(
-            scenario.startCoords,
-            scenario.targetCoords,
-            scenario.poiName,
-            () => {
-                // Nach Tutorial: Mission starten und Nachbarn zeigen
-                game.startMission(scenario.startNodeId, scenario.targetNodeId);
-                const neighbors = mapData.getNeighbors(scenario.startNodeId);
-                mapView.renderNeighbors(neighbors, scenario.targetNodeId, (clickedId) => {
-                    game.moveToNode(clickedId);
-                });
-            }
-        );
+        mapView.playTutorialSequence(scenario.startCoords, scenario.targetCoords, scenario.poiName, () => {
+            game.startMission(scenario.startNodeId, scenario.targetNodeId);
+        });
     });
 
-    // ----- Hauptmenü -----
-    document.getElementById('back-to-menu')?.addEventListener('click', () => {
-        location.reload();
-    });
+    document.getElementById('back-to-menu')?.addEventListener('click', () => location.reload());
 }
 
 document.addEventListener('DOMContentLoaded', initApp);

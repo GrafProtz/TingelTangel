@@ -1,6 +1,7 @@
 import { MapData } from './MapData.js';
 import { CONFIG } from './GameConfig.js';
 import { STRINGS } from './GameStrings.js';
+import { eventBus } from './EventBus.js';
 
 /**
  * Game - Die Logik-Schicht.
@@ -35,8 +36,76 @@ class Game {
         this._positionCallbacks     = [];
         this._targetReachedCallbacks = [];
         this._firstMoveCallbacks     = [];
+
+        this._setupInteractionListeners();
         this._firstMoveFired = false;
         this._animFrameId = null;
+    }
+
+    _setupInteractionListeners() {
+        eventBus.subscribe('INTERACTION_SELECTED', ({ key, option }) => {
+            if (key === 'B') {
+                if (this.canAfford(75)) {
+                    this.deductBudget(75);
+                    eventBus.emit('OPEN_INVESTMENT', { cityName: this._mapData.cityName });
+                } else {
+                    eventBus.emit('SHOW_INTERACTION_RESULT', { msg: "Nicht genug Geld für den Berater!", type: 'fail' });
+                    this.resume();
+                }
+            } else {
+                const msg = this.handleInteractionDecision(key, option);
+                eventBus.emit('SHOW_INTERACTION_RESULT', { 
+                    msg, 
+                    type: msg.includes('✅') ? 'success' : 'fail' 
+                });
+                
+                // Spezialfall: Radar freigeschaltet
+                if (key === 'A' && this._state.radarUnlocked) {
+                    // Radar Tutorial etc. (könnte man auch in IM auslagern)
+                    this._state.missionPhase = 2;
+                    this._state.lastRadarTime = Date.now();
+                    this.resume();
+                    this.triggerNewInfo();
+                } else {
+                    this.resume();
+                }
+            }
+        });
+
+        eventBus.subscribe('INVESTMENT_SELECTED', (targetType) => {
+            this.spawnTargets(targetType, this._state.currentPlayerNodeId);
+            this.resume();
+        });
+
+        eventBus.subscribe('INVESTMENT_CANCELLED', () => {
+            this.resume();
+        });
+
+        eventBus.subscribe('START_BURGLARY', ({ target, riskData }) => {
+            setTimeout(() => {
+                const roll = Math.floor(Math.random() * 100) + 1;
+                const isSuccess = roll <= riskData.successProbability;
+
+                if (isSuccess) {
+                    const amount = this.calculateLoot(target.type);
+                    this.addReward(amount);
+                    eventBus.emit('SHOW_DIALOG', {
+                        title: 'Erfolg!',
+                        text: `Du hast ${amount} € erbeutet!`,
+                        buttons: [{ text: 'Hervorragend', event: 'RESUME_GAME' }]
+                    });
+                } else {
+                    eventBus.emit('SHOW_DIALOG', {
+                        title: 'Fehlschlag!',
+                        text: 'Die Polizei war schneller.',
+                        buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
+                    });
+                }
+                this.resetBurglaryState();
+            }, 2000);
+        });
+
+        eventBus.subscribe('RESUME_GAME', () => this.resume());
     }
 
     // ----------------------------------------------------------------
@@ -61,10 +130,13 @@ class Game {
     _notify() {
         const copy = { ...this._state };
         this._stateChangeCallbacks.forEach(cb => cb(copy));
+        this._updateHUDInfo();
+        eventBus.emit('INFO_MENU_STATE', this._state.isInfoMenuOpen);
     }
 
     _notifyPosition(lat, lon, budget) {
         this._positionCallbacks.forEach(cb => cb(lat, lon, budget));
+        eventBus.emit('BUDGET_UPDATED', budget);
     }
 
     /** Callback wenn der Spieler das Missions-Ziel erreicht. */
@@ -75,9 +147,7 @@ class Game {
     _notifyTargetReached() {
         const targetNode = this._mapData.getNode(this._state.targetPubNodeId);
         const cityName = this._mapData.cityName || 'dieser Stadt';
-        const pubName = targetNode?.tags?.name || 'Unbekannte Kneipe';
 
-        // Optionen aus GameStrings.js laden
         const optionsData = {
             A: { 
                 text: STRINGS.interactions.pub.optionA(cityName),
@@ -85,7 +155,7 @@ class Game {
                 risk: 0 
             },
             B: { 
-                text: STRINGS.interactions.pub.optionB(0), // Risiko ist 0 für diese Option
+                text: STRINGS.interactions.pub.optionB(0),
                 requiresConfirmation: false,
                 cost: 75 
             },
@@ -101,10 +171,16 @@ class Game {
             }
         };
 
-        const riskData = targetNode ? this._mapData.getPoliceRiskModifier([targetNode.lat, targetNode.lon]) : { riskMalus: 0, activeStations: 0 };
+        const currentNode = this._mapData.getNode(this._state.currentPlayerNodeId);
+        const riskData = this._mapData.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
         
-        console.log('--- POI ERREICHT ---', pubName);
-        this._targetReachedCallbacks.forEach(cb => cb(this._state.targetPubNodeId, optionsData, riskData));
+        eventBus.emit('OPEN_INTERACTION', { 
+            optionsData, 
+            riskData, 
+            getPreviewFn: (key) => this.getInteractionPreview(key) 
+        });
+        
+        this._targetReachedCallbacks.forEach(cb => cb(this._state.currentPlayerNodeId, optionsData, riskData));
     }
 
     /**
@@ -188,10 +264,6 @@ class Game {
         return { ...this._state };
     }
 
-    toggleInfoMenu() {
-        this._state.isInfoMenuOpen = !this._state.isInfoMenuOpen;
-        this._notify();
-    }
 
     canAfford(amount) {
         return this._state.budget >= amount;
@@ -199,11 +271,13 @@ class Game {
 
     deductBudget(amount) {
         this._state.budget = Math.max(0, this._state.budget - amount);
+        eventBus.emit('BUDGET_UPDATED', this._state.budget);
         this._notify();
     }
 
     addReward(amount) {
         this._state.budget += amount;
+        eventBus.emit('BUDGET_UPDATED', this._state.budget);
         this._notify();
     }
 
@@ -276,8 +350,6 @@ class Game {
                         this._state.infoMenuOpenUntilMove = -1;
                     }
                 }
-
-                this._state.moveCounter++;
 
                 // Erster Zug → Tutorial-Fade-out auslösen
                 if (!this._firstMoveFired) {
@@ -437,7 +509,47 @@ class Game {
      */
     toggleInfoMenu() {
         this._state.isInfoMenuOpen = !this._state.isInfoMenuOpen;
+        eventBus.emit('INFO_MENU_STATE', this._state.isInfoMenuOpen);
         this._notify();
+    }
+
+    /**
+     * Berechnet die Info-Karten für den HUDManager basierend auf dem aktuellen Zustand.
+     */
+    _updateHUDInfo() {
+        const state = this._state;
+        if (!state.gameActive && state.currentPlayerNodeId === null) {
+            eventBus.emit('INFO_UPDATED', []);
+            return;
+        }
+
+        const infoCards = [];
+        const targetNode = this._mapData.getNode(state.targetPubNodeId);
+        const targetName = targetNode?.tags?.name || 'Unbekannte Gaststätte';
+
+        if (state.gameActive) {
+            if (state.missionPhase === 1) {
+                infoCards.push(
+                    { title: 'AKTUELLES ZIEL', body: targetName },
+                    { title: 'AUFGABE', body: 'Erreiche die Kneipe, um Informationen zu sammeln.' },
+                    { title: 'STEUERUNG', body: 'Klicke auf die grünen Punkte, um dich durch die Stadt zu bewegen.' }
+                );
+            } else if (state.missionPhase === 2) {
+                infoCards.push({ 
+                    title: 'RADAR-SYSTEM', 
+                    body: 'Drücke "P", um Standorte der Polizei für 5 Sek. aufzudecken. (5 Min. Cooldown)' 
+                });
+            }
+        }
+
+        if (state.showPubCooldownText) {
+            infoCards.push({ 
+                title: 'HINWEIS', 
+                body: 'Du kannst erst wieder in drei Minuten die Kneipe besuchen.' 
+            });
+        }
+
+        eventBus.emit('INFO_UPDATED', infoCards);
     }
 
     /**
@@ -513,6 +625,7 @@ class Game {
     /** Zieht einen Betrag vom Budget ab. */
     deductBudget(amount) {
         this._state.budget = Math.max(0, this._state.budget - amount);
+        eventBus.emit('BUDGET_UPDATED', this._state.budget);
     }
 
     /**
