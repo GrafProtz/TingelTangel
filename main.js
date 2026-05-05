@@ -27,11 +27,11 @@ async function initApp() {
     let missionPOI = null;
 
     // ----- Core Game Events -----
-    game.onPositionUpdate((lat, lon) => {
+    eventBus.subscribe('PLAYER_POSITION_UPDATED', ({ lat, lon }) => {
         mapView.updatePlayerPosition([lat, lon]);
     });
 
-    game.onFirstMove(() => {
+    eventBus.subscribe('FIRST_MOVE_COMPLETED', () => {
         eventBus.emit('TOGGLE_INFO', false);
     });
 
@@ -47,7 +47,7 @@ async function initApp() {
     });
 
     // ----- State Handling -----
-    game.onStateChange((state) => {
+    eventBus.subscribe('GAME_STATE_CHANGED', (state) => {
         if (state.currentPlayerNodeId === null) return;
         
         if (state.isMoving) {
@@ -104,10 +104,10 @@ async function initApp() {
 
     eventBus.subscribe('RELOAD_GAME', () => location.reload());
 
-    game.onTargetReached((targetNodeId) => {
+    eventBus.subscribe('PUB_TARGET_REACHED', () => {
         game.pause();
         mapView.playCinematicSequence('door', 1500, () => {
-            // OPEN_INTERACTION via Game.js _notifyTargetReached
+            // OPEN_INTERACTION via Game.js #notifyTargetReached
         });
     });
 

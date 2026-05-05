@@ -30,10 +30,23 @@ export class HUDManager {
 
     /**
      * Aktualisiert die Budget-Anzeige im HUD.
+     * @param {Object} data - { total, diff }
      */
-    updateBudget(amount) {
+    updateBudget({ total, diff }) {
         if (!this.budgetPanel) return;
-        this.budgetPanel.innerText = `Budget: ${amount} €`;
+        
+        this.budgetPanel.innerText = `Budget: ${total} €`;
+        
+        // Visuelles Feedback bei Änderungen
+        if (diff !== 0) {
+            const feedback = document.createElement('span');
+            feedback.className = diff > 0 ? 'budget-gain' : 'budget-loss';
+            feedback.innerText = (diff > 0 ? '+' : '') + diff;
+            
+            this.budgetPanel.appendChild(feedback);
+            setTimeout(() => feedback.remove(), 1000);
+        }
+
         if (this.budgetPanel.style.display === 'none') {
             this.budgetPanel.style.display = 'block';
         }

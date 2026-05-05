@@ -6,51 +6,55 @@ import { eventBus } from './EventBus.js';
 /**
  * Game - Die Logik-Schicht.
  * Verwaltet Spielzustand, validiert Züge und steuert die Pfad-Animation.
+ * 
+ * ARCHITEKTUR:
+ * - Kapselung: Alle Status-Variablen sind Private Fields (#).
+ * - Pub/Sub: Keine direkten Manager-Aufrufe, Kommunikation nur via EventBus.
+ * - Pure Logic: Berechnungen basieren auf Input und CONFIG.
  */
 class Game {
+    // Private Fields (Encapsulation)
+    #mapData;
+    #budget = CONFIG.INITIAL_BUDGET;
+    #currentPlayerNodeId = null;
+    #gameActive = false;
+    #isMoving = false;
+    #targetPubNodeId = null;
+    #radarUnlocked = false;
+    #lastRadarTime = 0;
+    #lastPubVisitTime = 0;
+    #showPubCooldownText = false;
+    #moveCount = 0;
+    #missionPhase = 1;
+    #infoMenuOpenUntilMove = -1;
+    #isInfoMenuOpen = false;
+    #activeCrimeTargets = [];
+    #logbook = [];
+    
+    #firstMoveFired = false;
+    #animFrameId = null;
+
     /**
      * @param {MapData} mapData
      */
     constructor(mapData) {
-        this._mapData = mapData;
-
-        this._state = {
-            budget: CONFIG.INITIAL_BUDGET,
-            currentPlayerNodeId: null,
-            gameActive: false,
-            isMoving: false,
-            targetPubNodeId: null,
-            radarUnlocked: false,
-            lastRadarTime: 0,
-            lastPubVisitTime: 0,
-            showPubCooldownText: false,
-            moveCount: 0,
-            missionPhase: 1,
-            infoMenuOpenUntilMove: -1,
-            isInfoMenuOpen: false,
-            activeCrimeTargets: [],
-            logbook: []
-        };
-
-        this._stateChangeCallbacks  = [];
-        this._positionCallbacks     = [];
-        this._targetReachedCallbacks = [];
-        this._firstMoveCallbacks     = [];
-
-        this._setupInteractionListeners();
-        this._firstMoveFired = false;
-        this._animFrameId = null;
+        this.#mapData = mapData;
+        this.#setupInteractionListeners();
     }
 
-    _setupInteractionListeners() {
+    /**
+     * Initialisiert alle Subscriber für externe Events.
+     */
+    #setupInteractionListeners() {
         eventBus.subscribe('INTERACTION_SELECTED', (payload) => {
-            console.log('TRACE 1: Verarbeitung gestartet mit Payload:', payload);
             const { key, option } = payload;
+            
             if (key === 'B') {
                 // Spezialfall: Investment Consultant
-                if (this.canAfford(75)) {
-                    this.deductBudget(75);
-                    eventBus.emit('OPEN_INVESTMENT', { cityName: this._mapData.cityName });
+                const cost = 75; // TODO: In CONFIG verschieben
+                if (this.canAfford(cost)) {
+                    this.deductBudget(cost);
+                    eventBus.emit('OPEN_INVESTMENT', { cityName: this.#mapData.cityName });
                 } else {
                     eventBus.emit('SHOW_TOAST', { msg: "Nicht genug Geld für den Berater!", type: 'fail' });
                     this.resume();
@@ -58,20 +62,18 @@ class Game {
             } else {
                 // Standard-Entscheidungen (A, C, D)
                 const msg = this.handleInteractionDecision(key, option);
-                console.log('TRACE 2: handleInteractionDecision erfolgreich. Ergebnis:', msg);
                 
-                console.log('TRACE 3: Feuere SHOW_TOAST Event...');
                 eventBus.emit('SHOW_TOAST', { 
                     msg, 
                     type: (msg.includes('✅') || msg.includes('📡') || !msg.includes('❌')) ? 'success' : 'fail' 
                 });
 
-                // Modal schließen
                 eventBus.emit('CLOSE_INTERACTION');
 
                 // Spezialfall: Radar-Tutorial bei Erstkauf (Option A)
-                if (key === 'A' && this._state.radarUnlocked) {
-                    this._state.missionPhase = 2;
+                if (key === 'A' && this.#radarUnlocked) {
+                    this.#missionPhase = 2;
+                    this.#emitMissionUpdate();
                     
                     eventBus.emit('SHOW_DIALOG', {
                         title: '📡 Radar freigeschaltet',
@@ -80,14 +82,13 @@ class Game {
                         isRadarUnlock: true
                     });
                 } else {
-                    console.log('[GAME] Reaktivierung der Spielschleife...');
                     this.resume();
                 }
             }
         });
 
         eventBus.subscribe('INVESTMENT_SELECTED', (targetType) => {
-            eventBus.emit('SPAWN_TARGETS', { targetType, centerNodeId: this._state.currentPlayerNodeId });
+            eventBus.emit('SPAWN_TARGETS', { targetType, centerNodeId: this.#currentPlayerNodeId });
             this.resume();
         });
 
@@ -109,326 +110,245 @@ class Game {
                         buttons: [{ text: 'Hervorragend', event: 'RESUME_GAME' }]
                     });
                 } else {
+                    const fine = Math.ceil(this.#budget * 0.2); // Strafe bei Fehlschlag
+                    this.deductBudget(fine);
                     eventBus.emit('SHOW_DIALOG', {
                         title: 'Fehlschlag!',
-                        text: 'Die Polizei war schneller.',
+                        text: `Die Polizei war schneller. Du musstest ${fine} € Strafe zahlen.`,
                         buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
                     });
                 }
-                this.resetBurglaryState();
+                this.#resetBurglaryState();
             }, 500);
         });
 
         eventBus.subscribe('RESUME_GAME', () => this.resume());
-    }
-
-    // ----------------------------------------------------------------
-    //  Event-System
-    // ----------------------------------------------------------------
-
-    /** UI-Update bei logischen State-Änderungen (Ankunft, Budget, Game-Over). */
-    onStateChange(callback) {
-        if (typeof callback === 'function') {
-            this._stateChangeCallbacks.push(callback);
-            callback({ ...this._state });
-        }
-    }
-
-    /** Frame-genaues Positions-Update während der Bewegung. */
-    onPositionUpdate(callback) {
-        if (typeof callback === 'function') {
-            this._positionCallbacks.push(callback);
-        }
-    }
-
-    _notify() {
-        const copy = { ...this._state };
-        this._stateChangeCallbacks.forEach(cb => cb(copy));
-        this._updateHUDInfo();
-        eventBus.emit('INFO_MENU_STATE', this._state.isInfoMenuOpen);
-    }
-
-    _notifyPosition(lat, lon, budget) {
-        this._positionCallbacks.forEach(cb => cb(lat, lon, budget));
-        eventBus.emit('BUDGET_UPDATED', budget);
-    }
-
-    /** Callback wenn der Spieler das Missions-Ziel erreicht. */
-    onTargetReached(callback) {
-        if (typeof callback === 'function') this._targetReachedCallbacks.push(callback);
-    }
-
-    _notifyTargetReached() {
-        const targetNode = this._mapData.getNode(this._state.targetPubNodeId);
-        const cityName = this._mapData.cityName || 'dieser Stadt';
-
-        const optionsData = {
-            A: { 
-                text: STRINGS.interactions.pub.optionA(cityName),
-                cost: 50, 
-                risk: 0 
-            },
-            B: { 
-                text: STRINGS.interactions.pub.optionB(0),
-                requiresConfirmation: false,
-                cost: 75 
-            },
-            C: { 
-                text: STRINGS.interactions.pub.optionC('?'), 
-                requiresConfirmation: true,
-                reward: 300 
-            },
-            D: { 
-                text: STRINGS.interactions.pub.optionD, 
-                cost: 10, 
-                risk: 0 
-            }
-        };
-
-        const currentNode = this._mapData.getNode(this._state.currentPlayerNodeId);
-        const riskData = this._mapData.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
-        
-        // Visuelle Warnung hinzufügen, wenn Risiko erhöht ist
-        if (riskData.riskMalus > 0) {
-            ['B', 'C'].forEach(k => {
-                if (optionsData[k]) {
-                    optionsData[k].text = `🚨 ${optionsData[k].text} (Erhöhtes Risiko!)`;
-                }
-            });
-        }
-
-        eventBus.emit('OPEN_INTERACTION', { 
-            optionsData, 
-            riskData, 
-            getPreviewFn: (key) => this.getInteractionPreview(key) 
+        eventBus.subscribe('RADAR_ACKNOWLEDGED', () => {
+            // Wird in main.js abgefangen für die Kamerafahrt, Game bleibt pausiert
         });
-        
-        this._targetReachedCallbacks.forEach(cb => cb(this._state.currentPlayerNodeId, optionsData, riskData));
     }
+
+    // ----------------------------------------------------------------
+    //  State & Getters
+    // ----------------------------------------------------------------
 
     /**
-     * Berechnet die Risiko-Vorschau für eine zweistufige Interaktion.
-     * @param {string} key - B oder C
+     * Gibt eine tiefe Kopie des aktuellen Spielzustands zurück.
+     * Nutzt structuredClone, um Referenz-Leaks zu verhindern.
      */
-    getInteractionPreview(key) {
-        const targetNode = this._mapData.getNode(this._state.targetPubNodeId);
-        if (!targetNode) return null;
-
-        const baseRisk = (key === 'B') ? CONFIG.RISK_PUB_EASY : CONFIG.RISK_PUB_HARD;
-        const finalRisk = Math.min(100, baseRisk + riskData.riskMalus);
-
-        let previewText = '';
-        if (key === 'B') previewText = STRINGS.interactions.pub.previewB(finalRisk);
-        if (key === 'C') previewText = STRINGS.interactions.pub.previewC(finalRisk);
-
-        if (riskData.riskMalus > 0) {
-            previewText = `<div style="color: #ef4444; font-weight: bold; margin-bottom: 8px;">🚨 WARNUNG: Erhöhte Polizeipräsenz im Viertel!</div>${previewText}`;
-        }
-
-        if (riskData.riskMalus > 0) {
-            previewText = `🚨 <b>WARNUNG:</b> Erhöhte Polizeipräsenz in diesem Viertel!<br>${previewText}`;
-        }
-
-        return {
-            key,
-            risk: finalRisk,
-            text: previewText
-        };
-    }
-
-    /** Callback für den allerersten erfolgreichen Zug. */
-    onFirstMove(callback) {
-        if (typeof callback === 'function') this._firstMoveCallbacks.push(callback);
+    getState() {
+        return structuredClone({
+            budget: this.#budget,
+            currentPlayerNodeId: this.#currentPlayerNodeId,
+            gameActive: this.#gameActive,
+            isMoving: this.#isMoving,
+            targetPubNodeId: this.#targetPubNodeId,
+            radarUnlocked: this.#radarUnlocked,
+            lastRadarTime: this.#lastRadarTime,
+            lastPubVisitTime: this.#lastPubVisitTime,
+            showPubCooldownText: this.#showPubCooldownText,
+            moveCount: this.#moveCount,
+            missionPhase: this.#missionPhase,
+            infoMenuOpenUntilMove: this.#infoMenuOpenUntilMove,
+            isInfoMenuOpen: this.#isInfoMenuOpen,
+            activeCrimeTargets: this.#activeCrimeTargets,
+            logbook: this.#logbook
+        });
     }
 
     // ----------------------------------------------------------------
-    //  Mission
+    //  Ereignis-Benachrichtigungen (Internal Only)
+    // ----------------------------------------------------------------
+
+    /** Informiert das System über allgemeine Statusänderungen. */
+    #notifyStateChange() {
+        eventBus.emit('GAME_STATE_CHANGED', this.getState());
+        this.#updateHUDInfo();
+    }
+
+    /** Spezielles Event für Budget-Änderungen inkl. Delta für Animationen. */
+    #emitBudgetUpdate(diff = 0) {
+        eventBus.emit('BUDGET_UPDATED', {
+            total: this.#budget,
+            diff: diff
+        });
+    }
+
+    /** Informiert über Fortschritt in der Mission. */
+    #emitMissionUpdate() {
+        eventBus.emit('MISSION_STATE_CHANGED', {
+            phase: this.#missionPhase,
+            moveCount: this.#moveCount
+        });
+    }
+
+    // ----------------------------------------------------------------
+    //  Mission & Steuerung
     // ----------------------------------------------------------------
 
     startMission(startNodeId, targetNodeId) {
-        this._state = {
-            budget: CONFIG.INITIAL_BUDGET,
-            currentPlayerNodeId: String(startNodeId),
-            gameActive: true,
-            isMoving: false,
-            targetPubNodeId: String(targetNodeId),
-            radarUnlocked: false,
-            lastRadarTime: 0,
-            lastPubVisitTime: 0,
-            showPubCooldownText: false,
-            moveCount: 0,
-            missionPhase: 1,
-            infoMenuOpenUntilMove: -1,
-            isInfoMenuOpen: false,
-            logbook: []
-        };
-        this._firstMoveFired = false;
-        console.log('🎯 MISSION GESTARTET! Ziel-ID:', this._state.targetPubNodeId);
-        this._notify();
+        this.#budget = CONFIG.INITIAL_BUDGET;
+        this.#currentPlayerNodeId = String(startNodeId);
+        this.#gameActive = true;
+        this.#isMoving = false;
+        this.#targetPubNodeId = String(targetNodeId);
+        this.#radarUnlocked = false;
+        this.#lastRadarTime = 0;
+        this.#lastPubVisitTime = 0;
+        this.#showPubCooldownText = false;
+        this.#moveCount = 0;
+        this.#missionPhase = 1;
+        this.#infoMenuOpenUntilMove = -1;
+        this.#isInfoMenuOpen = false;
+        this.#activeCrimeTargets = [];
+        this.#logbook = [];
+        
+        this.#firstMoveFired = false;
+        
+        console.log('🎯 MISSION GESTARTET! Ziel-ID:', this.#targetPubNodeId);
+        this.#notifyStateChange();
+        this.#emitBudgetUpdate();
     }
 
     pause() {
-        this._state.gameActive = false;
-        this._notify();
+        this.#gameActive = false;
+        eventBus.emit('GAME_PAUSED');
+        this.#notifyStateChange();
     }
 
     resume() {
-        this._state.gameActive = true;
-        this._notify();
-    }
-
-    setGameActive(active) {
-        this._state.gameActive = !!active;
-        this._notify();
+        this.#gameActive = true;
+        eventBus.emit('GAME_RESUMED');
+        this.#notifyStateChange();
     }
 
     isGameActive() {
-        return this._state.gameActive;
+        return this.#gameActive;
     }
-
-    getBudget() {
-        return this._state.budget;
-    }
-
-    getState() {
-        return { ...this._state };
-    }
-
 
     canAfford(amount) {
-        return this._state.budget >= amount;
+        return this.#budget >= amount;
     }
 
     deductBudget(amount) {
-        this._state.budget = Math.max(0, this._state.budget - amount);
-        eventBus.emit('BUDGET_UPDATED', this._state.budget);
-        this._notify();
+        const oldBudget = this.#budget;
+        this.#budget = Math.max(0, this.#budget - amount);
+        this.#emitBudgetUpdate(this.#budget - oldBudget);
+        this.#notifyStateChange();
     }
 
     addReward(amount) {
-        this._state.budget += amount;
-        eventBus.emit('BUDGET_UPDATED', this._state.budget);
-        this._notify();
+        const oldBudget = this.#budget;
+        this.#budget += amount;
+        this.#emitBudgetUpdate(this.#budget - oldBudget);
+        this.#notifyStateChange();
     }
 
-    resetBurglaryState() {
-        this._state.activeCrimeTargets = [];
-        this._state.missionPhase = 1;
+    #resetBurglaryState() {
+        this.#activeCrimeTargets = [];
+        this.#missionPhase = 1;
+        this.#emitMissionUpdate();
         this.resume();
     }
 
     // ----------------------------------------------------------------
-    //  Bewegung mit Pfad-Animation
+    //  Bewegung
     // ----------------------------------------------------------------
 
-    /**
-     * Bewegt die Spielfigur zum Zielknoten, entlang des Makro-Pfads.
-     * Während der Animation: Eingaben gesperrt, Budget sinkt kontinuierlich,
-     * Frame-genaue Positions-Updates werden gefeuert.
-     */
     moveToNode(targetId) {
-        if (!this._state.gameActive || this._state.isMoving) return;
+        if (!this.#gameActive || this.#isMoving) return;
 
-        const edge = this._mapData.getEdge(this._state.currentPlayerNodeId, targetId);
-        if (!edge) {
-            console.warn(`Game: Keine Kante von ${this._state.currentPlayerNodeId} nach ${targetId}`);
-            return;
-        }
+        const edge = this.#mapData.getEdge(this.#currentPlayerNodeId, targetId);
+        if (!edge) return;
 
-        // Eingaben sperren
-        this._state.isMoving = true;
-        this._notify();
+        this.#isMoving = true;
+        this.#notifyStateChange();
 
-        // Pfad vorbereiten: Startpunkt + alle Zwischenpunkte (path enthält bereits das Ziel)
-        const startNode = this._mapData.getNode(this._state.currentPlayerNodeId);
+        const startNode = this.#mapData.getNode(this.#currentPlayerNodeId);
         const fullPath = [[startNode.lat, startNode.lon], ...edge.path];
 
-        // Kosten berechnen: 1 € pro 10 Meter
-        const totalCost = Math.max(1, Math.ceil(edge.distance / 10));
-        const budgetAtStart = this._state.budget;
+        const totalCost = Math.max(1, Math.ceil(edge.distance * CONFIG.COST_PER_METER));
+        const budgetAtStart = this.#budget;
 
-        // Animation starten
-        const speed = 120;     // Meter pro Sekunde (Spieltempo, nicht realistisch)
+        const speed = 120; // Meter pro Sekunde
         const durationMs = (edge.distance / speed) * 1000;
         const startTime = performance.now();
 
         const animate = (now) => {
             const elapsed = now - startTime;
-            const t = Math.min(elapsed / durationMs, 1);   // 0 → 1
+            const t = Math.min(elapsed / durationMs, 1);
 
-            // Interpolierte Position auf dem Pfad
-            const pos = this._interpolatePath(fullPath, t);
+            const pos = this.#interpolatePath(fullPath, t);
             
-            // Budget kontinuierlich reduzieren
             const costSoFar = Math.ceil(totalCost * t);
-            this._state.budget = Math.max(0, budgetAtStart - costSoFar);
+            const newBudget = Math.max(0, budgetAtStart - costSoFar);
+            
+            if (newBudget !== this.#budget) {
+                const diff = newBudget - this.#budget;
+                this.#budget = newBudget;
+                this.#emitBudgetUpdate(diff);
+            }
 
-            // Frame-Update feuern (View bewegt Marker + HUD)
-            this._notifyPosition(pos[0], pos[1], this._state.budget);
+            eventBus.emit('PLAYER_POSITION_UPDATED', { lat: pos[0], lon: pos[1], budget: this.#budget });
 
             if (t < 1) {
-                this._animFrameId = requestAnimationFrame(animate);
+                this.#animFrameId = requestAnimationFrame(animate);
             } else {
-                this._state.currentPlayerNodeId = String(targetId);
-                this._state.isMoving = false;
-                this._state.moveCount++;
-
-                // Info-Menü automatisch schließen nach X Zügen
-                if (this._state.isInfoMenuOpen && this._state.infoMenuOpenUntilMove !== -1) {
-                    if (this._state.moveCount >= this._state.infoMenuOpenUntilMove) {
-                        this._state.isInfoMenuOpen = false;
-                        this._state.infoMenuOpenUntilMove = -1;
-                    }
-                }
-
-                // Erster Zug → Tutorial-Fade-out auslösen
-                if (!this._firstMoveFired) {
-                    this._firstMoveFired = true;
-                    this._firstMoveCallbacks.forEach(cb => cb());
-                }
-
-                console.log('--- ANIMATION BEENDET ---');
-                console.log('Angekommen auf Knoten:', String(this._state.currentPlayerNodeId), '| Typ:', typeof this._state.currentPlayerNodeId);
-                console.log('Gesuchtes Ziel ist:   ', String(this._state.targetPubNodeId), '| Typ:', typeof this._state.targetPubNodeId);
-
-                if (this._state.budget <= 0) {
-                    this._state.budget = 0;
-                    this._state.gameActive = false;
-                }
-
-                // Ziel erreicht? (Primär: ID-Vergleich)
-                const idA = String(this._state.currentPlayerNodeId);
-                const idB = String(this._state.targetPubNodeId);
-                let arrived = idA === idB;
-                console.log('ID-Vergleich:', idA, '===', idB, '->', arrived);
-
-
-                if (arrived) {
-                    const cooldownMs = 180000; // 3 Minuten
-                    const timeSinceLastVisit = Date.now() - this._state.lastPubVisitTime;
-
-                    if (timeSinceLastVisit > cooldownMs) {
-                        console.log('🍺 ZIEL ERREICHT! Callback wird gefeuert.');
-                        this._state.gameActive = false;
-                        this._notifyTargetReached();
-                    } else {
-                        const remaining = Math.ceil((cooldownMs - timeSinceLastVisit) / 1000);
-                        console.log(`🍺 Ziel erreicht, aber Cooldown aktiv: ${remaining}s`);
-                    }
-                }
-
-                this._notify();
+                this.#finishMovement(targetId);
             }
         };
 
-        this._animFrameId = requestAnimationFrame(animate);
+        this.#animFrameId = requestAnimationFrame(animate);
     }
 
-    /**
-     * Interpoliert eine Position auf einem Pfad-Array bei Fortschritt t (0–1).
-     * Verteilt t gleichmäßig über die Segmente (vereinfachte Variante).
-     */
-    _interpolatePath(path, t) {
+    #finishMovement(targetId) {
+        this.#currentPlayerNodeId = String(targetId);
+        this.#isMoving = false;
+        this.#moveCount++;
+
+        // Info-Menü Management
+        if (this.#isInfoMenuOpen && this.#infoMenuOpenUntilMove !== -1) {
+            if (this.#moveCount >= this.#infoMenuOpenUntilMove) {
+                this.#isInfoMenuOpen = false;
+                this.#infoMenuOpenUntilMove = -1;
+                eventBus.emit('INFO_MENU_STATE', false);
+            }
+        }
+
+        // Erst-Zug Logik
+        if (!this.#firstMoveFired) {
+            this.#firstMoveFired = true;
+            eventBus.emit('FIRST_MOVE_COMPLETED');
+        }
+
+        if (this.#budget <= 0) {
+            this.#budget = 0;
+            this.#gameActive = false;
+            eventBus.emit('GAME_OVER', { reason: 'OUT_OF_MONEY' });
+        }
+
+        // Ziel-Prüfung
+        if (String(this.#currentPlayerNodeId) === String(this.#targetPubNodeId)) {
+            this.#checkPubArrival();
+        }
+
+        this.#notifyStateChange();
+    }
+
+    #checkPubArrival() {
+        const timeSinceLastVisit = Date.now() - this.#lastPubVisitTime;
+
+        if (timeSinceLastVisit > CONFIG.PUB_COOLDOWN) {
+            this.#gameActive = false;
+            eventBus.emit('PUB_TARGET_REACHED', { nodeId: this.#currentPlayerNodeId });
+            this.#notifyTargetReached();
+        } else {
+            const remaining = Math.ceil((CONFIG.PUB_COOLDOWN - timeSinceLastVisit) / 1000);
+            eventBus.emit('SHOW_TOAST', { msg: `Der Barkeeper ist noch beschäftigt. (${remaining}s)`, type: 'fail' });
+        }
+    }
+
+    #interpolatePath(path, t) {
         if (path.length < 2) return path[0] || [0, 0];
         if (t <= 0) return path[0];
         if (t >= 1) return path[path.length - 1];
@@ -451,161 +371,137 @@ class Game {
     //  Radar & Items
     // ----------------------------------------------------------------
 
-    /**
-     * Aktiviert das Polizei-Radar (5-Minuten-Cooldown).
-     * @returns {Array|string|null} Stationen, 'cooldown' oder null
-     */
     triggerRadar(force = false) {
-        if (!this._state.radarUnlocked) return null;
-        if (!force && (Date.now() - this._state.lastRadarTime < CONFIG.RADAR_COOLDOWN)) return 'cooldown';
+        if (!this.#radarUnlocked) return null;
+        if (!force && (Date.now() - this.#lastRadarTime < CONFIG.RADAR_COOLDOWN)) return 'cooldown';
         
-        if (!force) this._state.lastRadarTime = Date.now();
-        this._notify();
+        if (!force) this.#lastRadarTime = Date.now();
+        this.#notifyStateChange();
 
-        const playerNode = this._mapData.getNode(this._state.currentPlayerNodeId);
-        const playerCoords = playerNode ? [playerNode.lat, playerNode.lon] : [51.5, 7.5];
+        const playerNode = this.#mapData.getNode(this.#currentPlayerNodeId);
+        const playerCoords = playerNode ? [playerNode.lat, playerNode.lon] : [0, 0];
 
         return {
-            stations: [...this._mapData._policeStations],
+            stations: [...this.#mapData._policeStations],
             playerCoords
         };
     }
 
-    /**
-     * Verarbeitet die Entscheidung im Kneipen-Dialog.
-     * @param {string} key - A, B, C oder D
-     * @param {object} opt - Die gewählte Option { text, reward, risk, cost }
-     * @returns {string} Ergebnismeldung
-     */
     handleInteractionDecision(key, opt) {
-        const targetNode = this._mapData.getNode(this._state.targetPubNodeId);
-        const riskData = targetNode ? this._mapData.getPoliceRiskModifier([targetNode.lat, targetNode.lon]) : { riskMalus: 0 };
+        const targetNode = this.#mapData.getNode(this.#targetPubNodeId);
+        const riskData = targetNode ? this.#mapData.getPoliceRiskModifier([targetNode.lat, targetNode.lon]) : { riskMalus: 0 };
         
-        // Risiko-Wert dynamisch anpassen, falls nicht bereits in 'opt' (Vorschau-Flow) enthalten
         const finalRisk = opt.risk !== undefined ? opt.risk : Math.min(100, (opt.risk || 0) + riskData.riskMalus);
-        
         const roll = Math.random() * 100;
         let msg = '';
 
         if (key === 'A') {
-            if (this._state.radarUnlocked) {
+            if (this.#radarUnlocked) {
                 msg = '📡 Du hast die Frequenz bereits!';
-            } else if (this._state.budget >= CONFIG.RADAR_COST) {
-                this._state.budget -= CONFIG.RADAR_COST;
-                this._state.radarUnlocked = true;
+            } else if (this.#budget >= CONFIG.RADAR_COST) {
+                this.deductBudget(CONFIG.RADAR_COST);
+                this.#radarUnlocked = true;
                 
-                const currentNode = this._mapData.getNode(this._state.currentPlayerNodeId);
-                const risk = this._mapData.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
-                const stations = risk.activeStations;
-                msg = `Der Barkeeper meint, dass hier ${stations} Polizeiwache(n) in der Umgebung sind.`;
-                
-                // Menü automatisch für neue Infos öffnen
-                // Die triggerNewInfo() wurde hier entfernt, da sie zu früh feuert.
-                // Die Radar-Sequenz wird jetzt via InteractionManager nach dem Dialog gestartet.
+                const currentNode = this.#mapData.getNode(this.#currentPlayerNodeId);
+                const risk = this.#mapData.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
+                msg = `Der Barkeeper meint, dass hier ${risk.activeStations} Polizeiwache(n) in der Umgebung sind.`;
             } else {
                 msg = `❌ Nicht genug Geld! Du brauchst ${CONFIG.RADAR_COST} €.`;
             }
         } else if (key === 'D') {
-            const cost = opt.cost || 10;
-            if (this._state.budget >= cost) {
-                this._state.budget -= cost;
+            const cost = CONFIG.INFO_COST;
+            if (this.canAfford(cost)) {
+                this.deductBudget(cost);
                 msg = `Du kaufst Infos für ${cost} €. Ein Tipp: "Halte dich vom Osten fern."`;
             } else {
                 msg = '❌ Nicht genug Geld für Informationen.';
             }
-        } else if (roll < opt.risk) {
+        } else if (roll < finalRisk) {
             const fine = Math.ceil(opt.reward * 0.5);
-            this._state.budget = Math.max(0, this._state.budget - fine);
+            this.deductBudget(fine);
             msg = opt.caughtMsg ? opt.caughtMsg(fine) : `🚨 ERWISCHT! Strafe: ${fine} €.`;
         } else {
-            this._state.budget += opt.reward;
+            this.addReward(opt.reward);
             msg = opt.successMsg ? opt.successMsg(opt.reward) : `✅ Erfolg! Du kassierst ${opt.reward} € für "${opt.text}".`;
         }
 
-        // Cooldown setzen und Steuerung reaktivieren
-        this._state.lastPubVisitTime = Date.now();
-        this._state.gameActive = true;
+        this.#lastPubVisitTime = Date.now();
+        this.#gameActive = true;
 
-        // Im Logbuch speichern
-        this._state.logbook.push({ 
+        this.#logbook.push({ 
             time: Date.now(), 
             text: msg, 
-            type: (roll < (opt.risk || 0)) ? 'fail' : 'success' 
+            type: (roll < finalRisk) ? 'fail' : 'success' 
         });
 
-        this._notify();
+        this.#notifyStateChange();
 
         // UI-Timeouts für Cooldown-Text
         setTimeout(() => {
-            this._state.showPubCooldownText = true;
-            this._notify();
+            this.#showPubCooldownText = true;
+            this.#notifyStateChange();
         }, 5000);
 
         setTimeout(() => {
-            this._state.showPubCooldownText = false;
-            this._notify();
-        }, 180000);
+            this.#showPubCooldownText = false;
+            this.#notifyStateChange();
+        }, CONFIG.PUB_COOLDOWN);
 
         return msg;
     }
 
-    /**
-     * Schaltet das Info-Menü manuell an/aus.
-     */
-    toggleInfoMenu() {
-        this._state.isInfoMenuOpen = !this._state.isInfoMenuOpen;
-        eventBus.emit('INFO_MENU_STATE', this._state.isInfoMenuOpen);
-        this._notify();
-    }
+    // ----------------------------------------------------------------
+    //  Interaktion-Vorschau & Risiko
+    // ----------------------------------------------------------------
 
-    /**
-     * Berechnet die Info-Karten für den HUDManager basierend auf dem aktuellen Zustand.
-     */
-    _updateHUDInfo() {
-        const state = this._state;
-        if (!state.gameActive && state.currentPlayerNodeId === null) {
-            eventBus.emit('INFO_UPDATED', []);
-            return;
-        }
+    #notifyTargetReached() {
+        const cityName = this.#mapData.cityName || 'dieser Stadt';
 
-        const infoCards = [];
-        const targetNode = this._mapData.getNode(state.targetPubNodeId);
-        const targetName = targetNode?.tags?.name || 'Unbekannte Gaststätte';
+        const optionsData = {
+            A: { text: STRINGS.interactions.pub.optionA(cityName), cost: CONFIG.RADAR_COST, risk: 0 },
+            B: { text: STRINGS.interactions.pub.optionB(0), requiresConfirmation: false, cost: 75 },
+            C: { text: STRINGS.interactions.pub.optionC('?'), requiresConfirmation: true, reward: 300 },
+            D: { text: STRINGS.interactions.pub.optionD, cost: CONFIG.INFO_COST, risk: 0 }
+        };
 
-        if (state.gameActive) {
-            if (state.missionPhase === 1) {
-                infoCards.push(
-                    { title: 'AKTUELLES ZIEL', body: targetName },
-                    { title: 'AUFGABE', body: 'Erreiche die Kneipe, um Informationen zu sammeln.' },
-                    { title: 'STEUERUNG', body: 'Klicke auf die grünen Punkte, um dich durch die Stadt zu bewegen.' }
-                );
-            } else if (state.missionPhase === 2) {
-                infoCards.push({ 
-                    title: 'RADAR-SYSTEM', 
-                    body: 'Drücke "P", um Standorte der Polizei für 5 Sek. aufzudecken. (5 Min. Cooldown)' 
-                });
-            }
-        }
-
-        if (state.showPubCooldownText) {
-            infoCards.push({ 
-                title: 'HINWEIS', 
-                body: 'Du kannst erst wieder in drei Minuten die Kneipe besuchen.' 
+        const currentNode = this.#mapData.getNode(this.#currentPlayerNodeId);
+        const riskData = this.#mapData.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
+        
+        if (riskData.riskMalus > 0) {
+            ['B', 'C'].forEach(k => {
+                if (optionsData[k]) optionsData[k].text = `🚨 ${optionsData[k].text} (Erhöhtes Risiko!)`;
             });
         }
 
-        eventBus.emit('INFO_UPDATED', infoCards);
+        eventBus.emit('OPEN_INTERACTION', { 
+            optionsData, 
+            riskData, 
+            getPreviewFn: (key) => this.getInteractionPreview(key) 
+        });
     }
 
-    /**
-     * Berechnet das Risiko für ein spezifisches Ziel basierend auf Typ und Polizeinähe.
-     * @param {Object} targetNode - Das Ziel-Node-Objekt mit .type, .lat und .lon.
-     * @returns {Object} { totalRisk, successProbability, policePenalty, baseQuote }
-     */
+    getInteractionPreview(key) {
+        const targetNode = this.#mapData.getNode(this.#targetPubNodeId);
+        if (!targetNode) return null;
+
+        const riskData = this.#mapData.getPoliceRiskModifier([targetNode.lat, targetNode.lon]);
+        const baseRisk = (key === 'B') ? CONFIG.RISK_PUB_EASY : CONFIG.RISK_PUB_HARD;
+        const finalRisk = Math.min(100, baseRisk + riskData.riskMalus);
+
+        let previewText = '';
+        if (key === 'B') previewText = STRINGS.interactions.pub.previewB(finalRisk);
+        if (key === 'C') previewText = STRINGS.interactions.pub.previewC(finalRisk);
+
+        if (riskData.riskMalus > 0) {
+            previewText = `<div style="color: #ef4444; font-weight: bold; margin-bottom: 8px;">🚨 WARNUNG: Erhöhte Polizeipräsenz im Viertel!</div>${previewText}`;
+        }
+
+        return { key, risk: finalRisk, text: previewText };
+    }
+
     calculateTargetRisk(targetNode) {
         if (!targetNode) return { totalRisk: 0, successProbability: 100, policePenalty: 0, baseQuote: 0 };
 
-        // 1. Basis-Risiko (Aufklärungsquote nach Gebäudetyp aus Config)
         const baseMapping = {
             'commercial':  CONFIG.RISK_COMMERCIAL,
             'residential': CONFIG.RISK_RESIDENTIAL,
@@ -614,13 +510,11 @@ class Game {
         };
         const baseQuote = baseMapping[targetNode.type] || 20;
 
-        // 2. Polizei-Aufschlag (Distanz zur nächsten Wache)
         let minPoliceDist = Infinity;
-        // Zugriff auf die geladenen Polizeistationen aus MapData
-        const stations = this._mapData._policeStations || [];
+        const stations = this.#mapData._policeStations || [];
         
         stations.forEach(station => {
-            const dist = this._mapData.calculateDistance(
+            const dist = this.#mapData.calculateDistance(
                 { lat: targetNode.lat, lon: targetNode.lon },
                 { lat: station.lat, lon: station.lon }
             );
@@ -628,13 +522,11 @@ class Game {
         });
 
         let policePenalty = 0;
-        if (minPoliceDist < 1000) {
-            // Linear abnehmend: 10% bei 0m, 0% bei 1000m
-            policePenalty = 10 * (1 - (minPoliceDist / 1000));
+        if (minPoliceDist < CONFIG.POLICE_MAX_RADIUS) {
+            policePenalty = CONFIG.POLICE_MAX_MALUS * (1 - (minPoliceDist / CONFIG.POLICE_MAX_RADIUS));
         }
 
-        // 3. Finale Berechnung
-        const totalRisk = baseQuote + policePenalty;
+        const totalRisk = Math.min(CONFIG.POLICE_HARD_CAP + baseQuote, baseQuote + policePenalty);
         const successProbability = 100 - totalRisk;
 
         return {
@@ -645,79 +537,70 @@ class Game {
         };
     }
 
-    /**
-     * Öffnet das Info-Menü automatisch für die nächsten 5 Züge.
-     */
-    triggerNewInfo() {
-        this._state.isInfoMenuOpen = true;
-        this._state.infoMenuOpenUntilMove = this._state.moveCount + CONFIG.INFO_MENU_AUTO_OPEN_TURNS;
-        this._notify();
-    }
-
-    // ----------------------------------------------------------------
-    //  Hilfsfunktionen
-    // ----------------------------------------------------------------
-
-    getState() {
-        return { ...this._state };
-    }
-
-    /** Prüft, ob genug Budget vorhanden ist. */
-    canAfford(amount) {
-        return this._state.budget >= amount;
-    }
-
-    /** Zieht einen Betrag vom Budget ab. */
-    deductBudget(amount) {
-        this._state.budget = Math.max(0, this._state.budget - amount);
-        eventBus.emit('BUDGET_UPDATED', this._state.budget);
-    }
-
-    /**
-
-        console.log(`[GAME] ${candidates.length} passende Gebäude gefunden.`);
-
-        // Randomisiert 3 auswählen
-        const shuffled = candidates.sort(() => 0.5 - Math.random());
-        const selected = shuffled.slice(0, 3);
-
-        // Debug-Log für die gefundenen Ziele
-        
-    /**
-     * Setzt die aktiven Einbruchsziele (von externen Services generiert).
-     */
-    setCrimeTargets(targets) {
-        this._state.activeCrimeTargets = targets;
-        this._state.missionPhase = 3;
-        this._notify();
-    }
-
-    /**
-     * Berechnet die Beute für einen erfolgreichen Einbruch basierend auf dem Gesamtrisiko.
-     * Beute = Risiko * 20 (mit +/- 20% Zufallsvarianz).
-     * @param {number} totalRisk 
-     */
     calculateLoot(totalRisk) {
-        // Basisbeute direkt proportional zum Risiko
         const baseAmount = totalRisk * 20;
-        
-        // Zufallsvarianz (+/- 20%)
         const variance = 0.8 + (Math.random() * 0.4);
-        
         return Math.floor(baseAmount * variance);
     }
 
-    /**
-     * Berechnet Optionen und Risiken für einen Einbruch in ein spezifisches Gebäude.
-     * @param {string} targetId 
-     */
+    // ----------------------------------------------------------------
+    //  HUD & Info
+    // ----------------------------------------------------------------
+
+    toggleInfoMenu() {
+        this.#isInfoMenuOpen = !this.#isInfoMenuOpen;
+        eventBus.emit('INFO_MENU_STATE', this.#isInfoMenuOpen);
+        this.#notifyStateChange();
+    }
+
+    #updateHUDInfo() {
+        if (!this.#gameActive && this.#currentPlayerNodeId === null) {
+            eventBus.emit('INFO_UPDATED', []);
+            return;
+        }
+
+        const infoCards = [];
+        const targetNode = this.#mapData.getNode(this.#targetPubNodeId);
+        const targetName = targetNode?.tags?.name || 'Unbekannte Gaststätte';
+
+        if (this.#gameActive) {
+            if (this.#missionPhase === 1) {
+                infoCards.push(
+                    { title: 'AKTUELLES ZIEL', body: targetName },
+                    { title: 'AUFGABE', body: 'Erreiche die Kneipe, um Informationen zu sammeln.' },
+                    { title: 'STEUERUNG', body: 'Klicke auf die grünen Punkte, um dich durch die Stadt zu bewegen.' }
+                );
+            } else if (this.#missionPhase === 2) {
+                infoCards.push({ 
+                    title: 'RADAR-SYSTEM', 
+                    body: 'Drücke "P", um Standorte der Polizei für 5 Sek. aufzudecken. (5 Min. Cooldown)' 
+                });
+            }
+        }
+
+        if (this.#showPubCooldownText) {
+            infoCards.push({ 
+                title: 'HINWEIS', 
+                body: 'Du kannst erst wieder in drei Minuten die Kneipe besuchen.' 
+            });
+        }
+
+        eventBus.emit('INFO_UPDATED', infoCards);
+    }
+
+    setCrimeTargets(targets) {
+        this.#activeCrimeTargets = targets;
+        this.#missionPhase = 3;
+        this.#emitMissionUpdate();
+        this.#notifyStateChange();
+    }
+
     getBurglaryData(targetId) {
-        const target = this._state.activeCrimeTargets?.find(t => t.id === targetId);
+        const target = this.#activeCrimeTargets?.find(t => t.id === targetId);
         if (!target) return null;
 
-        const riskData = this._mapData.getPoliceRiskModifier([target.lat, target.lon]);
+        const riskData = this.#mapData.getPoliceRiskModifier([target.lat, target.lon]);
         
-        // Multiplikator je nach Gebäudetyp
         let mult = 1.0;
         if (target.type === 'commercial') mult = 1.2;
         if (target.type === 'public') mult = 1.5;
