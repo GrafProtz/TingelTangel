@@ -1,4 +1,5 @@
 import { eventBus } from './EventBus.js';
+import { UIAnimator } from './UIAnimator.js';
 import { CONFIG } from './GameConfig.js';
 
 /**
@@ -29,7 +30,6 @@ class MapView {
         this._radarMarkers    = [];
         this._debugLines      = [];
 
-        this._spawnTimestamps = new Map();
         this.#isLockCamera = false;
 
         // Globaler Kamera-Listener für entkoppelte Steuerung
@@ -251,18 +251,30 @@ class MapView {
         this._clearNeighbors();
         if (this._neighborTimeout) clearTimeout(this._neighborTimeout);
 
-        // Absolute Clean-Slate: DOM-Level Reset gegen Zombie-Klassen
-        document.querySelectorAll('.target-marker-inner').forEach(el => el.classList.remove('poi-ready-pulse'));
-
         if (this._targetMarker) {
             const el = this._targetMarker.getElement();
             if (el) {
-                const inner = el.querySelector('.target-marker-inner');
-                if (inner) inner.classList.remove('poi-ready-pulse');
                 el.style.pointerEvents = 'none';
                 el.style.zIndex = '2000';
             }
         }
+
+        const activeElements = [];
+        const neighborIds = neighbors.map(nb => String(nb.id));
+        
+        this._activePOIMarkers.forEach(poiMarker => {
+            if (neighborIds.includes(String(poiMarker.accessNodeId))) {
+                const el = poiMarker.getElement();
+                if (el) activeElements.push(el);
+            }
+        });
+
+        if (neighborIds.includes(String(targetNodeId)) && this._targetMarker) {
+            const el = this._targetMarker.getElement();
+            if (el) activeElements.push(el);
+        }
+
+        UIAnimator.applyReadyPulse(activeElements);
 
         let currentIndex = 0;
         const total = neighbors.length;
@@ -273,21 +285,9 @@ class MapView {
             const nb = neighbors[currentIndex];
             const nbId = String(nb.id);
 
-            this._activePOIMarkers.forEach(poiMarker => {
-                if (String(poiMarker.accessNodeId) === nbId) {
-                    const el = poiMarker.getElement();
-                    if (el) {
-                        const inner = el.querySelector('.target-marker-inner');
-                        if (inner) inner.classList.add('poi-ready-pulse');
-                    }
-                }
-            });
-
             if (nbId === String(targetNodeId) && this._targetMarker) {
                 const el = this._targetMarker.getElement();
                 if (el) {
-                    const inner = el.querySelector('.target-marker-inner');
-                    if (inner) inner.classList.add('poi-ready-pulse');
                     el.style.pointerEvents = 'auto';
                     el.style.zIndex = '10000';
                     el.addEventListener('pointerdown', (e) => {
@@ -412,17 +412,10 @@ class MapView {
             }
 
             const svg = this._getPOISVG(poi.type || 'pub');
-            
-            const poiIdStr = String(poi.id);
-            const spawnTime = this._spawnTimestamps.get(poiIdStr) || Date.now();
-            this._spawnTimestamps.set(poiIdStr, spawnTime);
-            
-            const isSpawnActive = (Date.now() - spawnTime) < 5000;
-            const spawnClass = isSpawnActive ? 'poi-spawn-pulse' : '';
 
             const html = `
                 <div class="target-marker-wrapper">
-                    <div class="target-marker-inner ${spawnClass}" style="display: inline-block; transform-origin: center center;">
+                    <div class="target-marker-inner" style="display: inline-block; transform-origin: center center;">
                         ${svg}
                     </div>
                 </div>
@@ -452,18 +445,7 @@ class MapView {
                     
                     if (marker.getElement()) {
                         marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
-                        
-                        if (isSpawnActive) {
-                            console.trace('[DEBUG] Spawn-Klasse vergeben für ID:', poi.id);
-                            // Cleanup-Timer: Animation nach Ablauf zwingend entfernen
-                            setTimeout(() => {
-                                const el = marker.getElement();
-                                if (el) {
-                                    const inner = el.querySelector('.target-marker-inner');
-                                    if (inner) inner.classList.remove('poi-spawn-pulse');
-                                }
-                            }, 5000);
-                        }
+                        UIAnimator.applySpawnEffect(poi.id, marker.getElement());
                     }
                 } else {
                     polygon = L.polygon(coords, {
@@ -492,18 +474,7 @@ class MapView {
                 
                 if (marker.getElement()) {
                     marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
-                    
-                    if (isSpawnActive) {
-                        console.trace('[DEBUG] Spawn-Klasse vergeben für ID:', poi.id);
-                        // Cleanup-Timer: Animation nach Ablauf zwingend entfernen
-                        setTimeout(() => {
-                            const el = marker.getElement();
-                            if (el) {
-                                const inner = el.querySelector('.target-marker-inner');
-                                if (inner) inner.classList.remove('poi-spawn-pulse');
-                            }
-                        }, 5000);
-                    }
+                    UIAnimator.applySpawnEffect(poi.id, marker.getElement());
                 }
             }
 
