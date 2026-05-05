@@ -389,7 +389,6 @@ class MapData {
                     const n = this.#nodes.get(id);
                     if (!n) continue;
                     
-                    // Pythagoras (Quadrat reicht für Vergleich)
                     const d = (n.lat - lat) ** 2 + (n.lon - lon) ** 2;
                     if (d < bestD) {
                         bestD = d;
@@ -402,20 +401,74 @@ class MapData {
         return best;
     }
 
-    // ----------------------------------------------------------------
-    //  Öffentliche Getter (inkl. Legacy-Support für nicht refaktorierte Module)
-    // ----------------------------------------------------------------
+    /**
+     * Spezialisierte Suche für Missions-Ziele: Findet den nächsten Knoten,
+     * der tatsächlich Teil des navigierbaren Graphen ist.
+     * Inklusive kaskadierendem Fallback bei Randlagen.
+     */
+    findNearestGraphNode(lat, lon) {
+        const baseRow = Math.floor(lat / this.#gridSize);
+        const baseCol = Math.floor(lon / this.#gridSize);
 
-    get _macroGraph() {
-        return this.#macroGraph;
+        let best = null, bestD = Infinity;
+
+        // 1. Suche in der 3x3 Umgebung
+        for (let dr = -1; dr <= 1; dr++) {
+            for (let dc = -1; dc <= 1; dc++) {
+                const key = `${baseRow + dr}_${baseCol + dc}`;
+                const ids = this.#spatialIndex.get(key) || [];
+                
+                for (const id of ids) {
+                    if (!this.#macroGraph.has(id)) continue;
+                    const n = this.#nodes.get(id);
+                    if (!n) continue;
+                    
+                    const d = (n.lat - lat) ** 2 + (n.lon - lon) ** 2;
+                    if (d < bestD) {
+                        bestD = d;
+                        best = n;
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback: Wenn in der Zelle nichts gefunden wurde, Full-Search im Graphen
+        // (Da der MacroGraph nur Kreuzungen enthält, ist die Performance vertretbar)
+        if (!best) {
+            console.warn('MapData: Kein Graph-Knoten im Grid gefunden, starte Fallback-Suche...');
+            this.#macroGraph.forEach((edges, id) => {
+                const n = this.#nodes.get(id);
+                if (!n) return;
+                const d = (n.lat - lat) ** 2 + (n.lon - lon) ** 2;
+                if (d < bestD) {
+                    bestD = d;
+                    best = n;
+                }
+            });
+        }
+
+        return best;
     }
 
-    get _ways() {
-        return this.#ways;
+    // ----------------------------------------------------------------
+    //  Öffentliche API (Kapselung)
+    // ----------------------------------------------------------------
+
+    /** Gibt alle Knoten-IDs zurück, die Teil des navigierbaren Wegenetzes sind. */
+    getConnectedNodeIds() {
+        return Array.from(this.#macroGraph.keys());
     }
 
-    get _policeStations() {
-        return this.#policeStations;
+    /** Filtert Ways (Gebäude) nach Typ-Tags. */
+    getBuildingsByTags(allowedTags) {
+        const result = [];
+        this.#ways.forEach(way => {
+            const bTag = way.tags?.building;
+            if (bTag && allowedTags.includes(bTag)) {
+                result.push(way);
+            }
+        });
+        return result;
     }
 
     getPoliceStations() {

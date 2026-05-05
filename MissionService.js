@@ -1,10 +1,13 @@
 /**
  * MissionService - Kapselt die Logik für Missionen, Szenarien und Ziel-Generierung.
  * Arbeitet eng mit MapData zusammen, um räumliche Analysen durchzuführen.
+ * Architektur: Private Fields, Kapselung und Event-driven (via main.js).
  */
 export class MissionService {
+    #mapData;
+
     constructor(mapData) {
-        this._mapData = mapData;
+        this.#mapData = mapData;
     }
 
     /**
@@ -12,46 +15,40 @@ export class MissionService {
      * @returns {Object|null} { startNodeId, targetNodeId, poiName, startCoords, targetCoords }
      */
     spawnTutorialScenario() {
-        const pubs = this._mapData.getPubs();
+        const pubs = this.#mapData.getPubs();
         if (pubs.length === 0) return null;
 
-        const connected = Array.from(this._mapData._macroGraph.entries())
-            .filter(([, edges]) => edges.length > 0)
-            .map(([id]) => id);
-        
-        if (connected.length === 0) return null;
+        const connectedIds = this.#mapData.getConnectedNodeIds();
+        if (connectedIds.length === 0) return null;
 
+        // Zufällige Auswahl eines Pubs für das Tutorial
         const shuffledPubs = [...pubs].sort(() => Math.random() - 0.5);
 
         for (const poi of shuffledPubs) {
-            let snapId = null, snapDist = Infinity;
-            connected.forEach(id => {
-                const nd = this._mapData.getNode(id);
-                if (!nd) return;
-                const d = this._mapData.calculateDistance(poi, nd);
-                if (d < snapDist) { snapDist = d; snapId = id; }
-            });
-            if (!snapId) continue;
+            // Finde den nächsten Graph-Knoten zum Pub (das Ziel)
+            const targetNode = this.#mapData.findNearestGraphNode(poi.lat, poi.lon);
+            if (!targetNode) continue;
 
-            const targetNode = this._mapData.getNode(snapId);
+            const targetId = String(targetNode.id);
 
-            const candidates = connected.filter(id => {
-                if (id === snapId) return false;
-                const nd = this._mapData.getNode(id);
+            // Finde Startkandidaten in einer angenehmen Distanz (100-200m)
+            const candidates = connectedIds.filter(id => {
+                if (id === targetId) return false;
+                const nd = this.#mapData.getNode(id);
                 if (!nd) return false;
-                const d = this._mapData.calculateDistance(targetNode, nd);
+                const d = this.#mapData.calculateDistance(targetNode, nd);
                 return d >= 100 && d <= 200;
             });
 
             if (candidates.length === 0) continue;
 
             const startId = candidates[Math.floor(Math.random() * candidates.length)];
-            const startNode = this._mapData.getNode(startId);
+            const startNode = this.#mapData.getNode(startId);
             const poiName = poi.tags?.name || 'Unbekannte Gaststätte';
 
             return {
                 startNodeId: startId,
-                targetNodeId: snapId,
+                targetNodeId: targetId,
                 poiName,
                 startCoords: [startNode.lat, startNode.lon],
                 targetCoords: [targetNode.lat, targetNode.lon]
@@ -68,7 +65,7 @@ export class MissionService {
      * @returns {Array} Liste der generierten Ziele
      */
     spawnTargets(targetType, centerNodeId) {
-        const centerNode = this._mapData.getNode(centerNodeId);
+        const centerNode = this.#mapData.getNode(centerNodeId);
         if (!centerNode) return [];
 
         const tagMap = {
@@ -79,45 +76,35 @@ export class MissionService {
         };
 
         const allowedTags = tagMap[targetType] || [];
+        const buildings = this.#mapData.getBuildingsByTags(allowedTags);
         const candidates = [];
 
-        this._mapData._ways.forEach((way, id) => {
-            const bTag = way.tags?.building;
-            if (!bTag || !allowedTags.includes(bTag)) return;
-
-            const lat = way.center?.lat || (this._mapData.getNode(way.nodes?.[0])?.lat);
-            const lon = way.center?.lon || (this._mapData.getNode(way.nodes?.[0])?.lon);
+        buildings.forEach(way => {
+            const lat = way.center?.lat || (this.#mapData.getNode(way.nodes?.[0])?.lat);
+            const lon = way.center?.lon || (this.#mapData.getNode(way.nodes?.[0])?.lon);
             if (!lat || !lon) return;
 
-            const dist = this._mapData.calculateDistance(centerNode, { lat, lon });
+            const dist = this.#mapData.calculateDistance(centerNode, { lat, lon });
+            
+            // Suche Ziele im Umkreis von 50m bis 300m
             if (dist >= 50 && dist <= 300) {
-                let accessNodeId = null;
-                let minDistToNode = Infinity;
+                // Finde den nächstgelegenen Straßenzugang für dieses Gebäude
+                const accessNode = this.#mapData.findNearestGraphNode(lat, lon);
                 
-                this._mapData._macroGraph.forEach((edges, nodeId) => {
-                    const node = this._mapData.getNode(nodeId);
-                    if (!node) return;
-                    const d = this._mapData.calculateDistance({ lat, lon }, node);
-                    if (d < minDistToNode) {
-                        minDistToNode = d;
-                        accessNodeId = nodeId;
-                    }
-                });
-
-                if (accessNodeId) {
+                if (accessNode) {
                     candidates.push({
                         id: String(way.id),
                         lat, lon,
                         type: targetType,
-                        osmType: bTag,
-                        accessNodeId,
+                        osmType: way.tags?.building,
+                        accessNodeId: String(accessNode.id),
                         distance: dist
                     });
                 }
             }
         });
 
-        // Zufällige Auswahl von bis zu 3 Zielen
+        // Zufällige Auswahl von bis zu 3 Zielen aus den Kandidaten
         return candidates
             .sort(() => Math.random() - 0.5)
             .slice(0, 3);
