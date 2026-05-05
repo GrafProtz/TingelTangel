@@ -210,6 +210,38 @@ class Game {
         this.#emitBudgetUpdate();
     }
 
+    /**
+     * Lädt einen gespeicherten Spielstand in die Private Fields und aktualisiert die UI.
+     * @param {Object} savedState - Der aus dem localStorage geladene JSON-State
+     */
+    hydrateState(savedState) {
+        if (!savedState) return;
+
+        this.#budget = savedState.budget ?? CONFIG.INITIAL_BUDGET;
+        this.#currentPlayerNodeId = savedState.currentPlayerNodeId;
+        this.#gameActive = savedState.gameActive ?? true;
+        this.#isMoving = false; // Zur Sicherheit Bewegung zurücksetzen
+        this.#targetPubNodeId = savedState.targetPubNodeId;
+        this.#radarUnlocked = savedState.radarUnlocked ?? false;
+        this.#lastRadarTime = savedState.lastRadarTime ?? 0;
+        this.#lastPubVisitTime = savedState.lastPubVisitTime ?? 0;
+        this.#showPubCooldownText = savedState.showPubCooldownText ?? false;
+        this.#moveCount = savedState.moveCount ?? 0;
+        this.#missionPhase = savedState.missionPhase ?? 1;
+        this.#infoMenuOpenUntilMove = savedState.infoMenuOpenUntilMove ?? -1;
+        this.#isInfoMenuOpen = savedState.isInfoMenuOpen ?? false;
+        this.#activeCrimeTargets = savedState.activeCrimeTargets || [];
+        this.#logbook = savedState.logbook || [];
+        
+        this.#firstMoveFired = true; // Verhindert, dass das Tutorial nach dem Laden triggert
+        
+        console.log('💾 Spielstand erfolgreich geladen. Aktueller Knoten:', this.#currentPlayerNodeId);
+        
+        this.#notifyStateChange();
+        this.#emitBudgetUpdate();
+        this.#emitMissionUpdate();
+    }
+
     pause() {
         this.#gameActive = false;
         eventBus.emit('GAME_PAUSED');

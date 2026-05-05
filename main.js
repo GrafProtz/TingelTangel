@@ -5,6 +5,7 @@ import { HUDManager } from './HUDManager.js';
 import { InteractionManager } from './InteractionManager.js';
 import { NotificationManager } from './NotificationManager.js';
 import { MissionService } from './MissionService.js';
+import { SaveManager } from './SaveManager.js';
 import { eventBus } from './EventBus.js';
 
 const CITIES = [
@@ -23,6 +24,7 @@ async function initApp() {
     const interaction = new InteractionManager();
     const notification = new NotificationManager();
     const missionService = new MissionService(mapData);
+    const saveManager = new SaveManager();
 
     let missionPOI = null;
 
@@ -132,31 +134,69 @@ async function initApp() {
         mapView.showPoliceRadar(result.stations, result.playerCoords);
     });
 
-    document.querySelector('.start-btn')?.addEventListener('click', async () => {
-        const val = document.getElementById('city-dropdown-intro').value;
+    // Dropdown-Logik: Prüfe auf Savegame
+    document.getElementById('city-dropdown-intro')?.addEventListener('change', (e) => {
+        const val = e.target.value;
         if (val === '') return;
         const city = CITIES[parseInt(val, 10)];
+        
+        const hasSave = saveManager.hasSave(city.name);
+        document.getElementById('btn-continue-game').style.display = hasSave ? 'block' : 'none';
+    });
+
+    // Hilfsfunktion zum Starten/Fortsetzen
+    const setupGameSession = async (city, isContinue) => {
         mapData.cityName = city.name;
+        saveManager.setCurrentCity(city.name);
         
         await mapData.loadCityData(city.coords);
         
-        // Nutze den MissionService für das Tutorial
-        const scenario = missionService.spawnTutorialScenario();
-        if (!scenario) return;
-
-        missionPOI = { poiData: { tags: { name: scenario.poiName } }, graphNodeId: scenario.targetNodeId };
-
         mapView.setUIState('intro-overlay', false);
         mapView.setUIState('back-to-menu', true);
         mapView.setUIState('info-toggle-btn', true);
         mapView.setUIState('budget-panel', true);
-        
-        mapView.renderPlayer(scenario.startCoords);
-        mapView.focusLocation(scenario.startCoords);
 
-        mapView.playTutorialSequence(scenario.startCoords, scenario.targetCoords, scenario.poiName, () => {
-            game.startMission(scenario.startNodeId, scenario.targetNodeId);
-        });
+        if (isContinue) {
+            const savedState = saveManager.loadSave(city.name);
+            if (savedState) {
+                game.hydrateState(savedState);
+                const playerNode = mapData.getNode(savedState.currentPlayerNodeId);
+                if (playerNode) {
+                    mapView.renderPlayer([playerNode.lat, playerNode.lon]);
+                    mapView.focusLocation([playerNode.lat, playerNode.lon]);
+                }
+            } else {
+                eventBus.emit('SHOW_TOAST', { msg: "Fehler beim Laden des Spielstands.", type: 'fail' });
+            }
+        } else {
+            // Bei neuem Spiel evtl. altes Savegame löschen
+            saveManager.deleteSave(city.name);
+            
+            const scenario = missionService.spawnTutorialScenario();
+            if (!scenario) {
+                eventBus.emit('SHOW_TOAST', { msg: "Fehler bei der Szenario-Generierung.", type: 'fail' });
+                return;
+            }
+
+            mapView.renderPlayer(scenario.startCoords);
+            mapView.focusLocation(scenario.startCoords);
+
+            mapView.playTutorialSequence(scenario.startCoords, scenario.targetCoords, scenario.poiName, () => {
+                game.startMission(scenario.startNodeId, scenario.targetNodeId);
+            });
+        }
+    };
+
+    document.getElementById('btn-new-game')?.addEventListener('click', () => {
+        const val = document.getElementById('city-dropdown-intro').value;
+        if (val === '') return;
+        setupGameSession(CITIES[parseInt(val, 10)], false);
+    });
+
+    document.getElementById('btn-continue-game')?.addEventListener('click', () => {
+        const val = document.getElementById('city-dropdown-intro').value;
+        if (val === '') return;
+        setupGameSession(CITIES[parseInt(val, 10)], true);
     });
 
     document.getElementById('back-to-menu')?.addEventListener('click', () => location.reload());
