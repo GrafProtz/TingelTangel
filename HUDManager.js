@@ -2,40 +2,58 @@ import { eventBus } from './EventBus.js';
 
 /**
  * HUDManager - Verwaltet die In-Game-UI (Budget, Info-Panels, Tutorials).
+ * Architektur: Strikt Event-Driven mit DOM Caching.
  */
 export class HUDManager {
+    // Private Fields für DOM Caching
+    #budgetPanel;
+    #infoPanel;
+    #toggleBtn;
+
     constructor() {
-        this.budgetPanel = document.getElementById('budget-panel');
-        this.infoPanel = document.getElementById('info-panel');
-        this.toggleBtn = document.getElementById('info-toggle-btn');
+        // Einmaliges DOM Caching
+        this.#budgetPanel = document.getElementById('budget-panel');
+        this.#infoPanel = document.getElementById('info-panel');
+        this.#toggleBtn = document.getElementById('info-toggle-btn');
         
         // CSS-Klassen für einheitlichen Look zuweisen
-        if (this.budgetPanel) this.budgetPanel.classList.add('glass-panel');
-        if (this.infoPanel) this.infoPanel.classList.add('glass-panel');
+        if (this.#budgetPanel) this.#budgetPanel.classList.add('glass-panel');
+        if (this.#infoPanel) this.#infoPanel.classList.add('glass-panel');
 
         // Initialer Zustand des Toggle-Buttons
-        if (this.toggleBtn) {
-            this.toggleBtn.addEventListener('click', () => {
+        if (this.#toggleBtn) {
+            this.#toggleBtn.addEventListener('click', () => {
                 eventBus.emit('TOGGLE_INFO');
             });
         }
 
-        // Auf Events hören
-        eventBus.subscribe('BUDGET_UPDATED', this.updateBudget.bind(this));
-        eventBus.subscribe('INFO_UPDATED', this.updateInfoPanel.bind(this));
-        eventBus.subscribe('INFO_MENU_STATE', this.setInfoMenuState.bind(this));
-        eventBus.subscribe('SHOW_TUTORIAL', this.showTutorial.bind(this));
-        eventBus.subscribe('TOGGLE_INFO', this.toggleInfoMenu.bind(this));
+        this.#setupListeners();
+    }
+
+    #setupListeners() {
+        // Ausschließlich auf Events hören, kein aktives Pulling
+        eventBus.subscribe('BUDGET_UPDATED', (data) => this.#updateBudget(data));
+        eventBus.subscribe('INFO_UPDATED', (data) => this.#updateInfoPanel(data));
+        eventBus.subscribe('INFO_MENU_STATE', (data) => this.#setInfoMenuState(data));
+        eventBus.subscribe('SHOW_TUTORIAL', (data) => this.#showTutorial(data));
+        eventBus.subscribe('TOGGLE_INFO', (data) => this.#toggleInfoMenu(data));
     }
 
     /**
-     * Aktualisiert die Budget-Anzeige im HUD.
+     * Aktualisiert die Budget-Anzeige im HUD und spielt Animationen ab.
      * @param {Object} data - { total, diff }
      */
-    updateBudget({ total, diff }) {
-        if (!this.budgetPanel) return;
+    #updateBudget({ total, diff }) {
+        if (!this.#budgetPanel) return;
         
-        this.budgetPanel.innerText = `Budget: ${total} €`;
+        // Minimal invasives Update des reinen Textes
+        // Wir verwenden einen dedizierten Text-Span, um laufende Animationen nicht durch .innerText zu löschen
+        let textSpan = this.#budgetPanel.querySelector('.budget-text');
+        if (!textSpan) {
+            this.#budgetPanel.innerHTML = '<span class="budget-text"></span>';
+            textSpan = this.#budgetPanel.querySelector('.budget-text');
+        }
+        textSpan.innerText = `Budget: ${total} €`;
         
         // Visuelles Feedback bei Änderungen
         if (diff !== 0) {
@@ -43,29 +61,33 @@ export class HUDManager {
             feedback.className = diff > 0 ? 'budget-gain' : 'budget-loss';
             feedback.innerText = (diff > 0 ? '+' : '') + diff;
             
-            this.budgetPanel.appendChild(feedback);
-            setTimeout(() => feedback.remove(), 1000);
+            // Cleanup via nativem animationend Event statt setTimeout (Memory Leak Prevention)
+            feedback.addEventListener('animationend', () => {
+                feedback.remove();
+            }, { once: true });
+            
+            this.#budgetPanel.appendChild(feedback);
         }
 
-        if (this.budgetPanel.style.display === 'none') {
-            this.budgetPanel.style.display = 'block';
+        if (this.#budgetPanel.style.display === 'none') {
+            this.#budgetPanel.style.display = 'block';
         }
     }
 
     /**
      * Baut das Info-Panel mit Inhalts-Karten auf.
      */
-    updateInfoPanel(cards) {
-        if (!this.infoPanel) return;
+    #updateInfoPanel(cards) {
+        if (!this.#infoPanel) return;
         
-        this.infoPanel.innerHTML = '';
+        this.#infoPanel.innerHTML = '';
         
-        if (cards.length === 0) {
-            this.infoPanel.style.display = 'none';
+        if (!cards || cards.length === 0) {
+            this.#infoPanel.style.display = 'none';
             return;
         }
         
-        this.infoPanel.style.display = 'block';
+        this.#infoPanel.style.display = 'block';
 
         cards.forEach(card => {
             const cardEl = document.createElement('div');
@@ -74,7 +96,7 @@ export class HUDManager {
                 <div class="info-header">${card.title}</div>
                 <div class="info-body">${card.body}</div>
             `;
-            this.infoPanel.appendChild(cardEl);
+            this.#infoPanel.appendChild(cardEl);
         });
     }
 
@@ -82,43 +104,43 @@ export class HUDManager {
      * Zeigt Tutorial-Inhalte im Info-Panel an.
      * @param {Object} data - { text, clearFirst }
      */
-    showTutorial({ text, clearFirst }) {
-        if (!this.infoPanel) return;
+    #showTutorial({ text, clearFirst }) {
+        if (!this.#infoPanel) return;
         
-        if (clearFirst) this.infoPanel.innerHTML = '';
+        if (clearFirst) this.#infoPanel.innerHTML = '';
 
         const card = document.createElement('div');
         card.className = 'info-card';
         card.innerHTML = `<div class="info-header">Mission</div><div class="info-body">${text}</div>`;
-        this.infoPanel.appendChild(card);
+        this.#infoPanel.appendChild(card);
 
-        this.infoPanel.style.display = 'block';
-        this.toggleInfoMenu(true);
+        this.#infoPanel.style.display = 'block';
+        this.#toggleInfoMenu(true);
     }
 
     /**
      * Schaltet das Info-Menü ein oder aus.
      * @param {boolean|null} forceState - Optionaler Zielzustand
      */
-    toggleInfoMenu(forceState) {
-        if (!this.infoPanel || !this.toggleBtn) return;
+    #toggleInfoMenu(forceState) {
+        if (!this.#infoPanel || !this.#toggleBtn) return;
 
         let shouldOpen;
         if (typeof forceState === 'boolean') {
             shouldOpen = forceState;
         } else {
-            shouldOpen = !this.infoPanel.classList.contains('open');
+            shouldOpen = !this.#infoPanel.classList.contains('open');
         }
 
-        this.setInfoMenuState(shouldOpen);
+        this.#setInfoMenuState(shouldOpen);
     }
 
     /**
      * Setzt die CSS-Klassen für den Menü-Status.
      */
-    setInfoMenuState(isOpen) {
-        this.infoPanel?.classList.toggle('open', isOpen);
-        this.toggleBtn?.classList.toggle('panel-open', isOpen);
-        if (this.toggleBtn) this.toggleBtn.innerText = isOpen ? '>>' : '<<';
+    #setInfoMenuState(isOpen) {
+        this.#infoPanel?.classList.toggle('open', isOpen);
+        this.#toggleBtn?.classList.toggle('panel-open', isOpen);
+        if (this.#toggleBtn) this.#toggleBtn.innerText = isOpen ? '>>' : '<<';
     }
 }
