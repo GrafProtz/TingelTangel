@@ -42,6 +42,27 @@ async function initApp() {
         const targets = missionService.spawnTargets(targetType, centerNodeId);
         if (targets.length > 0) {
             game.setCrimeTargets(targets);
+            
+            // Kamera-Totale (Übersicht) anfordern
+            const coordsToFit = [];
+            
+            // 1. Spieler-Position einbeziehen (Erzeuge saubere Floats für Leaflet)
+            const playerNode = mapData.getNode(centerNodeId);
+            if (playerNode && playerNode.lat != null) {
+                coordsToFit.push([parseFloat(playerNode.lat), parseFloat(playerNode.lon)]);
+            }
+            
+            // 2. Alle Ziel-Positionen einbeziehen
+            targets.forEach(t => {
+                const node = mapData.getNode(t.accessNodeId);
+                if (node && node.lat != null) {
+                    coordsToFit.push([parseFloat(node.lat), parseFloat(node.lon)]);
+                }
+            });
+
+            // Event für MapView abfeuern
+            eventBus.emit('CAMERA_FIT_BOUNDS_REQUESTED', coordsToFit);
+            
             eventBus.emit('SHOW_TOAST', { msg: `${targets.length} Ziele in der Nähe markiert!`, type: 'success' });
         } else {
             eventBus.emit('SHOW_TOAST', { msg: "Keine passenden Gebäude gefunden.", type: 'fail' });

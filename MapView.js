@@ -28,7 +28,16 @@ class MapView {
         this._activePOIMarkers = [];
         this._radarMarkers    = [];
         this._debugLines      = [];
+
+        this._initializedMarkerIds = new Set();
+        this.#isLockCamera = false;
+
+        // Globaler Kamera-Listener für entkoppelte Steuerung
+        eventBus.subscribe('CAMERA_FIT_BOUNDS_REQUESTED', (coords) => this.fitBounds(coords));
     }
+
+    #isLockCamera;
+    #lockTimer;
 
     // ----------------------------------------------------------------
     //  Polizei-Radar
@@ -120,6 +129,76 @@ class MapView {
         this._map.flyTo(coords, zoom, { duration: 2 });
     }
 
+    /**
+     * Animiert die Kamera so, dass alle übergebenen Koordinaten sichtbar sind.
+     * @param {Array} coords - [[lat, lon], ...] oder [L.latLng, ...]
+     */
+    fitBounds(coords) {
+        if (!coords || !Array.isArray(coords) || coords.length === 0) {
+            console.warn('MapView.fitBounds: Leerer oder ungültiger Payload.');
+            return;
+        }
+        
+        try {
+            // Alte Timer bereinigen
+            if (this.#lockTimer) clearTimeout(this.#lockTimer);
+
+            // Kamera sperren, um automatische Verfolgung zu blockieren
+            this.#isLockCamera = true;
+
+            // Fail-Safe: Lock nach 2.5s auf jeden Fall lösen
+            this.#lockTimer = setTimeout(() => {
+                this.#isLockCamera = false;
+                this.#lockTimer = null;
+            }, 2500);
+
+            // Explizite Konvertierung in native Leaflet-Objekte zur Fehlervermeidung
+            const latLngs = coords.map(c => {
+                // Unterstützung für [lat, lon] Arrays
+                if (Array.isArray(c)) {
+                    const lat = parseFloat(c[0]);
+                    const lon = parseFloat(c[1]);
+                    return (!isNaN(lat) && !isNaN(lon)) ? L.latLng(lat, lon) : null;
+                }
+                // Unterstützung für bereits existierende Leaflet-Objekte oder {lat, lon} Objekte
+                if (c && typeof c === 'object') {
+                    const lat = parseFloat(c.lat);
+                    const lon = parseFloat(c.lon || c.lng);
+                    return (!isNaN(lat) && !isNaN(lon)) ? L.latLng(lat, lon) : null;
+                }
+                return null;
+            }).filter(Boolean);
+
+            if (latLngs.length === 0) {
+                this.#isLockCamera = false;
+                console.warn('MapView.fitBounds: Keine validen Koordinaten nach Parsing gefunden.');
+                return;
+            }
+
+            const bounds = L.latLngBounds(latLngs);
+            
+            // Lock lösen, sobald die Animation beendet ist
+            this._map.once('moveend', () => {
+                if (this.#lockTimer) {
+                    clearTimeout(this.#lockTimer);
+                    this.#lockTimer = null;
+                }
+                this.#isLockCamera = false;
+            });
+
+            this._map.flyToBounds(bounds, { 
+                padding: [80, 80], 
+                duration: 1.5,
+                maxZoom: 18 
+            });
+            
+        } catch (err) {
+            if (this.#lockTimer) clearTimeout(this.#lockTimer);
+            this.#isLockCamera = false;
+            console.error('Kritischer Fehler in MapView.fitBounds:', err);
+        }
+    }
+
     // ----------------------------------------------------------------
     //  Spieler
     // ----------------------------------------------------------------
@@ -139,7 +218,10 @@ class MapView {
         } else {
             this._playerMarker.setLatLng(coords);
         }
-        this._map.panTo(coords);
+        
+        if (!this.#isLockCamera) {
+            this._map.panTo(coords);
+        }
     }
 
     /** Frame-genaues Positions-Update während der Animation (kein panTo). */
@@ -149,7 +231,10 @@ class MapView {
             return;
         }
         this._playerMarker.setLatLng(coords);
-        this._map.panTo(coords, { animate: false });
+        
+        if (!this.#isLockCamera) {
+            this._map.panTo(coords, { animate: false });
+        }
     }
 
     // ----------------------------------------------------------------
@@ -166,6 +251,25 @@ class MapView {
         this._clearNeighbors();
         if (this._neighborTimeout) clearTimeout(this._neighborTimeout);
 
+        // Strict Toggle: Erst alle Status-Klassen von allen POIs und Zielen entfernen
+        this._activePOIMarkers.forEach(poiMarker => {
+            const el = poiMarker.getElement();
+            if (el) {
+                const inner = el.querySelector('.target-marker-inner');
+                if (inner) inner.classList.remove('poi-ready-pulse');
+            }
+        });
+
+        if (this._targetMarker) {
+            const el = this._targetMarker.getElement();
+            if (el) {
+                const inner = el.querySelector('.target-marker-inner');
+                if (inner) inner.classList.remove('poi-ready-pulse');
+                el.style.pointerEvents = 'none';
+                el.style.zIndex = '2000';
+            }
+        }
+
         let currentIndex = 0;
         const total = neighbors.length;
 
@@ -178,14 +282,18 @@ class MapView {
             this._activePOIMarkers.forEach(poiMarker => {
                 if (String(poiMarker.accessNodeId) === nbId) {
                     const el = poiMarker.getElement();
-                    if (el) el.classList.add('marker-active');
+                    if (el) {
+                        const inner = el.querySelector('.target-marker-inner');
+                        if (inner) inner.classList.add('poi-ready-pulse');
+                    }
                 }
             });
 
             if (nbId === String(targetNodeId) && this._targetMarker) {
                 const el = this._targetMarker.getElement();
                 if (el) {
-                    el.classList.add('marker-active');
+                    const inner = el.querySelector('.target-marker-inner');
+                    if (inner) inner.classList.add('poi-ready-pulse');
                     el.style.pointerEvents = 'auto';
                     el.style.zIndex = '10000';
                     el.addEventListener('pointerdown', (e) => {
@@ -284,6 +392,9 @@ class MapView {
      * }]
      */
     renderPOIs(poiArray) {
+        // Zwingende Initialisierung falls noch nicht geschehen (Defensive Programming)
+        if (!this._activePOIMarkers) this._activePOIMarkers = [];
+
         // 1. Alle alten Marker und Debug-Linien entfernen
         this._activePOIMarkers.forEach(m => this._map.removeLayer(m));
         this._activePOIMarkers = [];
@@ -307,9 +418,12 @@ class MapView {
             }
 
             const svg = this._getPOISVG(poi.type || 'pub');
+            const isNew = !this._initializedMarkerIds.has(String(poi.id));
+            const spawnClass = isNew ? 'poi-spawn-pulse' : '';
+
             const html = `
                 <div class="target-marker-wrapper">
-                    <div class="target-marker-inner" style="display: inline-block;">
+                    <div class="target-marker-inner ${spawnClass}" style="display: inline-block; transform-origin: center center;">
                         ${svg}
                     </div>
                 </div>
@@ -336,7 +450,23 @@ class MapView {
                         zIndexOffset: 2000,
                         interactive: !!poi.onClickCallback
                     }).addTo(this._map);
-                    if (marker.getElement()) marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
+                    
+                    if (marker.getElement()) {
+                        marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
+                        
+                        if (isNew) {
+                            this._initializedMarkerIds.add(String(poi.id));
+                            console.trace('[DEBUG] Spawn-Klasse vergeben für ID:', poi.id);
+                            // Cleanup-Timer: Animation nach Ablauf zwingend entfernen
+                            setTimeout(() => {
+                                const el = marker.getElement();
+                                if (el) {
+                                    const inner = el.querySelector('.target-marker-inner');
+                                    if (inner) inner.classList.remove('poi-spawn-pulse');
+                                }
+                            }, 5000);
+                        }
+                    }
                 } else {
                     polygon = L.polygon(coords, {
                         color: '#fbbf24',
@@ -361,7 +491,23 @@ class MapView {
                     zIndexOffset: 2000,
                     interactive: !!poi.onClickCallback
                 }).addTo(this._map);
-                if (marker.getElement()) marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
+                
+                if (marker.getElement()) {
+                    marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
+                    
+                    if (isNew) {
+                        this._initializedMarkerIds.add(String(poi.id));
+                        console.trace('[DEBUG] Spawn-Klasse vergeben für ID:', poi.id);
+                        // Cleanup-Timer: Animation nach Ablauf zwingend entfernen
+                        setTimeout(() => {
+                            const el = marker.getElement();
+                            if (el) {
+                                const inner = el.querySelector('.target-marker-inner');
+                                if (inner) inner.classList.remove('poi-spawn-pulse');
+                            }
+                        }, 5000);
+                    }
+                }
             }
 
             if (poi.onClickCallback) {

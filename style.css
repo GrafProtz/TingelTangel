@@ -417,13 +417,23 @@ html, body {
     50%      { opacity: 0.3; transform: scale(0.8); }
 }
 
-.marker-active {
-    animation: urgentMarkerPulse 0.5s infinite alternate ease-in-out !important;
+/* === NEUE STRICTE FEEDBACK-EFFEKTE === */
+
+/* Gemeinsame Keyframes für das deutliche Pulsieren & Aufhellen */
+@keyframes strictPoiPulse {
+    0%   { transform: scale(1); filter: drop-shadow(0 0 5px #facc15) brightness(1); }
+    50%  { transform: scale(3.0); filter: drop-shadow(0 0 30px #fff) drop-shadow(0 0 50px #facc15) brightness(3); }
+    100% { transform: scale(1); filter: drop-shadow(0 0 5px #facc15) brightness(1); }
 }
 
-@keyframes urgentMarkerPulse {
-    0% { filter: drop-shadow(0 0 5px #facc15) brightness(1); }
-    100% { filter: drop-shadow(0 0 30px #fff) drop-shadow(0 0 50px #facc15) brightness(3); }
+/* 1. 5-Sekunden-Spawn (Wird nach 5s per JS gelöscht) */
+.poi-spawn-pulse {
+    animation: strictPoiPulse 1.5s infinite ease-in-out !important;
+}
+
+/* 2. Interaktions-Pulsieren (Nur aktiv, wenn betretbar) */
+.poi-ready-pulse {
+    animation: strictPoiPulse 1.5s infinite ease-in-out !important;
 }
 
 /* Ghost Path (Vorschau-Linie) */
