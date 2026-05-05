@@ -127,7 +127,7 @@ export class InteractionManager {
         const renderPhase2 = (key, opt) => {
             const preview = getPreviewFn(key);
             this.showDialog({
-                title: '⚠️ Bestätigung erforderlich',
+                title: 'Bestätigung erforderlich',
                 body: `<div class="warning-box">${preview.text}</div>`,
                 buttons: [
                     { 
@@ -150,18 +150,18 @@ export class InteractionManager {
 
     #handleInvestmentInteraction({ cityName }) {
         const options = [
-            { type: 'residential', icon: '🏡', title: 'Wohnungen', desc: 'Konservativ. Aufklärungsquote: 16%.' },
-            { type: 'commercial', icon: '🏢', title: 'Gewerbe', desc: 'Tech-ETF. Aufklärungsquote: 22%.' },
-            { type: 'public', icon: '🏛️', title: 'Öffentlich', desc: 'Risikoreich. Aufklärungsquote: 25%.' },
-            { type: 'allotments', icon: '🏕️', title: 'Gärten', desc: 'Penny-Stock. Aufklärungsquote: 8-10%.' }
+            { type: 'residential', title: 'Wohnungen', desc: 'Konservativ. Aufklärungsquote: 16%.' },
+            { type: 'commercial', title: 'Gewerbe', desc: 'Tech-ETF. Aufklärungsquote: 22%.' },
+            { type: 'public', title: 'Öffentlich', desc: 'Risikoreich. Aufklärungsquote: 25%.' },
+            { type: 'allotments', title: 'Gärten', desc: 'Penny-Stock. Aufklärungsquote: 8-10%.' }
         ];
 
         this.showDialog({
-            title: '💼 Investment Consultant',
+            title: 'Investment Consultant',
             body: `<p><i>"Ah, ein Investor! Lass uns einen Blick auf das Portfolio für ${cityName || 'diese Stadt'} werfen."</i></p>`,
             buttons: [
                 ...options.map(opt => ({
-                    text: `${opt.icon} ${opt.title} (${opt.desc})`,
+                    text: `${opt.title} (${opt.desc})`,
                     event: 'INVESTMENT_SELECTED',
                     payload: opt.type,
                     className: 'btn-investment'
