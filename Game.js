@@ -382,7 +382,7 @@ class Game {
         const playerCoords = playerNode ? [playerNode.lat, playerNode.lon] : [0, 0];
 
         return {
-            stations: [...this.#mapData._policeStations],
+            stations: this.#mapData.getPoliceStations(),
             playerCoords
         };
     }
@@ -511,7 +511,7 @@ class Game {
         const baseQuote = baseMapping[targetNode.type] || 20;
 
         let minPoliceDist = Infinity;
-        const stations = this.#mapData._policeStations || [];
+        const stations = this.#mapData.getPoliceStations();
         
         stations.forEach(station => {
             const dist = this.#mapData.calculateDistance(
