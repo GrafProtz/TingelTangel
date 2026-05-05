@@ -29,7 +29,7 @@ class MapView {
         this._radarMarkers    = [];
         this._debugLines      = [];
 
-        this._initializedMarkerIds = new Set();
+        this._spawnTimestamps = new Map();
         this.#isLockCamera = false;
 
         // Globaler Kamera-Listener für entkoppelte Steuerung
@@ -251,14 +251,8 @@ class MapView {
         this._clearNeighbors();
         if (this._neighborTimeout) clearTimeout(this._neighborTimeout);
 
-        // Strict Toggle: Erst alle Status-Klassen von allen POIs und Zielen entfernen
-        this._activePOIMarkers.forEach(poiMarker => {
-            const el = poiMarker.getElement();
-            if (el) {
-                const inner = el.querySelector('.target-marker-inner');
-                if (inner) inner.classList.remove('poi-ready-pulse');
-            }
-        });
+        // Absolute Clean-Slate: DOM-Level Reset gegen Zombie-Klassen
+        document.querySelectorAll('.target-marker-inner').forEach(el => el.classList.remove('poi-ready-pulse'));
 
         if (this._targetMarker) {
             const el = this._targetMarker.getElement();
@@ -418,8 +412,13 @@ class MapView {
             }
 
             const svg = this._getPOISVG(poi.type || 'pub');
-            const isNew = !this._initializedMarkerIds.has(String(poi.id));
-            const spawnClass = isNew ? 'poi-spawn-pulse' : '';
+            
+            const poiIdStr = String(poi.id);
+            const spawnTime = this._spawnTimestamps.get(poiIdStr) || Date.now();
+            this._spawnTimestamps.set(poiIdStr, spawnTime);
+            
+            const isSpawnActive = (Date.now() - spawnTime) < 5000;
+            const spawnClass = isSpawnActive ? 'poi-spawn-pulse' : '';
 
             const html = `
                 <div class="target-marker-wrapper">
@@ -454,8 +453,7 @@ class MapView {
                     if (marker.getElement()) {
                         marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
                         
-                        if (isNew) {
-                            this._initializedMarkerIds.add(String(poi.id));
+                        if (isSpawnActive) {
                             console.trace('[DEBUG] Spawn-Klasse vergeben für ID:', poi.id);
                             // Cleanup-Timer: Animation nach Ablauf zwingend entfernen
                             setTimeout(() => {
@@ -495,8 +493,7 @@ class MapView {
                 if (marker.getElement()) {
                     marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
                     
-                    if (isNew) {
-                        this._initializedMarkerIds.add(String(poi.id));
+                    if (isSpawnActive) {
                         console.trace('[DEBUG] Spawn-Klasse vergeben für ID:', poi.id);
                         // Cleanup-Timer: Animation nach Ablauf zwingend entfernen
                         setTimeout(() => {

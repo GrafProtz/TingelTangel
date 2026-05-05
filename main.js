@@ -95,7 +95,8 @@ async function initApp() {
                     accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                     onClickCallback: () => {
                         const markerEl = document.querySelector(`.target-marker[data-node-id="${target.accessNodeId}"]`);
-                        const isAtAccessNode = markerEl?.classList.contains('marker-active');
+                        const innerEl = markerEl?.querySelector('.target-marker-inner');
+                        const isAtAccessNode = innerEl?.classList.contains('poi-ready-pulse');
 
                         if (!isAtAccessNode) {
                             eventBus.emit('SHOW_TOAST', { msg: "Du musst exakt am Icon stehen!", type: 'fail' });
