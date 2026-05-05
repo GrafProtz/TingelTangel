@@ -36,20 +36,30 @@ class MapView {
 
     /**
      * Zeigt rote Kreise um alle Polizeistationen für 5 Sekunden.
-     * Zoomt die Kamera heraus, um alle Stationen sichtbar zu machen.
+     * Nutze async/await für eine exakte visuelle Choreografie.
      * @param {Array} policeStations - [{ lat, lon }, ...]
-     * @returns {Promise} Resolved nach 5 Sek. wenn die Kreise verschwinden
+     * @param {Array} playerCoords - [lat, lon]
      */
-    showPoliceRadar(policeStations, playerCoords) {
+    async showPoliceRadar(policeStations, playerCoords) {
+        // Alte Marker sofort löschen
         this._radarMarkers.forEach(c => this._map.removeLayer(c));
         this._radarMarkers = [];
 
-        if (policeStations.length === 0) return Promise.resolve();
+        if (policeStations.length === 0) return;
 
-        // Bounding Box aufspannen (Spieler + alle Wachen)
+        // 1. Kamerafahrt vorbereiten & Start (Zoom heraus)
         const bounds = L.latLngBounds();
         if (playerCoords) bounds.extend(playerCoords);
-        
+        policeStations.forEach(s => bounds.extend([s.lat, s.lon]));
+
+        console.log('[RADAR] Kamera zoomt raus...');
+        this._map.flyToBounds(bounds, { padding: [50, 50], duration: 1.5 });
+
+        // 2. Warten, bis die Kamerafahrt beendet ist (1.5s + kleiner Puffer)
+        await new Promise(r => setTimeout(r, 1600));
+
+        // 3. Jetzt erst die Stationen und Ringe zeichnen
+        console.log('[RADAR] Zeichne Polizeistationen...');
         const sirenIcon = L.divIcon({
             html: '<div class="police-siren"></div>',
             className: '',
@@ -57,15 +67,12 @@ class MapView {
             iconAnchor: [4, 4]
         });
 
-        // Feste Radien in Metern für bessere Spielbarkeit
-        const RADII_METERS = [450, 300, 150]; // Außen nach innen
+        const RADII_METERS = [450, 300, 150]; 
         const OPACITIES    = [0.05, 0.2, 0.4];
 
         policeStations.forEach(station => {
             const pos = [station.lat, station.lon];
-            bounds.extend(pos);
 
-            // Zeichne 3 konzentrische Ringe für den Heatmap-Effekt
             RADII_METERS.forEach((radius, idx) => {
                 const circle = L.circle(pos, {
                     radius: radius,
@@ -78,7 +85,6 @@ class MapView {
                 this._radarMarkers.push(circle);
             });
 
-            // Die Sirene im Zentrum
             const siren = L.marker(pos, {
                 icon: sirenIcon,
                 interactive: false
@@ -86,22 +92,24 @@ class MapView {
             this._radarMarkers.push(siren);
         });
 
-        // Kamerafahrt zum Überblick
-        this._map.flyToBounds(bounds, { padding: [50, 50], duration: 1.5 });
+        // 4. Warten für die Radar-Anzeigezeit (5 Sekunden)
+        await new Promise(r => setTimeout(r, 5000));
 
-        return new Promise(resolve => {
-            setTimeout(() => {
-                this._radarMarkers.forEach(c => this._map.removeLayer(c));
-                this._radarMarkers = [];
-                
-                // Kamera-Reset zum Spieler
-                if (playerCoords) {
-                    this._map.flyTo(playerCoords, 16, { duration: 1.5 });
-                }
-                
-                resolve();
-            }, 5000);
-        });
+        // 5. Ringe und Stationen wieder löschen
+        console.log('[RADAR] Entferne Markierungen...');
+        this._radarMarkers.forEach(c => this._map.removeLayer(c));
+        this._radarMarkers = [];
+
+        // 6. Kamera zoomt zurück zum Spieler
+        if (playerCoords) {
+            console.log('[RADAR] Kamera zoomt zurück zum Spieler...');
+            this._map.flyTo(playerCoords, 16, { duration: 1.5 });
+
+            // 7. Warten, bis Kamera wieder beim Spieler ist
+            await new Promise(r => setTimeout(r, 1600));
+        }
+
+        console.log('[RADAR] Sequenz beendet.');
     }
 
     // ----------------------------------------------------------------

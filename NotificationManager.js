@@ -21,9 +21,13 @@ export class NotificationManager {
      * Zeigt eine kurze Benachrichtigung (Toast) an.
      * @param {Object} data - { msg, type }
      */
-    showToast({ msg, type }) {
-        console.log('DOM-Check: Container ist', document.getElementById('toast-container'));
+    showToast(data) {
+        if (!data || !data.msg) return;
+        const { msg, type } = data;
+
         let container = document.getElementById('toast-container');
+        
+        // Robuste Initialisierung: Falls Container fehlt, sofort erstellen und anhängen
         if (!container) {
             container = document.createElement('div');
             container.id = 'toast-container';
@@ -38,7 +42,7 @@ export class NotificationManager {
                 zIndex: '100000',
                 pointerEvents: 'none'
             });
-            document.body.appendChild(container);
+            (document.body || document.documentElement).appendChild(container);
         }
 
         const toast = document.createElement('div');

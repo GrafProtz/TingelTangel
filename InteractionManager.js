@@ -169,7 +169,7 @@ export class InteractionManager {
     /**
      * Zeigt einen generischen Dialog (z.B. Einbruch planen).
      */
-    showGenericDialog({ title, text, buttons }) {
+    showGenericDialog({ title, text, buttons, isRadarUnlock }) {
         const overlay = document.createElement('div');
         Object.assign(overlay.style, {
             position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
@@ -205,6 +205,13 @@ export class InteractionManager {
             btn.style.background = 'var(--color-bg-alt)';
             btn.onclick = () => {
                 overlay.remove();
+                
+                // Falls es der Radar-Unlock war, feuern wir jetzt die Sequenz
+                if (isRadarUnlock) {
+                    console.log('[INTERACTION] Radar-Unlock erkannt, feure RADAR_SEQUENCE_START...');
+                    eventBus.emit('RADAR_SEQUENCE_START');
+                }
+
                 if (btnData.event) eventBus.emit(btnData.event, btnData.payload);
             };
             btnContainer.appendChild(btn);

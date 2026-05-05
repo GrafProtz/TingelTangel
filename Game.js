@@ -76,7 +76,8 @@ class Game {
                     eventBus.emit('SHOW_DIALOG', {
                         title: '📡 Radar freigeschaltet',
                         text: 'Du hast die Polizeifrequenzen! Drücke ab jetzt jederzeit "P", um die Standorte der Polizei für 5 Sekunden auf der Karte aufzudecken. Nutze es weise!',
-                        buttons: [{ text: 'Verstanden', event: 'RESUME_GAME' }]
+                        buttons: [{ text: 'Verstanden', event: 'RADAR_ACKNOWLEDGED' }],
+                        isRadarUnlock: true
                     });
                 } else {
                     console.log('[GAME] Reaktivierung der Spielschleife...');
@@ -454,10 +455,11 @@ class Game {
      * Aktiviert das Polizei-Radar (5-Minuten-Cooldown).
      * @returns {Array|string|null} Stationen, 'cooldown' oder null
      */
-    triggerRadar() {
+    triggerRadar(force = false) {
         if (!this._state.radarUnlocked) return null;
-        if (Date.now() - this._state.lastRadarTime < CONFIG.RADAR_COOLDOWN) return 'cooldown';
-        this._state.lastRadarTime = Date.now();
+        if (!force && (Date.now() - this._state.lastRadarTime < CONFIG.RADAR_COOLDOWN)) return 'cooldown';
+        
+        if (!force) this._state.lastRadarTime = Date.now();
         this._notify();
 
         const playerNode = this._mapData.getNode(this._state.currentPlayerNodeId);
@@ -498,7 +500,8 @@ class Game {
                 msg = `Der Barkeeper meint, dass hier ${stations} Polizeiwache(n) in der Umgebung sind.`;
                 
                 // Menü automatisch für neue Infos öffnen
-                this.triggerNewInfo();
+                // Die triggerNewInfo() wurde hier entfernt, da sie zu früh feuert.
+                // Die Radar-Sequenz wird jetzt via InteractionManager nach dem Dialog gestartet.
             } else {
                 msg = `❌ Nicht genug Geld! Du brauchst ${CONFIG.RADAR_COST} €.`;
             }

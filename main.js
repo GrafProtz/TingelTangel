@@ -111,6 +111,19 @@ async function initApp() {
         });
     });
 
+    // ----- Radar Sequence (Kamerafahrt nach Kauf) -----
+    eventBus.subscribe('RADAR_SEQUENCE_START', async () => {
+        const result = game.triggerRadar(true); // force=true um Cooldown zu ignorieren
+        if (result && result !== 'cooldown') {
+            // Warten bis die gesamte Choreografie (Zoom raus -> 5s Display -> Zoom rein) fertig ist
+            await mapView.showPoliceRadar(result.stations, result.playerCoords);
+            
+            // Erst jetzt das Spiel wieder freigeben
+            console.log('[MAIN] Radar-Sequenz beendet, Spiel wird fortgesetzt.');
+            game.resume();
+        }
+    });
+
     // ----- UI Handlers -----
     document.addEventListener('keydown', (e) => {
         if (e.key.toLowerCase() !== 'p') return;

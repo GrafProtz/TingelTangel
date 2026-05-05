@@ -1,32 +1,104 @@
 import { CONFIG } from './GameConfig.js';
+import { eventBus } from './EventBus.js';
+
+/**
+ * Leichtgewichtiger Wrapper für IndexedDB, spezifisch für Map-Caching.
+ */
+class OSMIndexedDB {
+    constructor(dbName = 'GridCrimeOSM', storeName = 'osm_cache') {
+        this.dbName = dbName;
+        this.storeName = storeName;
+        this.version = 1;
+    }
+
+    async #getDB() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(this.dbName, this.version);
+            req.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    db.createObjectStore(this.storeName, { keyPath: 'cacheKey' });
+                }
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    async get(cacheKey, maxAgeMs) {
+        try {
+            const db = await this.#getDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(this.storeName, 'readonly');
+                const store = tx.objectStore(this.storeName);
+                const req = store.get(cacheKey);
+                req.onsuccess = () => {
+                    if (req.result) {
+                        const age = Date.now() - req.result.timestamp;
+                        if (age < maxAgeMs) {
+                            resolve(req.result.data);
+                        } else {
+                            resolve(null); // Cache abgelaufen
+                        }
+                    } else {
+                        resolve(null);
+                    }
+                };
+                req.onerror = () => reject(req.error);
+            });
+        } catch (err) {
+            console.warn('IndexedDB read failed, skipping cache.', err);
+            return null;
+        }
+    }
+
+    async set(cacheKey, data) {
+        try {
+            const db = await this.#getDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(this.storeName, 'readwrite');
+                const store = tx.objectStore(this.storeName);
+                const payload = {
+                    cacheKey,
+                    data,
+                    timestamp: Date.now()
+                };
+                const req = store.put(payload);
+                req.onsuccess = () => resolve();
+                req.onerror = () => reject(req.error);
+            });
+        } catch (err) {
+            console.warn('IndexedDB write failed.', err);
+        }
+    }
+}
 
 /**
  * MapData - Der Data-Layer der Engine.
- *
- * BUGFIX: getNearestNode() sucht jetzt in einem 3×3-Zellen-Raster um die
- * angeklickte Position. Vorher wurde nur die exakte Grid-Zelle durchsucht,
- * was bei Klicks knapp hinter einer Zellgrenze zu "toten Klicks" führte,
- * weil der nächste Knoten in der Nachbarzelle lag und nie gefunden wurde.
  */
 class MapData {
+    #nodes = new Map();
+    #ways = new Map();
+    #pubs = [];
+    #policeStations = [];
+    #macroGraph = new Map();
+    #spatialIndex = new Map();
+    #gridSize = 0.001;
+
+    #abortController = null;
+    #db = new OSMIndexedDB();
+    
+    // 7 Tage Cache-TTL
+    #CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+    // Max ms pro Frame für Time-Slicing
+    #YIELD_THRESHOLD_MS = 15;
+
     constructor() {
-        this._nodes = new Map();      // Alle OSM-Nodes (auch Geometrie)
-        this._ways  = new Map();
-        this._pubs  = [];
-        this._policeStations = [];    // [{ lat, lon }, ...]
         this.cityName = '';
+    }
 
-        // Makro-Graph: Map<nodeId, Array<Edge>>
-        // Edge = { to, path: [[lat,lon],...], distance }
-        this._macroGraph = new Map();
-
-        // Spatial Index
-        this._spatialIndex = new Map();
-        this._gridSize = 0.001;
-
-        // API Resilienz & Caching
-        this._abortController = null;
-        this._memoryCache = new Map();
+    async #yieldToMain() {
+        return new Promise(resolve => setTimeout(resolve, 0));
     }
 
     // ----------------------------------------------------------------
@@ -34,85 +106,99 @@ class MapData {
     // ----------------------------------------------------------------
 
     async loadCityData(coords) {
-        // 1. RAM Caching
-        if (this._memoryCache.has(this.cityName)) {
-            console.log(`MapData: Lade "${this.cityName}" aus dem RAM-Cache …`);
-            const data = this._memoryCache.get(this.cityName);
-            this._parseOSMData(data);
-            this._buildMacroGraph();
-            return;
-        }
+        eventBus.emit('map:load:start', { message: 'Prüfe Cache...' });
 
-        // 2. API Resilienz (Vorherigen Request abbrechen)
-        if (this._abortController) this._abortController.abort();
-        this._abortController = new AbortController();
+        // 1. API Resilienz (Vorherigen Request abbrechen)
+        if (this.#abortController) this.#abortController.abort();
+        this.#abortController = new AbortController();
 
         const range = 0.008;
         const s = coords[0] - range, w = coords[1] - range;
         const n = coords[0] + range, e = coords[1] + range;
-
-        const query = `[out:json][timeout:25];(
-            way["highway"](${s},${w},${n},${e});
-            node["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
-            way["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
-            way["building"](${s},${w},${n},${e});
-            node["amenity"~"police|police_station"](${s},${w},${n},${e});
-            way["amenity"~"police|police_station"](${s},${w},${n},${e});
-            relation["amenity"~"police|police_station"](${s},${w},${n},${e});
-            node["office"="government"]["government"="police"](${s},${w},${n},${e});
-            way["office"="government"]["government"="police"](${s},${w},${n},${e});
-            relation["office"="government"]["government"="police"](${s},${w},${n},${e});
-        );(._;>;);out body center;`;
+        
+        // Cache Key basierend auf Koordinaten-Bounding-Box (auf 3 Nachkommastellen gerundet)
+        const cacheKey = `osm_${s.toFixed(3)}_${w.toFixed(3)}_${n.toFixed(3)}_${e.toFixed(3)}`;
 
         try {
-            console.log(`MapData: Starte Overpass-Abfrage für "${this.cityName}" …`);
-            const resp = await fetch('https://overpass-api.de/api/interpreter', {
-                method: 'POST',
-                body: 'data=' + encodeURIComponent(query),
-                signal: this._abortController.signal
-            });
+            let data = await this.#db.get(cacheKey, this.#CACHE_TTL_MS);
 
-            if (!resp.ok) throw new Error(`HTTP-Fehler: ${resp.status}`);
+            if (data) {
+                console.log(`MapData: Lade "${this.cityName}" aus IndexedDB Cache...`);
+            } else {
+                eventBus.emit('map:load:progress', { stage: 'download', progress: 0, message: 'Lade Stadt-Daten von OSM...' });
+                console.log(`MapData: Starte Overpass-Abfrage für "${this.cityName}"...`);
+                
+                const query = `[out:json][timeout:25];(
+                    way["highway"](${s},${w},${n},${e});
+                    node["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
+                    way["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
+                    way["building"](${s},${w},${n},${e});
+                    node["amenity"~"police|police_station"](${s},${w},${n},${e});
+                    way["amenity"~"police|police_station"](${s},${w},${n},${e});
+                    relation["amenity"~"police|police_station"](${s},${w},${n},${e});
+                    node["office"="government"]["government"="police"](${s},${w},${n},${e});
+                    way["office"="government"]["government"="police"](${s},${w},${n},${e});
+                    relation["office"="government"]["government"="police"](${s},${w},${n},${e});
+                );(._;>;);out body center;`;
 
-            const data = await resp.json();
-            if (!data.elements || data.elements.length === 0) {
-                throw new Error('Keine Daten von OpenStreetMap erhalten.');
+                const resp = await fetch('https://overpass-api.de/api/interpreter', {
+                    method: 'POST',
+                    body: 'data=' + encodeURIComponent(query),
+                    signal: this.#abortController.signal
+                });
+
+                if (!resp.ok) throw new Error(`HTTP-Fehler: ${resp.status}`);
+
+                data = await resp.json();
+                if (!data.elements || data.elements.length === 0) {
+                    throw new Error('Keine Daten von OpenStreetMap erhalten.');
+                }
+
+                // In IndexedDB speichern
+                await this.#db.set(cacheKey, data);
             }
 
-            // In Cache speichern
-            this._memoryCache.set(this.cityName, data);
+            await this.#parseOSMData(data);
+            await this.#buildMacroGraph();
 
-            this._parseOSMData(data);
-            this._buildMacroGraph();
-
-            if (this._macroGraph.size === 0) {
+            if (this.#macroGraph.size === 0) {
                 throw new Error('Keine befahrbaren Straßen gefunden.');
             }
+
+            eventBus.emit('map:load:success');
+
         } catch (err) {
             if (err.name === 'AbortError') {
                 console.log('MapData: Request wurde abgebrochen.');
                 return;
             }
-            console.error('MapData: Overpass-Fehler', err);
+            console.error('MapData: Overpass/Loading-Fehler', err);
+            eventBus.emit('map:load:error', { error: err.message });
             throw err;
         } finally {
-            this._abortController = null;
+            this.#abortController = null;
         }
     }
 
     // ----------------------------------------------------------------
-    //  Parsing
+    //  Parsing mit Time-Slicing
     // ----------------------------------------------------------------
 
-    _parseOSMData(data) {
-        this._nodes.clear();
-        this._ways.clear();
-        this._pubs = [];
-        this._policeStations = [];
-        this._spatialIndex.clear();
-        this._macroGraph.clear();
+    async #parseOSMData(data) {
+        eventBus.emit('map:load:progress', { stage: 'parsing', progress: 0, message: 'Verarbeite Kartendaten...' });
+        
+        this.#nodes.clear();
+        this.#ways.clear();
+        this.#pubs = [];
+        this.#policeStations = [];
+        this.#spatialIndex.clear();
+        this.#macroGraph.clear();
 
-        data.elements.forEach(el => {
+        const total = data.elements.length;
+        let lastYield = performance.now();
+
+        for (let i = 0; i < total; i++) {
+            const el = data.elements[i];
             const safeId = String(el.id);
             const amenity  = el.tags?.amenity;
             const building = el.tags?.building;
@@ -131,48 +217,68 @@ class MapData {
 
             if (el.type === 'node') {
                 const nd = { ...el, id: safeId };
-                this._nodes.set(safeId, nd);
-                this._addToSpatialIndex(nd);
-                if (isPub) this._pubs.push(nd);
-                if (isPolice) this._policeStations.push({ lat: el.lat, lon: el.lon });
+                this.#nodes.set(safeId, nd);
+                this.#addToSpatialIndex(nd);
+                if (isPub) this.#pubs.push(nd);
+                if (isPolice) this.#policeStations.push({ lat: el.lat, lon: el.lon });
 
             } else if (el.type === 'way') {
-                this._ways.set(safeId, el);
-                const cLat = el.center?.lat ?? this._nodes.get(String(el.nodes?.[0]))?.lat;
-                const cLon = el.center?.lon ?? this._nodes.get(String(el.nodes?.[0]))?.lon;
+                this.#ways.set(safeId, el);
+                const cLat = el.center?.lat ?? this.#nodes.get(String(el.nodes?.[0]))?.lat;
+                const cLon = el.center?.lon ?? this.#nodes.get(String(el.nodes?.[0]))?.lon;
                 if (isPub && cLat != null) {
-                    this._pubs.push({ ...el, lat: cLat, lon: cLon, id: safeId });
+                    this.#pubs.push({ ...el, lat: cLat, lon: cLon, id: safeId });
                 }
                 if (isPolice && cLat != null) {
-                    this._policeStations.push({ lat: cLat, lon: cLon });
+                    this.#policeStations.push({ lat: cLat, lon: cLon });
                 }
 
             } else if (el.type === 'relation') {
                 const cLat = el.center?.lat;
                 const cLon = el.center?.lon;
                 if (isPolice && cLat != null) {
-                    this._policeStations.push({ lat: cLat, lon: cLon });
+                    this.#policeStations.push({ lat: cLat, lon: cLon });
                 }
             }
-        });
 
-        console.log(`MapData: ${this._policeStations.length} Polizeistationen erfasst.`);
+            // Time-Slicing
+            if (performance.now() - lastYield > this.#YIELD_THRESHOLD_MS) {
+                eventBus.emit('map:load:progress', { stage: 'parsing', progress: Math.round((i / total) * 100), message: 'Verarbeite Kartendaten...' });
+                await this.#yieldToMain();
+                lastYield = performance.now();
+            }
+        }
+
+        console.log(`MapData: ${this.#policeStations.length} Polizeistationen erfasst.`);
     }
 
     // ----------------------------------------------------------------
-    //  Makro-Graph
+    //  Makro-Graph mit Time-Slicing
     // ----------------------------------------------------------------
 
-    _buildMacroGraph() {
+    async #buildMacroGraph() {
+        eventBus.emit('map:load:progress', { stage: 'graph', progress: 0, message: 'Erstelle Wegenetz...' });
+        
         // 1. Zähle, wie oft jeder Knoten in allen Wegen vorkommt
         const nodeUsage = new Map();
-        this._ways.forEach(way => {
-            if (!way.tags?.highway) return;
+        
+        let lastYield = performance.now();
+        const waysArray = Array.from(this.#ways.values());
+        
+        for (let i = 0; i < waysArray.length; i++) {
+            const way = waysArray[i];
+            if (!way.tags?.highway) continue;
+            
             way.nodes.forEach(rawId => {
                 const id = String(rawId);
                 nodeUsage.set(id, (nodeUsage.get(id) || 0) + 1);
             });
-        });
+
+            if (performance.now() - lastYield > this.#YIELD_THRESHOLD_MS) {
+                await this.#yieldToMain();
+                lastYield = performance.now();
+            }
+        }
 
         // 2. Entscheidungsknoten-Check
         const isDecision = (id, way, idx) => {
@@ -182,8 +288,9 @@ class MapData {
         };
 
         // 3. Wege durchlaufen und Segmente zwischen Entscheidungsknoten bilden
-        this._ways.forEach(way => {
-            if (!way.tags?.highway) return;
+        for (let i = 0; i < waysArray.length; i++) {
+            const way = waysArray[i];
+            if (!way.tags?.highway) continue;
 
             const ids = way.nodes.map(n => String(n));
 
@@ -191,31 +298,37 @@ class MapData {
             let pathCoords   = [];
             let segDist      = 0;
 
-            for (let i = 1; i < ids.length; i++) {
-                const prev = this._nodes.get(ids[i - 1]);
-                const curr = this._nodes.get(ids[i]);
+            for (let j = 1; j < ids.length; j++) {
+                const prev = this.#nodes.get(ids[j - 1]);
+                const curr = this.#nodes.get(ids[j]);
                 if (!prev || !curr) continue;
 
                 segDist += this.calculateDistance(prev, curr);
                 pathCoords.push([curr.lat, curr.lon]);
 
-                if (isDecision(ids[i], way, i)) {
-                    this._addMacroEdge(lastDecision, ids[i], pathCoords, segDist);
-                    this._addMacroEdge(ids[i], lastDecision, [...pathCoords].reverse(), segDist);
+                if (isDecision(ids[j], way, j)) {
+                    this.#addMacroEdge(lastDecision, ids[j], pathCoords, segDist);
+                    this.#addMacroEdge(ids[j], lastDecision, [...pathCoords].reverse(), segDist);
 
-                    lastDecision = ids[i];
+                    lastDecision = ids[j];
                     pathCoords   = [];
                     segDist      = 0;
                 }
             }
-        });
+
+            if (performance.now() - lastYield > this.#YIELD_THRESHOLD_MS) {
+                eventBus.emit('map:load:progress', { stage: 'graph', progress: Math.round((i / waysArray.length) * 100), message: 'Erstelle Wegenetz...' });
+                await this.#yieldToMain();
+                lastYield = performance.now();
+            }
+        }
     }
 
-    _addMacroEdge(from, to, path, dist) {
+    #addMacroEdge(from, to, path, dist) {
         if (from === to) return;
-        if (!this._macroGraph.has(from)) this._macroGraph.set(from, []);
+        if (!this.#macroGraph.has(from)) this.#macroGraph.set(from, []);
 
-        const list = this._macroGraph.get(from);
+        const list = this.#macroGraph.get(from);
         const existing = list.find(e => e.to === to);
         if (existing) {
             if (dist < existing.distance) {
@@ -246,34 +359,23 @@ class MapData {
     //  Spatial Index
     // ----------------------------------------------------------------
 
-    _addToSpatialIndex(node) {
-        const key = this._gridKey(node.lat, node.lon);
-        if (!this._spatialIndex.has(key)) this._spatialIndex.set(key, []);
-        this._spatialIndex.get(key).push(node.id);
+    #addToSpatialIndex(node) {
+        const key = this.#gridKey(node.lat, node.lon);
+        if (!this.#spatialIndex.has(key)) this.#spatialIndex.set(key, []);
+        this.#spatialIndex.get(key).push(node.id);
     }
 
-    _gridKey(lat, lon) {
-        return `${Math.floor(lat / this._gridSize)}_${Math.floor(lon / this._gridSize)}`;
+    #gridKey(lat, lon) {
+        return `${Math.floor(lat / this.#gridSize)}_${Math.floor(lon / this.#gridSize)}`;
     }
 
     /**
      * Findet den nächsten Straßenknoten zur angeklickten Kartenposition.
-     *
-     * BUGFIX: Durchsucht jetzt ein 3×3-Zellen-Raster um die Zielzelle.
-     * Vorher wurde nur die exakte Zelle der Klick-Koordinate abgefragt.
-     * Da Knoten an oder knapp hinter einer Zellgrenze in der Nachbarzelle
-     * liegen, wurden sie nie gefunden – der Klick lief ins Leere.
-     * Die 3×3-Suche ist der Standardansatz für Grid-basierte Spatial Indices
-     * und hat keinen nennenswerten Performance-Einfluss, da pro Zelle
-     * nur wenige Knoten gespeichert sind.
-     *
-     * @param {number} lat
-     * @param {number} lon
-     * @returns {Object|null} Nächster Node oder null
+     * Nutzt eine 3x3 Grid-Suche.
      */
     getNearestNode(lat, lon) {
-        const baseRow = Math.floor(lat / this._gridSize);
-        const baseCol = Math.floor(lon / this._gridSize);
+        const baseRow = Math.floor(lat / this.#gridSize);
+        const baseCol = Math.floor(lon / this.#gridSize);
 
         let best = null, bestD = Infinity;
 
@@ -281,10 +383,10 @@ class MapData {
         for (let dr = -1; dr <= 1; dr++) {
             for (let dc = -1; dc <= 1; dc++) {
                 const key = `${baseRow + dr}_${baseCol + dc}`;
-                const ids = this._spatialIndex.get(key) || [];
+                const ids = this.#spatialIndex.get(key) || [];
                 
                 for (const id of ids) {
-                    const n = this._nodes.get(id);
+                    const n = this.#nodes.get(id);
                     if (!n) continue;
                     
                     // Pythagoras (Quadrat reicht für Vergleich)
@@ -301,47 +403,51 @@ class MapData {
     }
 
     // ----------------------------------------------------------------
-    //  Öffentliche Getter
+    //  Öffentliche Getter (inkl. Legacy-Support für nicht refaktorierte Module)
     // ----------------------------------------------------------------
 
-    getNode(id) {
-        return this._nodes.get(String(id));
+    get _macroGraph() {
+        return this.#macroGraph;
     }
 
-    /**
-     * Gibt die Nachbar-Kreuzungen mit edgeData zurück.
-     * Format: [{ id, lat, lon, edgeData: { to, path, distance } }, …]
-     */
+    get _ways() {
+        return this.#ways;
+    }
+
+    get _policeStations() {
+        return this.#policeStations;
+    }
+
+    getPoliceStations() {
+        return [...this.#policeStations];
+    }
+
+    getNode(id) {
+        return this.#nodes.get(String(id));
+    }
+
     getNeighbors(id) {
-        const edges = this._macroGraph.get(String(id));
+        const edges = this.#macroGraph.get(String(id));
         if (!edges) return [];
         return edges
             .map(edge => {
-                const node = this._nodes.get(edge.to);
+                const node = this.#nodes.get(edge.to);
                 if (!node) return null;
                 return { ...node, edgeData: edge };
             })
             .filter(Boolean);
     }
 
-    /**
-     * Gibt die Kanten-Daten einer bestimmten Verbindung zurück.
-     */
     getEdge(fromId, toId) {
-        const edges = this._macroGraph.get(String(fromId));
+        const edges = this.#macroGraph.get(String(fromId));
         if (!edges) return null;
         return edges.find(e => e.to === String(toId)) || null;
     }
 
     getPubs() {
-        return [...this._pubs];
+        return [...this.#pubs];
     }
 
-    /**
-     * Berechnet den Risiko-Aufschlag basierend auf der Nähe zu Polizeistationen.
-     * @param {Array} poiCoords - [lat, lon]
-     * @returns {{ riskMalus: number, activeStations: number }}
-     */
     getPoliceRiskModifier(poiCoords) {
         const MAX_RADIUS = CONFIG.POLICE_MAX_RADIUS;
         const MAX_MALUS_PER_STATION = CONFIG.POLICE_MAX_MALUS;
@@ -351,7 +457,7 @@ class MapData {
         const poi = { lat: poiCoords[0], lon: poiCoords[1] };
 
         const malusValues = [];
-        this._policeStations.forEach(station => {
+        this.#policeStations.forEach(station => {
             const dist = this.calculateDistance(poi, station);
             if (dist <= MAX_RADIUS) {
                 const malus = MAX_MALUS_PER_STATION * (1 - dist / MAX_RADIUS);
@@ -370,22 +476,17 @@ class MapData {
         return { riskMalus, activeStations: malusValues.length };
     }
 
-    /**
-     * Findet den nächsten POI relativ zu einem Startknoten und snappt
-     * ihn auf die nächste erreichbare Kreuzung im Makro-Graphen.
-     * Gibt { poiData, graphNodeId, snapCoords } zurück oder null.
-     */
     getNearestPOI(startNodeId) {
-        const start = this._nodes.get(String(startNodeId));
-        if (!start || this._pubs.length === 0) return null;
+        const start = this.#nodes.get(String(startNodeId));
+        if (!start || this.#pubs.length === 0) return null;
 
-        const reachable = Array.from(this._macroGraph.entries())
+        const reachable = Array.from(this.#macroGraph.entries())
             .filter(([, edges]) => edges.length > 0)
             .map(([id]) => id);
 
         let bestPoi = null, bestDist = Infinity;
 
-        this._pubs.forEach(poi => {
+        this.#pubs.forEach(poi => {
             if (String(poi.id) === String(startNodeId)) return;
             const d = this.calculateDistance(start, poi);
             if (d > 50 && d < bestDist) {
@@ -398,7 +499,7 @@ class MapData {
 
         let snapId = null, snapDist = Infinity;
         reachable.forEach(id => {
-            const nd = this._nodes.get(id);
+            const nd = this.#nodes.get(id);
             if (!nd) return;
             const d = this.calculateDistance(bestPoi, nd);
             if (d < snapDist) { snapDist = d; snapId = id; }
@@ -406,7 +507,7 @@ class MapData {
 
         if (!snapId) return null;
 
-        const snapNode = this._nodes.get(snapId);
+        const snapNode = this.#nodes.get(snapId);
         return {
             poiData: bestPoi,
             graphNodeId: snapId,
@@ -414,17 +515,13 @@ class MapData {
         };
     }
 
-    /**
-     * Gibt einen zufälligen Knoten zurück, der mindestens einen Nachbarn hat.
-     */
     getRandomIntersectionNode() {
-        const connected = Array.from(this._macroGraph.entries())
+        const connected = Array.from(this.#macroGraph.entries())
             .filter(([, edges]) => edges.length > 0)
             .map(([id]) => id);
         if (connected.length === 0) return null;
         return connected[Math.floor(Math.random() * connected.length)];
     }
-
 }
 
 export { MapData };
