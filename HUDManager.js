@@ -8,12 +8,14 @@ export class HUDManager {
     // Private Fields für DOM Caching
     #budgetPanel;
     #infoPanel;
+    #infoCardsContainer;
     #toggleBtn;
 
     constructor() {
         // Einmaliges DOM Caching
         this.#budgetPanel = document.getElementById('budget-panel');
         this.#infoPanel = document.getElementById('info-panel');
+        this.#infoCardsContainer = document.getElementById('info-cards-container');
         this.#toggleBtn = document.getElementById('info-toggle-btn');
         
         // CSS-Klassen für einheitlichen Look zuweisen
@@ -37,6 +39,22 @@ export class HUDManager {
         eventBus.subscribe('INFO_MENU_STATE', (data) => this.#setInfoMenuState(data));
         eventBus.subscribe('SHOW_TUTORIAL', (data) => this.#showTutorial(data));
         eventBus.subscribe('TOGGLE_INFO', (data) => this.#toggleInfoMenu(data));
+        eventBus.subscribe('SAVE_COMPLETED', () => this.#showSaveIndicator());
+    }
+
+    /**
+     * Zeigt kurzzeitig das "Speichert..." Feedback an.
+     */
+    #showSaveIndicator() {
+        const indicator = document.createElement('div');
+        indicator.className = 'save-indicator';
+        indicator.innerText = '💾 Speichert...';
+        
+        document.body.appendChild(indicator);
+        
+        indicator.addEventListener('animationend', () => {
+            indicator.remove();
+        }, { once: true });
     }
 
     /**
@@ -78,9 +96,9 @@ export class HUDManager {
      * Baut das Info-Panel mit Inhalts-Karten auf.
      */
     #updateInfoPanel(cards) {
-        if (!this.#infoPanel) return;
+        if (!this.#infoCardsContainer) return;
         
-        this.#infoPanel.innerHTML = '';
+        this.#infoCardsContainer.innerHTML = '';
         
         if (!cards || cards.length === 0) {
             this.#infoPanel.style.display = 'none';
@@ -96,7 +114,7 @@ export class HUDManager {
                 <div class="info-header">${card.title}</div>
                 <div class="info-body">${card.body}</div>
             `;
-            this.#infoPanel.appendChild(cardEl);
+            this.#infoCardsContainer.appendChild(cardEl);
         });
     }
 
@@ -105,14 +123,14 @@ export class HUDManager {
      * @param {Object} data - { text, clearFirst }
      */
     #showTutorial({ text, clearFirst }) {
-        if (!this.#infoPanel) return;
+        if (!this.#infoCardsContainer) return;
         
-        if (clearFirst) this.#infoPanel.innerHTML = '';
+        if (clearFirst) this.#infoCardsContainer.innerHTML = '';
 
         const card = document.createElement('div');
         card.className = 'info-card';
         card.innerHTML = `<div class="info-header">Mission</div><div class="info-body">${text}</div>`;
-        this.#infoPanel.appendChild(card);
+        this.#infoCardsContainer.appendChild(card);
 
         this.#infoPanel.style.display = 'block';
         this.#toggleInfoMenu(true);

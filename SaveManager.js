@@ -45,6 +45,7 @@ export class SaveManager {
             try {
                 const key = this.#getStorageKey(this.#currentCity);
                 localStorage.setItem(key, JSON.stringify(state));
+                eventBus.emit('SAVE_COMPLETED');
                 console.log(`[SaveManager] Auto-Save für ${this.#currentCity} erfolgreich.`);
             } catch (err) {
                 console.error('[SaveManager] Auto-Save fehlgeschlagen:', err);

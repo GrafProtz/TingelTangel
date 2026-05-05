@@ -215,16 +215,35 @@ html, body {
 }
 
 #back-to-menu {
-    position: absolute;
-    top: 20px;
-    left: 20px;
-    z-index: 1001;
-    background: rgba(15, 23, 42, 0.8);
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    padding: 8px 15px;
-    border-radius: 5px;
+    width: 100%;
+    margin-top: auto;
+    background: rgba(30, 41, 59, 0.8);
+    color: #94a3b8;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 12px;
+    border-radius: 8px;
     cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: bold;
+}
+
+#back-to-menu:hover {
+    background: #ef4444;
+    color: white;
+    border-color: #f87171;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+#back-to-menu:active {
+    transform: translateY(0);
 }
 
 /* Marker Styling */
@@ -359,6 +378,8 @@ html, body {
     transition: right 0.3s ease-in-out;
     border-radius: 12px 0 0 12px;
     box-shadow: -10px 0 30px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
 }
 
 #info-panel.open {
@@ -585,4 +606,29 @@ html, body {
     from { opacity: 0; transform: scale(0.9) translateY(20px); }
     to { opacity: 1; transform: scale(1) translateY(0); }
 }
-
+
+/* --- Save Indicator --- */
+.save-indicator {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(15, 23, 42, 0.85); /* Tailwind slate-900 mit Transparenz */
+    color: #cbd5e1; /* Tailwind slate-300 */
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-family: var(--font-primary);
+    font-size: 0.9rem;
+    pointer-events: none;
+    z-index: 9999;
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    animation: saveFadeInOut 2.5s ease-in-out forwards;
+}
+
+@keyframes saveFadeInOut {
+    0% { opacity: 0; transform: translateY(10px); }
+    15% { opacity: 1; transform: translateY(0); }
+    85% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(10px); }
+}
