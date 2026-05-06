@@ -23,7 +23,7 @@ class Game {
     #targetPubName = "Kneipe";
     #radarUnlocked = false;
     #lastRadarTime = 0;
-    #lastPubVisitTime = 0;
+    #lastPubVisit = 0;
     #showPubCooldownText = false;
     #moveCount = 0;
     #missionPhase = 1;
@@ -34,6 +34,7 @@ class Game {
     
     #firstMoveFired = false;
     #animFrameId = null;
+    #isInPub = false;
 
     /**
      * @param {MapData} mapData
@@ -134,24 +135,36 @@ class Game {
 
         eventBus.subscribe('START_BURGLARY', ({ target, riskData }) => {
             setTimeout(() => {
-                const roll = Math.floor(Math.random() * 100) + 1;
-                const isSuccess = roll <= riskData.successProbability;
+                // 1. Abbruch-Check (Mechanische Sicherung)
+                const abortRoll = Math.floor(Math.random() * 100) + 1;
+                if (abortRoll <= riskData.abortRate) {
+                    eventBus.emit('SHOW_DIALOG', {
+                        title: 'Abbruch!',
+                        text: "Die mechanischen Sicherungen waren zu stark. Du musstest fliehen, bevor die Bullen kamen.",
+                        buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
+                    });
+                    this.#resetBurglaryState();
+                    return;
+                }
 
-                if (isSuccess) {
-                    const amount = this.calculateLoot(riskData.totalRisk);
+                // 2. Risiko-Check (Entdeckung)
+                const riskRoll = Math.floor(Math.random() * 100) + 1;
+                if (riskRoll <= riskData.totalRisk) {
+                    const fine = Math.ceil(this.#budget * 0.2);
+                    this.deductBudget(fine);
+                    eventBus.emit('SHOW_DIALOG', {
+                        title: 'Erwischt!',
+                        text: `Die Polizei war schneller. Du musstest ${fine} € Strafe zahlen.`,
+                        buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
+                    });
+                } else {
+                    // 3. Erfolg
+                    const amount = this.calculateLoot(riskData);
                     this.addReward(amount);
                     eventBus.emit('SHOW_DIALOG', {
                         title: 'Erfolg!',
                         text: `Du hast ${amount} € erbeutet!`,
                         buttons: [{ text: 'Hervorragend', event: 'RESUME_GAME' }]
-                    });
-                } else {
-                    const fine = Math.ceil(this.#budget * 0.2); // Strafe bei Fehlschlag
-                    this.deductBudget(fine);
-                    eventBus.emit('SHOW_DIALOG', {
-                        title: 'Fehlschlag!',
-                        text: `Die Polizei war schneller. Du musstest ${fine} € Strafe zahlen.`,
-                        buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
                     });
                 }
                 this.#resetBurglaryState();
@@ -185,7 +198,7 @@ class Game {
             targetPubName: this.#targetPubName,
             radarUnlocked: this.#radarUnlocked,
             lastRadarTime: this.#lastRadarTime,
-            lastPubVisitTime: this.#lastPubVisitTime,
+            lastPubVisit: this.#lastPubVisit,
             showPubCooldownText: this.#showPubCooldownText,
             moveCount: this.#moveCount,
             missionPhase: this.#missionPhase,
@@ -235,7 +248,7 @@ class Game {
         this.#targetPubName = pubName;
         this.#radarUnlocked = false;
         this.#lastRadarTime = 0;
-        this.#lastPubVisitTime = 0;
+        this.#lastPubVisit = 0;
         this.#showPubCooldownText = false;
         this.#moveCount = 0;
         this.#missionPhase = 1;
@@ -243,6 +256,7 @@ class Game {
         this.#isInfoMenuOpen = false;
         this.#activeCrimeTargets = [];
         this.#logbook = [];
+        this.#isInPub = false;
         
         this.#firstMoveFired = false;
         
@@ -284,7 +298,7 @@ class Game {
         this.#targetPubName = savedState.targetPubName || "Kneipe";
         this.#radarUnlocked = savedState.radarUnlocked ?? false;
         this.#lastRadarTime = savedState.lastRadarTime ?? 0;
-        this.#lastPubVisitTime = savedState.lastPubVisitTime ?? 0;
+        this.#lastPubVisit = savedState.lastPubVisit ?? 0;
         this.#showPubCooldownText = savedState.showPubCooldownText ?? false;
         this.#moveCount = savedState.moveCount ?? 0;
         this.#missionPhase = savedState.missionPhase ?? 1;
@@ -309,6 +323,11 @@ class Game {
     }
 
     resume() {
+        if (this.#isInPub) {
+            this.#lastPubVisit = Date.now();
+            console.log("DEBUG 4: Neuer Zeitstempel gesetzt auf:", this.#lastPubVisit);
+            this.#isInPub = false;
+        }
         this.#gameActive = true;
         eventBus.emit('GAME_RESUMED');
         this.#notifyStateChange();
@@ -428,15 +447,23 @@ class Game {
     }
 
     #checkPubArrival() {
-        const timeSinceLastVisit = Date.now() - this.#lastPubVisitTime;
+        console.log("DEBUG 1: Letzter Besuchstempel (lastPubVisit):", this.#lastPubVisit);
+        console.log("DEBUG 2: Aktuelle Zeit (Date.now()):", Date.now());
 
-        if (timeSinceLastVisit > CONFIG.PUB_COOLDOWN) {
+        const diff = (Date.now() - this.#lastPubVisit) / 1000;
+        console.log("DEBUG 3: Berechnete Differenz in Sekunden (diff):", diff);
+
+        if (diff >= 180) {
             this.#gameActive = false;
+            this.#isInPub = true;
             eventBus.emit('PUB_TARGET_REACHED', { nodeId: this.#currentPlayerNodeId });
             this.#notifyTargetReached();
         } else {
-            const remaining = Math.ceil((CONFIG.PUB_COOLDOWN - timeSinceLastVisit) / 1000);
-            eventBus.emit('SHOW_TOAST', { msg: `Der Barkeeper ist noch beschäftigt. (${remaining}s)`, type: 'fail' });
+            const remaining = Math.ceil(180 - diff);
+            eventBus.emit('SHOW_TOAST', { 
+                msg: "Der Kneipier ist mal kurz mit einem Gast in den Hinterraum gegangen und hat für " + remaining + " Sekunden keine Zeit.", 
+                type: 'fail' 
+            });
         }
     }
 
@@ -517,7 +544,7 @@ class Game {
             msg = opt.successMsg ? opt.successMsg(opt.reward) : `✅ Erfolg! Du kassierst ${opt.reward} € für "${opt.text}".`;
         }
 
-        this.#lastPubVisitTime = Date.now();
+        this.#lastPubVisit = Date.now();
         this.#gameActive = true;
 
         this.#logbook.push({ 
@@ -592,47 +619,53 @@ class Game {
     }
 
     calculateTargetRisk(targetNode) {
-        if (!targetNode) return { totalRisk: 0, successProbability: 100, policePenalty: 0, baseQuote: 0 };
-
-        const baseMapping = {
-            'commercial':  CONFIG.RISK_COMMERCIAL,
-            'residential': CONFIG.RISK_RESIDENTIAL,
-            'public':      CONFIG.RISK_PUBLIC,
-            'allotments':  CONFIG.RISK_ALLOTMENTS
+        const statsMap = {
+            'residential': { baseRisk: 15, abortRate: 47, minLoot: 1500, maxLoot: 6100, label: 'Wohnobjekt' },
+            'commercial':  { baseRisk: 30, abortRate: 28, minLoot: 500,  maxLoot: 15000, label: 'Gewerbeobjekt' },
+            'public':      { baseRisk: 30, abortRate: 25, minLoot: 100,  maxLoot: 8000,  label: 'Öffentliche Einrichtung' },
+            'allotments':  { baseRisk: 15, abortRate: 15, minLoot: 50,   maxLoot: 1950,  label: 'Kleingarten/Schuppen' }
         };
-        const baseQuote = baseMapping[targetNode.type] || 20;
 
-        let minPoliceDist = Infinity;
+        const category = targetNode.type || 'residential';
+        const config = statsMap[category] || statsMap.residential;
+
         const stations = this.#mapData.getPoliceStations();
-        
+        let proximityRisk = 0;
+        let nearbyCount = 0;
+
         stations.forEach(station => {
             const dist = this.#mapData.calculateDistance(
                 { lat: targetNode.lat, lon: targetNode.lon },
                 { lat: station.lat, lon: station.lon }
             );
-            if (dist < minPoliceDist) minPoliceDist = dist;
+
+            if (dist < 500) {
+                nearbyCount++;
+                proximityRisk += (500 - dist) / 500 * 25;
+            }
         });
 
-        let policePenalty = 0;
-        if (minPoliceDist < CONFIG.POLICE_MAX_RADIUS) {
-            policePenalty = CONFIG.POLICE_MAX_MALUS * (1 - (minPoliceDist / CONFIG.POLICE_MAX_RADIUS));
-        }
-
-        const totalRisk = Math.min(CONFIG.POLICE_HARD_CAP + baseQuote, baseQuote + policePenalty);
+        const interferenceRisk = nearbyCount > 1 ? (nearbyCount - 1) * 15 : 0;
+        const totalRisk = Math.min(95, config.baseRisk + proximityRisk + interferenceRisk);
         const successProbability = 100 - totalRisk;
 
         return {
-            totalRisk: Number(totalRisk.toFixed(2)),
-            successProbability: Number(successProbability.toFixed(2)),
-            policePenalty: Number(policePenalty.toFixed(2)),
-            baseQuote: baseQuote
+            label: config.label,
+            minLoot: config.minLoot,
+            maxLoot: config.maxLoot,
+            baseRisk: config.baseRisk,
+            abortRate: config.abortRate,
+            proximityRisk: Number(proximityRisk.toFixed(1)),
+            interferenceRisk: interferenceRisk,
+            nearbyCount: nearbyCount,
+            totalRisk: Number(totalRisk.toFixed(1)),
+            successProbability: Number(successProbability.toFixed(1))
         };
     }
 
-    calculateLoot(totalRisk) {
-        const baseAmount = totalRisk * 20;
-        const variance = 0.8 + (Math.random() * 0.4);
-        return Math.floor(baseAmount * variance);
+    calculateLoot(riskData) {
+        const { minLoot, maxLoot } = riskData;
+        return Math.floor(minLoot + Math.random() * (maxLoot - minLoot));
     }
 
     // ----------------------------------------------------------------

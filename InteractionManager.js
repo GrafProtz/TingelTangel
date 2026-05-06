@@ -15,6 +15,7 @@ export class InteractionManager {
         // Mapping von Fach-Events auf das generische Dialog-System
         eventBus.subscribe('OPEN_INTERACTION', (data) => this.#handlePubInteraction(data));
         eventBus.subscribe('OPEN_INVESTMENT', (data) => this.#handleInvestmentInteraction(data));
+        eventBus.subscribe('OPEN_SCOUTING_REPORT', (data) => this.#handleScoutingReport(data));
         eventBus.subscribe('SHOW_DIALOG', (data) => this.showDialog({
             title: data.title,
             body: data.text,
@@ -202,6 +203,53 @@ export class InteractionManager {
                     className: 'btn-investment'
                 })),
                 { text: 'Portfolio schließen', event: 'INVESTMENT_CANCELLED', className: 'btn-secondary' }
+            ]
+        });
+    }
+
+    #handleScoutingReport({ target, riskData }) {
+        this.showDialog({
+            title: 'Scouting-Report',
+            body: `
+                <div class="scouting-report" style="line-height: 1.6;">
+                    <p style="margin-bottom: 8px;"><strong>Ziel:</strong> ${riskData.label}</p>
+                    <p style="margin-bottom: 16px;"><strong>Erwartete Beute:</strong> ${riskData.minLoot.toLocaleString()} € - ${riskData.maxLoot.toLocaleString()} €</p>
+                    <div style="border-top: 1px solid rgba(0,0,0,0.1); padding-top: 12px; margin-bottom: 12px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;">
+                            <span>Basis-Risiko:</span>
+                            <span>${riskData.baseRisk}%</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;">
+                            <span>Mechanischer Widerstand (Abbruch):</span>
+                            <span>${riskData.abortRate}%</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;">
+                            <span>Polizeipräsenz (${riskData.nearbyCount} Wache${riskData.nearbyCount === 1 ? '' : 'n'} nah):</span>
+                            <span style="color: var(--color-danger);">+ ${riskData.proximityRisk}%</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;">
+                            <span>Interferenz-Warnung:</span>
+                            <span style="color: var(--color-danger);">+ ${riskData.interferenceRisk}%</span>
+                        </div>
+                    </div>
+                    <div style="border-top: 2px solid var(--color-text); padding-top: 12px; display:flex; justify-content:space-between; font-weight:bold; font-size:1.2rem; color:var(--color-danger);">
+                        <span>GESAMTRISIKO:</span>
+                        <span>${riskData.totalRisk}%</span>
+                    </div>
+                </div>
+            `,
+            buttons: [
+                { 
+                    text: 'Einbruch durchziehen', 
+                    className: 'btn-danger',
+                    event: 'START_BURGLARY',
+                    payload: { target, riskData }
+                },
+                { 
+                    text: 'Rückzug', 
+                    className: 'btn-secondary',
+                    event: 'RESUME_GAME'
+                }
             ]
         });
     }

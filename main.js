@@ -107,14 +107,8 @@ async function initApp() {
 
                         const riskData = game.calculateTargetRisk(target);
                         game.pause();
-                        eventBus.emit('SHOW_DIALOG', {
-                            title: 'Einbruch planen',
-                            text: `Erfolgswahrscheinlichkeit: ${riskData.successProbability}%`,
-                            buttons: [
-                                { text: 'Durchführen', event: 'START_BURGLARY', payload: { target, riskData } },
-                                { text: 'Abbrechen', event: 'RESUME_GAME' }
-                            ]
-                        });
+                        
+                        eventBus.emit('OPEN_SCOUTING_REPORT', { target, riskData });
                     }
                 });
             });
