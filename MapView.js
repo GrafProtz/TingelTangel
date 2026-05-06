@@ -31,9 +31,15 @@ class MapView {
         this._debugLines      = [];
 
         this.#isLockCamera = false;
+        this._isIntroFlying = false;
 
         // Globaler Kamera-Listener für entkoppelte Steuerung
         eventBus.subscribe('CAMERA_FIT_BOUNDS_REQUESTED', (coords) => this.fitBounds(coords));
+        
+        // Entsperre die Kamera, wenn das Intro vorbei ist
+        eventBus.subscribe('INTRO_COMPLETE', () => {
+            this._isIntroFlying = false;
+        });
     }
 
     #isLockCamera;
@@ -219,7 +225,7 @@ class MapView {
             this._playerMarker.setLatLng(coords);
         }
         
-        if (!this.#isLockCamera) {
+        if (!this.#isLockCamera && !this._isIntroFlying) {
             this._map.panTo(coords);
         }
     }
@@ -232,7 +238,7 @@ class MapView {
         }
         this._playerMarker.setLatLng(coords);
         
-        if (!this.#isLockCamera) {
+        if (!this.#isLockCamera && !this._isIntroFlying) {
             this._map.panTo(coords, { animate: false });
         }
     }
@@ -635,38 +641,32 @@ class MapView {
 
 
     /**
-     * Spielt die Tutorial-Kamerafahrt ab.
-     * Start → Ziel (Highlight) → zurück zum Start → onComplete
+     * Cinematic Zoom für das Start-Intro: Berechnet die Bounding Box
+     * über Start, Ziel und Nachbarn und taucht tief in die Szene ein.
      */
-    playTutorialSequence(startCoords, targetCoords, poiName, onComplete) {
-        const wait = (ms) => new Promise(r => setTimeout(r, ms));
-
-        const run = async () => {
-            eventBus.emit('SHOW_TUTORIAL', {
-                text: `🚶 <b>Bewegung:</b> Klicke auf grüne Punkte.<br>`
-                    + `💰 10 Meter kosten 1 €.<br>`
-                    + `🍺 Finde <b>"${poiName}"</b>!`,
-                clearFirst: true
+    focusScenarioBounds(startCoords, targetCoords, neighborCoordsArray) {
+        this._isIntroFlying = true;
+        
+        const coords = [startCoords, targetCoords];
+        if (neighborCoordsArray && Array.isArray(neighborCoordsArray)) {
+            coords.push(...neighborCoordsArray);
+        }
+        
+        try {
+            const bounds = L.latLngBounds(coords);
+            this._map.invalidateSize();
+            
+            // Dynamischer Cinematic Zoom mit Padding
+            this._map.flyToBounds(bounds, { 
+                padding: [50, 50], 
+                maxZoom: 17.5, 
+                duration: 2.5,
+                easeLinearity: 0.25
             });
-
-            await wait(2500);
-
-            this._map.flyTo(targetCoords, 16.5, { duration: 1.5 });
-            await new Promise(r => this._map.once('moveend', r));
-
-            this.highlightTarget();
-            eventBus.emit('SHOW_TUTORIAL', { text: `👆 Da ist <b>"${poiName}"</b>!`, clearFirst: false });
-            await wait(2000);
-
-            this._map.flyTo(startCoords, 16.5, { duration: 1.5 });
-            await new Promise(r => this._map.once('moveend', r));
-
-            eventBus.emit('SHOW_TUTORIAL', { text: `Los geht's! 🍺`, clearFirst: false });
-
-            if (onComplete) onComplete();
-        };
-
-        run();
+        } catch (error) {
+            console.error("DEBUG FEHLER: Crash beim Kameraflug:", error);
+            this._isIntroFlying = false;
+        }
     }
 }
 

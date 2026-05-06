@@ -20,6 +20,7 @@ class Game {
     #gameActive = false;
     #isMoving = false;
     #targetPubNodeId = null;
+    #targetPubName = "Kneipe";
     #radarUnlocked = false;
     #lastRadarTime = 0;
     #lastPubVisitTime = 0;
@@ -143,6 +144,7 @@ class Game {
             gameActive: this.#gameActive,
             isMoving: this.#isMoving,
             targetPubNodeId: this.#targetPubNodeId,
+            targetPubName: this.#targetPubName,
             radarUnlocked: this.#radarUnlocked,
             lastRadarTime: this.#lastRadarTime,
             lastPubVisitTime: this.#lastPubVisitTime,
@@ -186,12 +188,13 @@ class Game {
     //  Mission & Steuerung
     // ----------------------------------------------------------------
 
-    startMission(startNodeId, targetNodeId) {
+    startMission(startNodeId, targetNodeId, pubName = "Kneipe") {
         this.#budget = CONFIG.INITIAL_BUDGET;
         this.#currentPlayerNodeId = String(startNodeId);
-        this.#gameActive = true;
+        this.#gameActive = false; // Spiel ist pausiert bis INTRO_COMPLETE!
         this.#isMoving = false;
         this.#targetPubNodeId = String(targetNodeId);
+        this.#targetPubName = pubName;
         this.#radarUnlocked = false;
         this.#lastRadarTime = 0;
         this.#lastPubVisitTime = 0;
@@ -206,8 +209,25 @@ class Game {
         this.#firstMoveFired = false;
         
         console.log('🎯 MISSION GESTARTET! Ziel-ID:', this.#targetPubNodeId);
-        this.#notifyStateChange();
         this.#emitBudgetUpdate();
+
+        // Modal SOFORT aufploppen lassen
+        const cityName = this.#mapData.cityName || "der Stadt";
+        
+        eventBus.emit('SHOW_INFO_CASCADE', {
+            title: "Willkommen in der Unterwelt",
+            fullText: "Willkommen in " + cityName + ", Grünschnabel. Die städtische Verbrecher-Innung gewährt dir ein Startkapital von 300 Euro. Betrachte es als Vorschuss. Dein erstes Ziel: Beweg deinen Hintern in die Kneipe namens '" + this.#targetPubName + "', nicht weit weg von hier. Dort schnappen wir ein paar lukrative Gerüchte auf, wie man hier an echtes Geld kommt.<br><br>Aber merk dir eins: Wir spazieren hier nicht gemütlich über den Bürgersteig. Wir bewegen uns unter dem Radar, von Knotenpunkt zu Knotenpunkt – wir 'hoppeln' quasi unsichtbar durch die Stadt. Und das kostet! Jeder verdammte Meter frisst dein Guthaben auf. Plane deine Route über die grünen Punkte also extrem clever, sonst bist du pleite, bevor du überhaupt dein erstes Ding gedreht hast.",
+            shortText: "Ziel: Erreiche die Kneipe '" + this.#targetPubName + "'. (Achtung: Jeder Meter über die Knotenpunkte kostet Startkapital!)"
+        });
+    }
+
+    triggerIntroRender() {
+        this.#notifyStateChange(); // Jetzt rendern die POIs und Knoten
+        
+        setTimeout(() => {
+            this.#gameActive = true;
+            eventBus.emit('INTRO_COMPLETE');
+        }, 6000); // 5s Spawn-Animation + 1s Puffer
     }
 
     /**
@@ -222,6 +242,7 @@ class Game {
         this.#gameActive = savedState.gameActive ?? true;
         this.#isMoving = false; // Zur Sicherheit Bewegung zurücksetzen
         this.#targetPubNodeId = savedState.targetPubNodeId;
+        this.#targetPubName = savedState.targetPubName || "Kneipe";
         this.#radarUnlocked = savedState.radarUnlocked ?? false;
         this.#lastRadarTime = savedState.lastRadarTime ?? 0;
         this.#lastPubVisitTime = savedState.lastPubVisitTime ?? 0;

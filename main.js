@@ -6,6 +6,7 @@ import { InteractionManager } from './InteractionManager.js';
 import { NotificationManager } from './NotificationManager.js';
 import { MissionService } from './MissionService.js';
 import { SaveManager } from './SaveManager.js';
+import { UIManager } from './UIManager.js';
 import { eventBus } from './EventBus.js';
 
 const CITIES = [
@@ -25,6 +26,7 @@ async function initApp() {
     const notification = new NotificationManager();
     const missionService = new MissionService(mapData);
     const saveManager = new SaveManager();
+    const uiManager = new UIManager();
 
     let missionPOI = null;
 
@@ -200,11 +202,23 @@ async function initApp() {
                 return;
             }
 
-            mapView.renderPlayer(scenario.startCoords);
-            mapView.focusLocation(scenario.startCoords);
+            // Modal ploppt sofort auf, die Engine pausiert das Map-Rendering
+            game.startMission(scenario.startNodeId, scenario.targetNodeId, scenario.poiName);
 
-            mapView.playTutorialSequence(scenario.startCoords, scenario.targetCoords, scenario.poiName, () => {
-                game.startMission(scenario.startNodeId, scenario.targetNodeId);
+            // Wenn das Modal weggeklickt wird, erwacht die Karte zum Leben
+            eventBus.subscribe('START_MAP_INTRO', () => {
+                console.log("DEBUG 1: Event START_MAP_INTRO ist in main.js angekommen!");
+                mapView.renderPlayer(scenario.startCoords);
+                
+                // Nachbarn für die Bounding Box ermitteln
+                const neighbors = mapData.getNeighbors(scenario.startNodeId);
+                const neighborCoords = neighbors.map(n => [n.lat, n.lon]);
+                
+                // Cinematic Zoom aktivieren
+                mapView.focusScenarioBounds(scenario.startCoords, scenario.targetCoords, neighborCoords);
+                
+                // Zwingt die Engine, jetzt POIs und grüne Nodes zu rendern
+                game.triggerIntroRender();
             });
         }
     };

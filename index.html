@@ -46,14 +46,8 @@
     </div>
 
     <!-- In-Game UI -->
-    <button id="info-toggle-btn" style="display: none;"><<</button>
     <div id="budget-panel" style="display: none;">
         Budget: 0 €
-    </div>
-    
-    <div id="info-panel">
-        <div id="info-cards-container"></div>
-        <button id="back-to-menu" style="display: none;">← Hauptmenü</button>
     </div>
 
 
@@ -66,6 +60,18 @@
     
     <!-- Pub Overlay (Screen Space) -->
     <div id="pub-overlay-ui" class="pub-inactive" style="display: none;"></div>
+
+    <!-- Info Modal & Sidebar Log -->
+    <div id="info-modal" class="hidden">
+        <h2 id="info-modal-title"></h2>
+        <p id="info-modal-text"></p>
+        <button id="info-modal-btn">Verstanden</button>
+    </div>
+    <button id="sidebar-toggle">Logbuch</button>
+    <div id="sidebar-log" class="sidebar-closed">
+        <button id="back-to-menu" style="display: none; margin-bottom: 1rem;">← Hauptmenü</button>
+        <div id="sidebar-log-content"></div>
+    </div>
 
     <!-- Start der App via ES6-Modul -->
     <script type="module" src="main.js"></script>
