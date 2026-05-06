@@ -136,11 +136,14 @@ class Game {
         eventBus.subscribe('START_BURGLARY', ({ target, riskData }) => {
             setTimeout(() => {
                 // 1. Abbruch-Check (Mechanische Sicherung)
-                const abortRoll = Math.floor(Math.random() * 100) + 1;
-                if (abortRoll <= riskData.abortRate) {
+                const rollAbbruch = Math.random() * 100;
+                console.log("DEBUG WÜRFEL 1 (Abbruch): Gewürfelt " + rollAbbruch + " gegen Quote " + riskData.abortRate);
+                
+                if (rollAbbruch <= riskData.abortRate) {
+                    console.log("ERGEBNIS: ABBRUCH!");
                     eventBus.emit('SHOW_DIALOG', {
                         title: 'Abbruch!',
-                        text: "Die mechanischen Sicherungen waren zu stark. Du musstest fliehen, bevor die Bullen kamen.",
+                        text: "Die mechanischen Sicherungen waren zu stark. Du musstest abbrechen und fliehen!",
                         buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
                     });
                     this.#resetBurglaryState();
@@ -148,8 +151,11 @@ class Game {
                 }
 
                 // 2. Risiko-Check (Entdeckung)
-                const riskRoll = Math.floor(Math.random() * 100) + 1;
-                if (riskRoll <= riskData.totalRisk) {
+                const rollRisiko = Math.random() * 100;
+                console.log("DEBUG WÜRFEL 2 (Risiko): Gewürfelt " + rollRisiko + " gegen Quote " + riskData.totalRisk);
+                
+                if (rollRisiko <= riskData.totalRisk) {
+                    console.log("ERGEBNIS: ERWISCHT!");
                     const fine = Math.ceil(this.#budget * 0.2);
                     this.deductBudget(fine);
                     eventBus.emit('SHOW_DIALOG', {
@@ -159,6 +165,7 @@ class Game {
                     });
                 } else {
                     // 3. Erfolg
+                    console.log("ERGEBNIS: ERFOLG!");
                     const amount = this.calculateLoot(riskData);
                     this.addReward(amount);
                     eventBus.emit('SHOW_DIALOG', {

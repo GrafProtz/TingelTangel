@@ -19,7 +19,7 @@ const CITIES = [
 
 async function initApp() {
     const mapData = new MapData();
-    const mapView = new MapView('map');
+    let mapView;
     const game    = new Game(mapData);
     const hud     = new HUDManager();
     const interaction = new InteractionManager();
@@ -194,6 +194,8 @@ async function initApp() {
     const setupGameSession = async (city, isContinue) => {
         mapData.cityName = city.name;
         saveManager.setCurrentCity(city.name);
+        
+        mapView = new MapView('map', city.coords);
         
         await mapData.loadCityData(city.coords);
         
