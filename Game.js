@@ -108,8 +108,23 @@ class Game {
             }
         });
 
-        eventBus.subscribe('INVESTMENT_SELECTED', (targetType) => {
-            eventBus.emit('SPAWN_TARGETS', { targetType, centerNodeId: this.#currentPlayerNodeId });
+        eventBus.subscribe('SELECT_CATEGORY_WOHNUNG', () => {
+            eventBus.emit('SPAWN_TARGETS', { targetType: 'residential', centerNodeId: this.#currentPlayerNodeId });
+            this.resume();
+        });
+
+        eventBus.subscribe('SELECT_CATEGORY_GEWERBE', () => {
+            eventBus.emit('SPAWN_TARGETS', { targetType: 'commercial', centerNodeId: this.#currentPlayerNodeId });
+            this.resume();
+        });
+
+        eventBus.subscribe('SELECT_CATEGORY_OEFFENTLICH', () => {
+            eventBus.emit('SPAWN_TARGETS', { targetType: 'public', centerNodeId: this.#currentPlayerNodeId });
+            this.resume();
+        });
+
+        eventBus.subscribe('SELECT_CATEGORY_LAUBE', () => {
+            eventBus.emit('SPAWN_TARGETS', { targetType: 'allotments', centerNodeId: this.#currentPlayerNodeId });
             this.resume();
         });
 
@@ -143,7 +158,10 @@ class Game {
             }, 500);
         });
 
-        eventBus.subscribe('RESUME_GAME', () => this.resume());
+        eventBus.subscribe('RESUME_GAME', () => {
+            eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-find-target' });
+            this.resume();
+        });
         eventBus.subscribe('RADAR_ACKNOWLEDGED', () => {
             // Wird in main.js abgefangen für die Kamerafahrt, Game bleibt pausiert
         });

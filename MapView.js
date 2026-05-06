@@ -16,7 +16,8 @@ class MapView {
      * @param {string} mapElementId
      */
     constructor(mapElementId) {
-        this._map = L.map(mapElementId, { zoomControl: false }).setView([51.5139, 7.4653], 13);
+        this._map = L.map(mapElementId, { zoomControl: true }).setView([51.5139, 7.4653], 13);
+        this._map.zoomControl.setPosition('bottomright');
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,

@@ -44,7 +44,7 @@ export class InteractionManager {
         
         // 2. Dialog-Box
         const dialogBox = document.createElement('div');
-        dialogBox.className = 'dialog-box glass-panel';
+        dialogBox.className = `dialog-box glass-panel ${config.isWide ? 'modal-wide' : ''}`;
         
         // 3. Inhalt (Header & Body)
         let html = `<h3 class="dialog-title">${config.title}</h3>`;
@@ -57,7 +57,7 @@ export class InteractionManager {
         config.buttons.forEach((btnCfg, index) => {
             const btn = document.createElement('button');
             btn.className = `btn-base ${btnCfg.className || ''}`;
-            btn.innerText = btnCfg.text;
+            btn.innerHTML = btnCfg.text;
             
             btn.onclick = () => {
                 this.closeAllOverlays();
@@ -150,23 +150,58 @@ export class InteractionManager {
 
     #handleInvestmentInteraction({ cityName }) {
         const options = [
-            { type: 'residential', title: 'Wohnungen', desc: 'Konservativ. Aufklärungsquote: 16%.' },
-            { type: 'commercial', title: 'Gewerbe', desc: 'Tech-ETF. Aufklärungsquote: 22%.' },
-            { type: 'public', title: 'Öffentlich', desc: 'Risikoreich. Aufklärungsquote: 25%.' },
-            { type: 'allotments', title: 'Gärten', desc: 'Penny-Stock. Aufklärungsquote: 8-10%.' }
+            { 
+                type: 'residential', 
+                event: 'SELECT_CATEGORY_WOHNUNG',
+                title: 'Wohnungen', 
+                subtitle: '(Residential Assets)',
+                desc: 'Der Blue-Chip. 78.000 Fälle/Jahr. Bullen-Quote: nur 15%. Dividende: Ø 3.800€. Sicher und profitabel.',
+                icon: '<svg viewBox="0 0 24 24" width="32" height="32" style="margin-bottom:8px;"><path fill="currentColor" d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>'
+            },
+            { 
+                type: 'commercial', 
+                event: 'SELECT_CATEGORY_GEWERBE',
+                title: 'Gewerbe', 
+                subtitle: '(High-Risk Derivate)',
+                desc: 'Lager und Büros. Extrem heiß! Alarmanlagen treiben die Bullen-Quote auf 20-40%. Payoff: Stark variabel bis >10.000€. Nur für starke Nerven.',
+                icon: '<svg viewBox="0 0 24 24" width="32" height="32" style="margin-bottom:8px;"><path fill="currentColor" d="M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z"/></svg>'
+            },
+            { 
+                type: 'public', 
+                event: 'SELECT_CATEGORY_OEFFENTLICH',
+                title: 'Behörden', 
+                subtitle: '(Public Bonds)',
+                desc: 'Schulen und Ämter. Risiko ebenfalls bei 20-40%. Beute unberechenbar – von der Kaffeekasse bis zum Tresor. Ein volatiler Markt.',
+                icon: '<svg viewBox="0 0 24 24" width="32" height="32" style="margin-bottom:8px;"><path fill="currentColor" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>'
+            },
+            { 
+                type: 'allotments', 
+                event: 'SELECT_CATEGORY_LAUBE',
+                title: 'Schrebergärten', 
+                subtitle: '(Penny Stocks)',
+                desc: 'Lauben und Schuppen. Riesiger Markt (108.000 Fälle), Bullen-Quote unter 15%. Rendite mau (< 2.000€), aber dafür quasi stressfrei.',
+                icon: '<svg viewBox="0 0 24 24" width="32" height="32" style="margin-bottom:8px;"><path fill="currentColor" d="M17 15.58V21H7v-5.42L12 13l5 2.58zM12 3L4 9v1h16V9l-8-6zM5 11v2h14v-2H5z"/></svg>'
+            }
         ];
 
         this.showDialog({
-            title: 'Investment Consultant',
-            body: `<p><i>"Ah, ein Investor! Lass uns einen Blick auf das Portfolio für ${cityName || 'diese Stadt'} werfen."</i></p>`,
+            title: 'Crime Consultant',
+            isWide: true,
+            body: `<p style="margin-bottom: 20px;"><i>"Setz dich. Ich bin dein Crime Consultant. Jedes Gebäude hier ist ein Investmentfonds mit eigenem Risiko-Rendite-Profil. Schauen wir uns die Marktwerte an..."</i></p>`,
             buttons: [
                 ...options.map(opt => ({
-                    text: `${opt.title} (${opt.desc})`,
-                    event: 'INVESTMENT_SELECTED',
-                    payload: opt.type,
+                    text: `
+                        <div style="display:flex; flex-direction:column; align-items:center; text-align:center;">
+                            <div class="investment-icon" style="color:var(--color-primary);">${opt.icon}</div>
+                            <strong style="font-size:1.1rem; color:var(--color-primary);">${opt.title}</strong>
+                            <span style="font-size:0.8rem; opacity:0.7; margin-bottom:8px;">${opt.subtitle}</span>
+                            <small style="font-size:0.85rem; line-height:1.4;">${opt.desc}</small>
+                        </div>
+                    `,
+                    event: opt.event,
                     className: 'btn-investment'
                 })),
-                { text: 'Abbrechen', event: 'INVESTMENT_CANCELLED', className: 'btn-secondary' }
+                { text: 'Portfolio schließen', event: 'INVESTMENT_CANCELLED', className: 'btn-secondary' }
             ]
         });
     }

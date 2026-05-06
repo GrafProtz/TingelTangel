@@ -261,7 +261,7 @@ html, body {
 
 .dialog-box {
     width: 100%;
-    max-width: 480px;
+    max-width: 560px; /* Erhöht für den Crime Consultant Text */
     background: var(--color-bg-panel);
     border-radius: var(--border-radius-lg);
     padding: 40px;
@@ -272,6 +272,22 @@ html, body {
 @keyframes dialogIn {
     from { opacity: 0; transform: scale(0.95) translateY(10px); }
     to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.modal-wide {
+    max-width: 850px !important;
+    width: 95%;
+}
+
+.modal-wide .dialog-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+}
+
+.modal-wide .btn-secondary {
+    grid-column: span 2;
+    margin-top: 10px;
 }
 
 .dialog-title {
@@ -315,6 +331,38 @@ html, body {
 .btn-option:hover {
     border-color: var(--color-primary);
     background: #eff6ff;
+}
+
+.btn-investment {
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+    padding: 18px 24px;
+    background: var(--color-bg-alt);
+    color: var(--color-text);
+    border: 2px solid transparent;
+}
+
+.btn-investment:hover {
+    background: #ffffff;
+    border-color: var(--color-primary);
+    transform: translateX(4px);
+    box-shadow: var(--shadow-md);
+}
+
+.btn-investment strong {
+    font-size: 1.15rem;
+    margin-bottom: 4px;
+    display: block;
+    color: var(--color-primary);
+}
+
+.btn-investment small {
+    font-size: 0.88rem;
+    color: var(--color-text-muted);
+    font-weight: 400;
+    line-height: 1.4;
+    display: block;
 }
 
 .warning-box {
@@ -459,6 +507,7 @@ html, body {
 
 /* Map Elements Styling */
 #map { flex-grow: 1; background: #e5e7eb; }
+.leaflet-control-zoom { z-index: 8000 !important; }
 #app-container { display: flex; width: 100%; height: 100vh; }
 
 #cinema-overlay {
