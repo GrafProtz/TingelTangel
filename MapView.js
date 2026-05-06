@@ -50,36 +50,36 @@ class MapView {
     // ----------------------------------------------------------------
 
     /**
-     * Zeigt rote Kreise um alle Polizeistationen für 5 Sekunden.
-     * Nutze async/await für eine exakte visuelle Choreografie.
-     * @param {Array} policeStations - [{ lat, lon }, ...]
-     * @param {Array} playerCoords - [lat, lon]
+     * Dramatische Kaskade für die Polizei-Aufdeckung (Totale -> Pulsierende Marker -> Zurück)
+     * Nutzt den Camera Lock, um das Spiel währenddessen komplett einzufrieren.
      */
-    async showPoliceRadar(policeStations, playerCoords) {
+    async playPoliceRevealSequence(policeStations, playerCoords) {
+        if (policeStations.length === 0) return;
+        
+        // 1. Camera Lock anlegen
+        this._isIntroFlying = true;
+
         // Alte Marker sofort löschen
         this._radarMarkers.forEach(c => this._map.removeLayer(c));
         this._radarMarkers = [];
 
-        if (policeStations.length === 0) return;
-
-        // 1. Kamerafahrt vorbereiten & Start (Zoom heraus)
+        // 2. Bounding Box (Totale) berechnen und anfliegen
         const bounds = L.latLngBounds();
         if (playerCoords) bounds.extend(playerCoords);
         policeStations.forEach(s => bounds.extend([s.lat, s.lon]));
 
-        console.log('[RADAR] Kamera zoomt raus...');
+        this._map.invalidateSize();
         this._map.flyToBounds(bounds, { padding: [50, 50], duration: 1.5 });
 
-        // 2. Warten, bis die Kamerafahrt beendet ist (1.5s + kleiner Puffer)
+        // Warten, bis die Kamera oben in der Totale angekommen ist
         await new Promise(r => setTimeout(r, 1600));
 
-        // 3. Jetzt erst die Stationen und Ringe zeichnen
-        console.log('[RADAR] Zeichne Polizeistationen...');
+        // 3. Polizei-Marker mit UIAnimator Puls-Klasse ins DOM rendern
         const sirenIcon = L.divIcon({
-            html: '<div class="police-siren"></div>',
-            className: '',
-            iconSize: [8, 8],
-            iconAnchor: [4, 4]
+            html: '<div class="target-marker-inner poi-spawn-pulse" style="background-color: #3b82f6; border: 2px solid white; border-radius: 50%; width: 100%; height: 100%; box-shadow: 0 0 15px #3b82f6;"></div>',
+            className: 'police-siren-marker',
+            iconSize: [20, 20],
+            iconAnchor: [10, 10]
         });
 
         const RADII_METERS = [450, 300, 150]; 
@@ -107,24 +107,22 @@ class MapView {
             this._radarMarkers.push(siren);
         });
 
-        // 4. Warten für die Radar-Anzeigezeit (5 Sekunden)
+        // 4. Dramatische Pause (5000ms), während die Stationen pulsieren
         await new Promise(r => setTimeout(r, 5000));
 
-        // 5. Ringe und Stationen wieder löschen
-        console.log('[RADAR] Entferne Markierungen...');
+        // 5. Polizei-Marker wieder vernichten
         this._radarMarkers.forEach(c => this._map.removeLayer(c));
         this._radarMarkers = [];
 
-        // 6. Kamera zoomt zurück zum Spieler
+        // 6. Rückflug zum Spieler berechnen und ausführen
         if (playerCoords) {
-            console.log('[RADAR] Kamera zoomt zurück zum Spieler...');
-            this._map.flyTo(playerCoords, 16, { duration: 1.5 });
-
-            // 7. Warten, bis Kamera wieder beim Spieler ist
+            const tightBounds = L.latLngBounds([playerCoords]);
+            this._map.flyToBounds(tightBounds, { maxZoom: 16.5, duration: 1.5 });
             await new Promise(r => setTimeout(r, 1600));
         }
 
-        console.log('[RADAR] Sequenz beendet.');
+        // 7. Camera Lock wieder aufheben
+        this._isIntroFlying = false;
     }
 
     // ----------------------------------------------------------------

@@ -26,6 +26,20 @@ export class UIManager {
         eventBus.subscribe('SHOW_INFO_CASCADE', this.handleCascade.bind(this));
         eventBus.subscribe('INTRO_COMPLETE', this.handleIntroComplete.bind(this));
         
+        eventBus.subscribe('REMOVE_LOG_ENTRY', (data) => {
+            if (data && data.logId) {
+                const el = document.getElementById(data.logId);
+                if (el) el.remove();
+            }
+        });
+
+        eventBus.subscribe('ADD_LOG_ENTRY', (data) => {
+            this.handleAddLogEntry(data);
+            if (data.notify) {
+                this._notifyLogEntry();
+            }
+        });
+        
         this.infoModalBtn.addEventListener('click', () => {
             this.triggerCascadeAnimation();
         });
@@ -43,6 +57,42 @@ export class UIManager {
         this.infoModal.classList.remove('fly-to-sidebar');
     }
 
+    handleAddLogEntry(data) {
+        const entry = this._createLogEntry(data);
+        this.sidebarLogContent.prepend(entry);
+    }
+
+    _createLogEntry(data) {
+        const entry = document.createElement('div');
+        entry.classList.add('log-entry');
+        if (data.logId) {
+            entry.id = data.logId;
+        }
+        const title = data.title ? `<strong>${data.title}</strong><br>` : "";
+        entry.innerHTML = `${title}${data.shortText}`;
+        return entry;
+    }
+
+    _notifyLogEntry() {
+        // 3. Sidebar öffnen
+        this.sidebarLog.classList.remove('sidebar-closed');
+        this.sidebarLog.classList.add('sidebar-open');
+
+        // 5. Auto-Close nach 10 Sekunden
+        setTimeout(() => {
+            if (this.sidebarLog.classList.contains('sidebar-open')) {
+                this.sidebarLog.classList.remove('sidebar-open');
+                this.sidebarLog.classList.add('sidebar-closed');
+                
+                this.sidebarToggle.classList.add('attention-pulse');
+                
+                setTimeout(() => {
+                    this.sidebarToggle.classList.remove('attention-pulse');
+                }, 1500);
+            }
+        }, 10000);
+    }
+
     triggerCascadeAnimation() {
         if (!this.currentCascadeData) return;
 
@@ -55,22 +105,21 @@ export class UIManager {
             this.infoModal.classList.add('hidden');
             this.infoModal.classList.remove('fly-to-sidebar');
 
-            // 3. Sidebar öffnen
-            this.sidebarLog.classList.remove('sidebar-closed');
-            this.sidebarLog.classList.add('sidebar-open');
-
             // 4. Log-Eintrag hinzufügen
-            const entry = document.createElement('div');
-            entry.classList.add('log-entry');
-            entry.innerHTML = `<strong>${this.currentCascadeData.title}</strong><br>${this.currentCascadeData.shortText}`;
+            this.handleAddLogEntry(this.currentCascadeData);
             
-            // Oben anfügen
-            this.sidebarLogContent.prepend(entry);
+            // Sidebar öffnen und schließen
+            this._notifyLogEntry();
             
+            const nextEvent = this.currentCascadeData.nextEvent;
             this.currentCascadeData = null;
 
-            // Trigger Map Action!
-            eventBus.emit('START_MAP_INTRO');
+            // Trigger Map Action oder benutzerdefiniertes Folge-Event
+            if (nextEvent) {
+                eventBus.emit(nextEvent);
+            } else {
+                eventBus.emit('START_MAP_INTRO');
+            }
         }, 600);
     }
 

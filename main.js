@@ -133,6 +133,7 @@ async function initApp() {
     eventBus.subscribe('OPTION_C_CLICKED', () => {
         console.log('Option C geklickt: Risiko-Tipp gekauft (Platzhalter).');
         eventBus.emit('SHOW_TOAST', { msg: "Risiko-Tipp gekauft (Feature in Entwicklung)", type: 'success' });
+        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
         eventBus.emit('CLOSE_INTERACTION');
         game.resume();
     });
@@ -140,6 +141,7 @@ async function initApp() {
     eventBus.subscribe('OPTION_D_CLICKED', () => {
         console.log('Option D geklickt: Bolzenschneider & Fahrrad-Quest (Platzhalter).');
         eventBus.emit('SHOW_TOAST', { msg: "Bolzenschneider gekauft (Feature in Entwicklung)", type: 'success' });
+        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
         eventBus.emit('CLOSE_INTERACTION');
         game.resume();
     });
@@ -151,12 +153,24 @@ async function initApp() {
         });
     });
 
-    // ----- Radar Sequence (Kamerafahrt nach Kauf) -----
+    // ----- Police Reveal Sequence (Kamerafahrt nach Intro Dialog) -----
+    eventBus.subscribe('START_POLICE_REVEAL', async () => {
+        const policeStations = mapData.getPoliceStations();
+        const playerNode = mapData.getNode(game.getState().currentPlayerNodeId);
+        const playerCoords = playerNode ? [playerNode.lat, playerNode.lon] : null;
+
+        await mapView.playPoliceRevealSequence(policeStations, playerCoords);
+        
+        console.log('[MAIN] Police-Reveal beendet, Spiel wird freigegeben.');
+        game.resume();
+    });
+
+    // ----- Radar Sequence (Kamerafahrt nach Kauf durch Hotkey P) -----
     eventBus.subscribe('RADAR_SEQUENCE_START', async () => {
         const result = game.triggerRadar(true); // force=true um Cooldown zu ignorieren
         if (result && result !== 'cooldown') {
             // Warten bis die gesamte Choreografie (Zoom raus -> 5s Display -> Zoom rein) fertig ist
-            await mapView.showPoliceRadar(result.stations, result.playerCoords);
+            await mapView.playPoliceRevealSequence(result.stations, result.playerCoords);
             
             // Erst jetzt das Spiel wieder freigeben
             console.log('[MAIN] Radar-Sequenz beendet, Spiel wird fortgesetzt.');
@@ -169,7 +183,7 @@ async function initApp() {
         if (e.key.toLowerCase() !== 'p') return;
         const result = game.triggerRadar();
         if (result === null || result === 'cooldown') return;
-        mapView.showPoliceRadar(result.stations, result.playerCoords);
+        mapView.playPoliceRevealSequence(result.stations, result.playerCoords);
     });
 
     // Dropdown-Logik: Prüfe auf Savegame

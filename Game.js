@@ -55,6 +55,17 @@ class Game {
                 const cost = 75; // TODO: In CONFIG verschieben
                 if (this.canAfford(cost)) {
                     this.deductBudget(cost);
+
+                    // Cleanup altes Ziel
+                    eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
+
+                    // Neues Ziel still hinzufügen mit Benachrichtigung
+                    eventBus.emit('ADD_LOG_ENTRY', {
+                        shortText: "Ziel: Halte an den grünen Knotenpunkten Ausschau nach lukrativen Objekten für deinen ersten Bruch.",
+                        logId: 'goal-find-target',
+                        notify: true
+                    });
+
                     eventBus.emit('OPEN_INVESTMENT', { cityName: this.#mapData.cityName });
                 } else {
                     eventBus.emit('SHOW_TOAST', { msg: "Nicht genug Geld für den Berater!", type: 'fail' });
@@ -64,11 +75,18 @@ class Game {
                 // Standard-Entscheidungen (A, C, D)
                 const msg = this.handleInteractionDecision(key, option);
                 
-                eventBus.emit('SHOW_TOAST', { 
-                    msg, 
-                    type: (msg.includes('✅') || msg.includes('📡') || !msg.includes('❌')) ? 'success' : 'fail' 
-                });
+                // Spezialfall: Radar-Tutorial bei Erstkauf (Option A)
+                // Wenn eine Kaskade folgt, unterdrücken wir den redundanten Toast
+                const isCascade = (key === 'A' && this.#radarUnlocked && this.#missionPhase < 2);
 
+                if (!isCascade) {
+                    eventBus.emit('SHOW_TOAST', { 
+                        msg, 
+                        type: (msg.includes('✅') || msg.includes('📡') || !msg.includes('❌')) ? 'success' : 'fail' 
+                    });
+                }
+
+                eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
                 eventBus.emit('CLOSE_INTERACTION');
 
                 // Spezialfall: Radar-Tutorial bei Erstkauf (Option A)
@@ -76,11 +94,13 @@ class Game {
                     this.#missionPhase = 2;
                     this.#emitMissionUpdate();
                     
-                    eventBus.emit('SHOW_DIALOG', {
-                        title: '📡 Radar freigeschaltet',
-                        text: 'Du hast die Polizeifrequenzen! Drücke ab jetzt jederzeit "P", um die Standorte der Polizei für 5 Sekunden auf der Karte aufzudecken. Nutze es weise!',
-                        buttons: [{ text: 'Verstanden', event: 'RADAR_ACKNOWLEDGED' }],
-                        isRadarUnlock: true
+                    const numberOfPoliceStations = this.#mapData.getPoliceStations().length;
+                    
+                    eventBus.emit('SHOW_INFO_CASCADE', {
+                        title: "Auge des Gesetzes",
+                        fullText: "Wir haben in diesem Sektor " + numberOfPoliceStations + " Polizeistationen. Hör gut zu: Je näher du an einer Wache ein Ding drehst, desto extremer steigt dein Risiko, geschnappt zu werden.<br><br>Damit du nicht blind in die Falle läufst: Mit dem Hotkey 'P' kannst du alle 5 Minuten für 5 Sekunden die Standorte der Bullen aufdecken. Präg sie dir gut ein!",
+                        shortText: "Polizeipräsenz aufgedeckt. Hotkey 'P' nutzt einen 5-Sekunden-Scan (Cooldown: 5 Min).",
+                        nextEvent: "START_POLICE_REVEAL"
                     });
                 } else {
                     this.resume();
@@ -217,7 +237,8 @@ class Game {
         eventBus.emit('SHOW_INFO_CASCADE', {
             title: "Willkommen in der Unterwelt",
             fullText: "Willkommen in " + cityName + ", Grünschnabel. Die städtische Verbrecher-Innung gewährt dir ein Startkapital von 300 Euro. Betrachte es als Vorschuss. Dein erstes Ziel: Beweg deinen Hintern in die Kneipe namens '" + this.#targetPubName + "', nicht weit weg von hier. Dort schnappen wir ein paar lukrative Gerüchte auf, wie man hier an echtes Geld kommt.<br><br>Aber merk dir eins: Wir spazieren hier nicht gemütlich über den Bürgersteig. Wir bewegen uns unter dem Radar, von Knotenpunkt zu Knotenpunkt – wir 'hoppeln' quasi unsichtbar durch die Stadt. Und das kostet! Jeder verdammte Meter frisst dein Guthaben auf. Plane deine Route über die grünen Punkte also extrem clever, sonst bist du pleite, bevor du überhaupt dein erstes Ding gedreht hast.",
-            shortText: "Ziel: Erreiche die Kneipe '" + this.#targetPubName + "'. (Achtung: Jeder Meter über die Knotenpunkte kostet Startkapital!)"
+            shortText: "Ziel: Erreiche die Kneipe '" + this.#targetPubName + "'. (Achtung: Jeder Meter über die Knotenpunkte kostet Startkapital!)",
+            logId: 'goal-visit-pub'
         });
     }
 
