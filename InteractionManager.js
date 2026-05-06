@@ -111,15 +111,15 @@ export class InteractionManager {
                     className: 'btn-option',
                     // Wenn Bestätigung nötig, triggere Phase 2 lokal im Manager
                     onclick: opt.requiresConfirmation ? () => renderPhase2(key, opt) : null,
-                    // Ansonsten feure direkt die Entscheidung
-                    event: opt.requiresConfirmation ? null : 'INTERACTION_SELECTED',
-                    payload: opt.requiresConfirmation ? null : { key, option: opt }
+                    // Ansonsten feure direkt die Entscheidung oder ein Custom Event
+                    event: opt.requiresConfirmation ? null : (opt.customEvent || 'INTERACTION_SELECTED'),
+                    payload: opt.requiresConfirmation ? null : (opt.customPayload || { key, option: opt })
                 });
             });
 
             this.showDialog({
                 title: 'In der Kneipe',
-                body: 'Du hörst dich unauffällig um. Was tust du?',
+                body: 'Ah, ein neues Gesicht in meiner Kaschemme. Was führt dich in diese Ecke der Stadt, Grünschnabel? Trinkst du was, oder willst du direkt zur Sache kommen? Lass dir eins gesagt sein: Hier in der Unterwelt gibt\'s keine Geschenke. Also, was für Geschäfte schweben dir vor?',
                 buttons: buttons
             });
         };

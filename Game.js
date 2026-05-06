@@ -513,8 +513,8 @@ class Game {
         const optionsData = {
             A: { text: STRINGS.interactions.pub.optionA(cityName), cost: CONFIG.RADAR_COST, risk: 0 },
             B: { text: STRINGS.interactions.pub.optionB(0), requiresConfirmation: false, cost: 75 },
-            C: { text: STRINGS.interactions.pub.optionC('?'), requiresConfirmation: true, reward: 300 },
-            D: { text: STRINGS.interactions.pub.optionD, cost: CONFIG.INFO_COST, risk: 0 }
+            C: { text: STRINGS.interactions.pub.optionC(), requiresConfirmation: false, customEvent: 'OPTION_C_CLICKED' },
+            D: { text: STRINGS.interactions.pub.optionD, requiresConfirmation: false, customEvent: 'OPTION_D_CLICKED' }
         };
 
         const currentNode = this.#mapData.getNode(this.#currentPlayerNodeId);

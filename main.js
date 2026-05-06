@@ -129,6 +129,20 @@ async function initApp() {
     });
 
     eventBus.subscribe('RELOAD_GAME', () => location.reload());
+    
+    eventBus.subscribe('OPTION_C_CLICKED', () => {
+        console.log('Option C geklickt: Risiko-Tipp gekauft (Platzhalter).');
+        eventBus.emit('SHOW_TOAST', { msg: "Risiko-Tipp gekauft (Feature in Entwicklung)", type: 'success' });
+        eventBus.emit('CLOSE_INTERACTION');
+        game.resume();
+    });
+
+    eventBus.subscribe('OPTION_D_CLICKED', () => {
+        console.log('Option D geklickt: Bolzenschneider & Fahrrad-Quest (Platzhalter).');
+        eventBus.emit('SHOW_TOAST', { msg: "Bolzenschneider gekauft (Feature in Entwicklung)", type: 'success' });
+        eventBus.emit('CLOSE_INTERACTION');
+        game.resume();
+    });
 
     eventBus.subscribe('PUB_TARGET_REACHED', () => {
         game.pause();
