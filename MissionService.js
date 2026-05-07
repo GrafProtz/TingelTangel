@@ -109,4 +109,43 @@ export class MissionService {
             .sort(() => Math.random() - 0.5)
             .slice(0, 3);
     }
+
+    /**
+     * Erzeugt 3 Fahrrad-Ziele (bicycle_parking) in der Nähe des Spielers.
+     * @param {MapData} mapData 
+     * @param {Object} playerCoords {lat, lon}
+     * @returns {Array} Liste der Fahrrad-Ziele
+     */
+    spawnBicycleTargets(mapData, playerCoords) {
+        const allParkings = mapData.getBicycleParkings();
+        console.log("TRACE BIKES: Rohdaten Stellplätze gefunden:", allParkings.length);
+        
+        if (!allParkings || allParkings.length === 0) return [];
+
+        const candidates = allParkings
+            .map(p => {
+                const dist = mapData.calculateDistance(playerCoords, p);
+                const accessNode = mapData.findNearestGraphNode(p.lat, p.lon);
+                console.log("TRACE BIKES: Prüfe Stellplatz", p.id, "Distance:", dist, "Hat AccessNode:", !!accessNode);
+                return { ...p, distance: dist, accessNode };
+            })
+            .filter(p => p.distance >= 50 && p.distance <= 500 && p.accessNode !== null) // 50m bis 500m
+            .sort((a, b) => a.distance - b.distance);
+
+        console.log("TRACE BIKES: Kandidaten nach Filterung:", candidates.length);
+
+        // Die 3 nächsten Stellplätze auswählen
+        const selected = candidates.slice(0, 3);
+
+        return selected.map(p => {
+            return {
+                id: p.id,
+                lat: p.lat,
+                lon: p.lon,
+                type: 'bicycle',
+                accessNodeId: String(p.accessNode.id),
+                name: p.tags?.name || 'Fahrradständer'
+            };
+        });
+    }
 }

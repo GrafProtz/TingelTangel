@@ -81,6 +81,8 @@ class MapData {
     #ways = new Map();
     #pubs = [];
     #policeStations = [];
+    #hairdressers = [];
+    #bicycleParkings = [];
     #macroGraph = new Map();
     #spatialIndex = new Map();
     #gridSize = 0.001;
@@ -97,6 +99,10 @@ class MapData {
         this.cityName = '';
     }
 
+    getBicycleParkings() {
+        return this.#bicycleParkings;
+    }
+
     async #yieldToMain() {
         return new Promise(resolve => setTimeout(resolve, 0));
     }
@@ -106,6 +112,7 @@ class MapData {
     // ----------------------------------------------------------------
 
     async loadCityData(coords) {
+        console.warn("WICHTIG: Bitte lösche einmal manuell den IndexedDB Cache im Browser (Application -> Storage -> Clear site data), um die neuen Friseur-Daten von Overpass zu laden!");
         eventBus.emit('map:load:start', { message: 'Prüfe Cache...' });
 
         // 1. API Resilienz (Vorherigen Request abbrechen)
@@ -132,9 +139,13 @@ class MapData {
                     way["highway"](${s},${w},${n},${e});
                     node["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
                     way["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
-                    way["building"](${s},${w},${n},${e});
                     node["amenity"~"police|police_station"](${s},${w},${n},${e});
                     way["amenity"~"police|police_station"](${s},${w},${n},${e});
+                    way["building"](${s},${w},${n},${e});
+                    node["shop"="hairdresser"](${s},${w},${n},${e});
+                    way["shop"="hairdresser"](${s},${w},${n},${e});
+                    node["amenity"="bicycle_parking"](${s},${w},${n},${e});
+                    way["amenity"="bicycle_parking"](${s},${w},${n},${e});
                     relation["amenity"~"police|police_station"](${s},${w},${n},${e});
                     node["office"="government"]["government"="police"](${s},${w},${n},${e});
                     way["office"="government"]["government"="police"](${s},${w},${n},${e});
@@ -193,6 +204,8 @@ class MapData {
         this.#policeStations = [];
         this.#spatialIndex.clear();
         this.#macroGraph.clear();
+        this.#hairdressers = [];
+        this.#bicycleParkings = [];
 
         const total = data.elements.length;
         let lastYield = performance.now();
@@ -214,6 +227,8 @@ class MapData {
                 (office === 'government' && gov === 'police')
             );
             const isPub = (amenity === 'pub' || amenity === 'bar' || amenity === 'restaurant');
+            const isHairdresser = (el.tags?.shop === 'hairdresser');
+            const isBicycleParking = (amenity === 'bicycle_parking');
 
             if (el.type === 'node') {
                 const nd = { ...el, id: safeId };
@@ -221,6 +236,8 @@ class MapData {
                 this.#addToSpatialIndex(nd);
                 if (isPub) this.#pubs.push(nd);
                 if (isPolice) this.#policeStations.push({ lat: el.lat, lon: el.lon });
+                if (isHairdresser) this.#hairdressers.push(nd);
+                if (isBicycleParking) this.#bicycleParkings.push(nd);
 
             } else if (el.type === 'way') {
                 this.#ways.set(safeId, el);
@@ -228,6 +245,12 @@ class MapData {
                 const cLon = el.center?.lon ?? this.#nodes.get(String(el.nodes?.[0]))?.lon;
                 if (isPub && cLat != null) {
                     this.#pubs.push({ ...el, lat: cLat, lon: cLon, id: safeId });
+                }
+                if (isHairdresser && cLat != null) {
+                    this.#hairdressers.push({ ...el, lat: cLat, lon: cLon, id: safeId });
+                }
+                if (isBicycleParking && cLat != null) {
+                    this.#bicycleParkings.push({ ...el, lat: cLat, lon: cLon, id: safeId });
                 }
                 if (isPolice && cLat != null) {
                     this.#policeStations.push({ lat: cLat, lon: cLon });
@@ -248,6 +271,7 @@ class MapData {
                 lastYield = performance.now();
             }
         }
+
 
         console.log(`MapData: ${this.#policeStations.length} Polizeistationen erfasst.`);
     }
@@ -454,6 +478,14 @@ class MapData {
     //  Öffentliche API (Kapselung)
     // ----------------------------------------------------------------
 
+    getPoliceStations() {
+        return [...this.#policeStations];
+    }
+
+    getHairdressers() {
+        return [...this.#hairdressers];
+    }
+
     /** Gibt alle Knoten-IDs zurück, die Teil des navigierbaren Wegenetzes sind. */
     getConnectedNodeIds() {
         return Array.from(this.#macroGraph.keys());
@@ -469,10 +501,6 @@ class MapData {
             }
         });
         return result;
-    }
-
-    getPoliceStations() {
-        return [...this.#policeStations];
     }
 
     getNode(id) {
@@ -499,6 +527,10 @@ class MapData {
 
     getPubs() {
         return [...this.#pubs];
+    }
+
+    getBicycleParkings() {
+        return [...this.#bicycleParkings];
     }
 
     getPoliceRiskModifier(poiCoords) {

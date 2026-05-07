@@ -42,6 +42,41 @@ class MapView {
         eventBus.subscribe('INTRO_COMPLETE', () => {
             this._isIntroFlying = false;
         });
+
+        eventBus.subscribe('START_BARBER_REVEAL', (data) => {
+            console.log("DEBUG: Barber Reveal gestartet mit Node:", data.node);
+            if (!data.node) return;
+            this._isIntroFlying = true;
+
+            const lat = parseFloat(data.node.lat);
+            const lng = parseFloat(data.node.lon || data.node.lng);
+
+            if (isNaN(lat) || isNaN(lng)) { 
+                console.error("Kamera-Fehler: Keine validen Float-Koordinaten für Barber-Reveal!"); 
+                this._isIntroFlying = false;
+                return; 
+            }
+
+            const playerPos = this._playerMarker.getLatLng();
+            const barberPos = [lat, lng];
+            
+            // Bounding Box aus Spieler und Friseur berechnen
+            const bounds = L.latLngBounds([
+                [playerPos.lat, playerPos.lng],
+                barberPos
+            ]);
+            
+            // Totale anfliegen
+            this._map.flyToBounds(bounds, { padding: [50, 50], maxZoom: 17.5, duration: 2.5 });
+            
+            // Nach 5 Sekunden zurück zum Spieler
+            setTimeout(() => {
+                this._map.flyTo([playerPos.lat, playerPos.lng], 16.5, { duration: 2.0 });
+                setTimeout(() => {
+                    this._isIntroFlying = false;
+                }, 2100);
+            }, 5000);
+        });
     }
 
     #isLockCamera;
@@ -417,11 +452,16 @@ class MapView {
                 this._debugLines.push(line);
             }
 
+            const isSpecial = (poi.type === 'barber' || poi.type === 'bicycle');
             const svg = this._getPOISVG(poi.type || 'pub');
+
+            const innerStyle = isSpecial 
+                ? 'display: inline-block; transform-origin: center center; width: 36px; height: 36px; line-height: 36px; text-align: center; font-size: 20px; background-color: #ffffff; border-radius: 50%; border: 2.5px solid #1e293b; box-shadow: 0 4px 10px rgba(0,0,0,0.5);'
+                : 'display: inline-block; transform-origin: center center;';
 
             const html = `
                 <div class="target-marker-wrapper">
-                    <div class="target-marker-inner" style="display: inline-block; transform-origin: center center;">
+                    <div class="target-marker-inner" style="${innerStyle}">
                         ${svg}
                     </div>
                 </div>
@@ -480,7 +520,10 @@ class MapView {
                 
                 if (marker.getElement()) {
                     marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
-                    UIAnimator.applySpawnEffect(poi.id, marker.getElement());
+                    const el = marker.getElement();
+                    UIAnimator.applySpawnEffect(poi.id, el);
+
+                    // 10-Sekunden-Puls für Fahrräder entfernt - jetzt rein über proximity gesteuert
                 }
             }
 
@@ -531,6 +574,10 @@ class MapView {
                 color = '#fbbf24';
                 pathData = 'M10 6.73L14.71 14H5.29L10 6.73M10 3L2 15h3v7h10v-7h3L10 3z';
                 break;
+            case 'barber':
+                return '✂️';
+            case 'bicycle':
+                return '🚲';
             default:
                 return `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='36' height='36'>`
                     + `<g stroke='#333' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'>`
@@ -667,6 +714,20 @@ class MapView {
             console.error("DEBUG FEHLER: Crash beim Kameraflug:", error);
             this._isIntroFlying = false;
         }
+    }
+
+    renderBarberPOI(node) {
+        const lat = node.lat;
+        const lng = node.lon || node.lng;
+        
+        const icon = L.divIcon({ 
+            className: 'barber-icon poi-spawn-pulse', 
+            html: '<div style="display:flex; justify-content:center; align-items:center; width:30px; height:30px; background:#a855f7; border-radius:50%; border:2px solid white; font-size:18px;">✂️</div>', 
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+        });
+
+        L.marker([lat, lng], { icon }).addTo(this._map);
     }
 }
 

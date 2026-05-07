@@ -20,11 +20,11 @@ const CITIES = [
 async function initApp() {
     const mapData = new MapData();
     let mapView;
-    const game    = new Game(mapData);
+    const missionService = new MissionService(mapData);
+    const game    = new Game(mapData, missionService);
     const hud     = new HUDManager();
     const interaction = new InteractionManager();
     const notification = new NotificationManager();
-    const missionService = new MissionService(mapData);
     const saveManager = new SaveManager();
     const uiManager = new UIManager();
 
@@ -114,6 +114,60 @@ async function initApp() {
             });
         }
 
+        if (state.activeBarber) {
+            const b = state.activeBarber;
+            const accessNode = mapData.getNode(b.accessNodeId);
+            poiList.push({
+                ...b,
+                type: 'barber',
+                accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
+                onClickCallback: () => {
+                    const markerEl = document.querySelector(`.target-marker[data-node-id="${b.accessNodeId}"]`);
+                    const innerEl = markerEl?.querySelector('.target-marker-inner');
+                    const isAtAccessNode = innerEl?.classList.contains('poi-ready-pulse');
+
+                    if (!isAtAccessNode) {
+                        eventBus.emit('SHOW_TOAST', { msg: "Geh näher ran an den Salon!", type: 'fail' });
+                        return;
+                    }
+
+                    game.pause();
+                    eventBus.emit('SHOW_DIALOG', {
+                        title: 'Ein neues Gesicht?',
+                        text: `"Brauchst du ein neues Gesicht, Kumpel? Die Schmiere ist dir dicht auf den Fersen. Setz dich auf den Stuhl, lass mich die Konturen nachziehen und die Matte färben. Wenn du hier rausgehst, erkennt dich nicht mal deine eigene Mutter wieder. Dein Entdeckungsrisiko für den nächsten Bruch schmilzt auf die Hälfte zusammen, und deine Nerven bleiben wie Drahtseile – die Abbruchquote halbiert sich gleich mit. Was sagst du? Ein paar Kröten für ein Ticket in die Unsichtbarkeit?"`,
+                        buttons: [
+                            { text: 'Umstyling starten (50 €)', event: 'BARBER_TRANSFORM_START' },
+                            { text: 'Später vielleicht', event: 'RESUME_GAME' }
+                        ]
+                    });
+                }
+            });
+        }
+
+        if (state.activeBicycleTargets) {
+            state.activeBicycleTargets.forEach(target => {
+                const accessNode = mapData.getNode(target.accessNodeId);
+                poiList.push({
+                    ...target,
+                    type: 'bicycle',
+                    accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
+                    onClickCallback: () => {
+                        const markerEl = document.querySelector(`.target-marker[data-node-id="${target.accessNodeId}"]`);
+                        const innerEl = markerEl?.querySelector('.target-marker-inner');
+                        const isAtAccessNode = innerEl?.classList.contains('poi-ready-pulse');
+
+                        if (!isAtAccessNode) {
+                            eventBus.emit('SHOW_TOAST', { msg: "Steh direkt am Rad, um es zu knacken!", type: 'fail' });
+                            return;
+                        }
+
+                        // Starte Diebstahl-Logik
+                        game.startBicycleTheft(target.id);
+                    }
+                });
+            });
+        }
+
         mapView.renderPOIs(poiList);
 
         const neighbors = mapData.getNeighbors(state.currentPlayerNodeId);
@@ -125,19 +179,85 @@ async function initApp() {
     eventBus.subscribe('RELOAD_GAME', () => location.reload());
     
     eventBus.subscribe('OPTION_C_CLICKED', () => {
-        console.log('Option C geklickt: Risiko-Tipp gekauft (Platzhalter).');
-        eventBus.emit('SHOW_TOAST', { msg: "Risiko-Tipp gekauft (Feature in Entwicklung)", type: 'success' });
-        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
+        const barber = game.findNearestHairdresser();
+        const barberName = barber?.tags?.name || "Schnittwunde";
+        
+        eventBus.emit('SHOW_DIALOG', {
+            title: 'Ein zwielichtiger Tipp',
+            text: `Ich kenne da jemanden. Geh zu '<strong>${barberName}</strong>'. Lass dir die Haare färben, setz eine Brille auf. Wenn du nicht aussiehst wie ein typischer Einbrecher, fällst du weniger auf. Das halbiert dein Risiko und die Hausbesitzer schöpfen nicht so schnell Verdacht, was deine Abbruchquote drastisch senkt.`,
+            buttons: [
+                { 
+                    text: 'Einverstanden (50 €)', 
+                    event: 'BUY_BARBER_TICKET', 
+                    payload: { barber, barberName } 
+                },
+                { text: 'Ablehnen', event: 'RESUME_GAME' }
+            ]
+        });
+    });
+
+    eventBus.subscribe('BUY_BARBER_TICKET', ({ barber, barberName }) => {
+        if (game.canAfford(50)) {
+            game.deductBudget(50);
+            eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
+            eventBus.emit('CLOSE_INTERACTION');
+            
+            eventBus.emit('ADD_LOG_ENTRY', { 
+                shortText: "Ziel: Besuche " + barberName + " für eine Tarnung.", 
+                logId: 'goal-visit-barber', 
+                notify: true 
+            });
+
+            if (barber) {
+                eventBus.emit('START_BARBER_REVEAL', { node: barber });
+                game.setActiveBarber(barber);
+            }
+            
+            game.resume();
+        } else {
+            eventBus.emit('SHOW_TOAST', { msg: "Nicht genug Kohle für den Friseur!", type: 'fail' });
+        }
+    });
+
+    eventBus.subscribe('BARBER_TRANSFORM_START', () => {
+        // 1. Visuelles Feedback: Segel-Animation zum Logbuch
+        const flyer = document.createElement('div');
+        flyer.className = 'fly-to-sidebar';
+        flyer.innerHTML = '✂️';
+        flyer.style.position = 'fixed';
+        flyer.style.top = '50%';
+        flyer.style.left = '50%';
+        flyer.style.zIndex = '100000';
+        flyer.style.fontSize = '2rem';
+        flyer.style.pointerEvents = 'none';
+        document.body.appendChild(flyer);
+
+        setTimeout(() => flyer.remove(), 800);
+
+        // 2. Mechanik aktivieren
+        game.applyBarberBuff();
+        
+        // 3. Logbuch bereinigen (Eintrag entfernen statt nur markieren)
+        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-barber' });
+        
+        eventBus.emit('SHOW_TOAST', { msg: "Tarnung aktiv! Du bist jetzt ein Geist.", type: 'success' });
         eventBus.emit('CLOSE_INTERACTION');
         game.resume();
     });
 
     eventBus.subscribe('OPTION_D_CLICKED', () => {
-        console.log('Option D geklickt: Bolzenschneider & Fahrrad-Quest (Platzhalter).');
-        eventBus.emit('SHOW_TOAST', { msg: "Bolzenschneider gekauft (Feature in Entwicklung)", type: 'success' });
-        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
-        eventBus.emit('CLOSE_INTERACTION');
-        game.resume();
+        eventBus.emit('SHOW_DIALOG', {
+            title: 'Ein geschmeidiges Angebot',
+            text: `"Hör zu, Freundchen. Für 75 Kröten überlasse ich dir diesen Bolzenschneider. Damit knackst du die Drahtesel an den Stellplätzen da draußen. Die Bullen juckt das kaum – nicht mal 10 Prozent Aufklärungsquote, ein absoluter Witz! Wenn du auf so einem Bock sitzt, machst du gleich zwei Blocks auf einmal. Du bist ein verdammter Geist auf zwei Rädern. Haben wir einen Deal?"`,
+            buttons: [
+                { 
+                    text: 'Einverstanden (75 €)', 
+                    event: 'BUY_BOLT_CUTTER', 
+                    payload: { cost: 75 } 
+                },
+                { text: 'Vielleicht später', event: 'RESUME_GAME' }
+            ]
+        });
     });
 
     eventBus.subscribe('PUB_TARGET_REACHED', () => {
@@ -260,6 +380,19 @@ async function initApp() {
     });
 
     document.getElementById('back-to-menu')?.addEventListener('click', () => location.reload());
+
+    // DEV: Permanente Lösch-Funktion für Cross-Browser-Testing
+    const devBtn = document.createElement('button');
+    devBtn.innerText = "🚨 Wipe Cache";
+    devBtn.style.cssText = "position:fixed; bottom:10px; left:10px; z-index:9999; background:red; color:white; padding:8px 12px; font-weight:bold; border-radius:5px; cursor:pointer; border:2px solid darkred;";
+    devBtn.onclick = () => {
+        const req = indexedDB.deleteDatabase('GridCrimeOSM');
+        req.onsuccess = () => {
+            console.warn("DEV: Cache gelöscht. Lade neu...");
+            window.location.reload(true);
+        };
+    };
+    document.body.appendChild(devBtn);
 }
 
 document.addEventListener('DOMContentLoaded', initApp);

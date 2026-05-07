@@ -15,6 +15,7 @@ import { eventBus } from './EventBus.js';
 class Game {
     // Private Fields (Encapsulation)
     #mapData;
+    #missionService;
     #budget = CONFIG.INITIAL_BUDGET;
     #currentPlayerNodeId = null;
     #gameActive = false;
@@ -35,12 +36,19 @@ class Game {
     #firstMoveFired = false;
     #animFrameId = null;
     #isInPub = false;
+    #activeBarber = null;
+    #isDisguised = false;
+    #hasBoltCutter = false;
+    #isBiking = false;
+    #activeBicycleTargets = [];
 
     /**
      * @param {MapData} mapData
+     * @param {MissionService} missionService
      */
-    constructor(mapData) {
+    constructor(mapData, missionService) {
         this.#mapData = mapData;
+        this.#missionService = missionService;
         this.#setupInteractionListeners();
     }
 
@@ -106,6 +114,41 @@ class Game {
                 } else {
                     this.resume();
                 }
+            }
+        });
+
+        eventBus.subscribe('BUY_BOLT_CUTTER', (payload) => {
+            const cost = payload.cost || 75;
+            if (this.canAfford(cost)) {
+                this.deductBudget(cost);
+                this.#hasBoltCutter = true;
+                
+                // Mission generieren
+                const playerNode = this.#mapData.getNode(this.#currentPlayerNodeId);
+                const targets = this.#missionService.spawnBicycleTargets(this.#mapData, playerNode);
+                this.#activeBicycleTargets = targets;
+
+                eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
+                eventBus.emit('ADD_LOG_ENTRY', {
+                    shortText: "Ziel: Knacke ein Fahrrad an einem der markierten Stellplätze.",
+                    logId: 'goal-steal-bicycle',
+                    notify: true
+                });
+
+                console.log("DEBUG: Bolzenschneider gekauft. 3 Fahrrad-Ziele generiert:", this.#activeBicycleTargets);
+                
+                // Kamera-Reveal vorbereiten
+                const coordsToFit = [];
+                if (playerNode) coordsToFit.push([playerNode.lat, playerNode.lon]);
+                targets.forEach(t => coordsToFit.push([t.lat, t.lon]));
+                eventBus.emit('CAMERA_FIT_BOUNDS_REQUESTED', coordsToFit);
+
+                eventBus.emit('CLOSE_INTERACTION');
+                this.resume();
+                this.#notifyStateChange();
+            } else {
+                eventBus.emit('SHOW_TOAST', { msg: "Nicht genug Geld für den Bolzenschneider!", type: 'fail' });
+                this.resume();
             }
         });
 
@@ -212,6 +255,10 @@ class Game {
             infoMenuOpenUntilMove: this.#infoMenuOpenUntilMove,
             isInfoMenuOpen: this.#isInfoMenuOpen,
             activeCrimeTargets: this.#activeCrimeTargets,
+            activeBarber: this.#activeBarber,
+            activeBicycleTargets: this.#activeBicycleTargets,
+            isDisguised: this.#isDisguised,
+            hasBoltCutter: this.#hasBoltCutter,
             logbook: this.#logbook
         });
     }
@@ -364,6 +411,7 @@ class Game {
 
     #resetBurglaryState() {
         this.#activeCrimeTargets = [];
+        this.#isDisguised = false;
         this.#missionPhase = 1;
         this.#emitMissionUpdate();
         this.resume();
@@ -630,7 +678,8 @@ class Game {
             'residential': { baseRisk: 15, abortRate: 47, minLoot: 1500, maxLoot: 6100, label: 'Wohnobjekt' },
             'commercial':  { baseRisk: 30, abortRate: 28, minLoot: 500,  maxLoot: 15000, label: 'Gewerbeobjekt' },
             'public':      { baseRisk: 30, abortRate: 25, minLoot: 100,  maxLoot: 8000,  label: 'Öffentliche Einrichtung' },
-            'allotments':  { baseRisk: 15, abortRate: 15, minLoot: 50,   maxLoot: 1950,  label: 'Kleingarten/Schuppen' }
+            'allotments':  { baseRisk: 15, abortRate: 15, minLoot: 50,   maxLoot: 1950,  label: 'Kleingarten/Schuppen' },
+            'bicycle':     { baseRisk: 9.7, abortRate: 0, minLoot: 0,    maxLoot: 0,     label: 'Fahrradständer' }
         };
 
         const category = targetNode.type || 'residential';
@@ -653,7 +702,16 @@ class Game {
         });
 
         const interferenceRisk = nearbyCount > 1 ? (nearbyCount - 1) * 15 : 0;
-        const totalRisk = Math.min(95, config.baseRisk + proximityRisk + interferenceRisk);
+        
+        let totalRisk = Math.min(95, config.baseRisk + proximityRisk + interferenceRisk);
+        let abortRate = config.abortRate;
+
+        // Tarnung-Buff anwenden (Halbierung)
+        if (this.#isDisguised) {
+            totalRisk *= 0.5;
+            abortRate *= 0.5;
+        }
+
         const successProbability = 100 - totalRisk;
 
         return {
@@ -661,13 +719,39 @@ class Game {
             minLoot: config.minLoot,
             maxLoot: config.maxLoot,
             baseRisk: config.baseRisk,
-            abortRate: config.abortRate,
+            abortRate: Number(abortRate.toFixed(1)),
             proximityRisk: Number(proximityRisk.toFixed(1)),
             interferenceRisk: interferenceRisk,
             nearbyCount: nearbyCount,
             totalRisk: Number(totalRisk.toFixed(1)),
             successProbability: Number(successProbability.toFixed(1))
         };
+    }
+
+    startBicycleTheft(targetId) {
+        const target = this.#activeBicycleTargets.find(t => t.id === targetId);
+        if (!target) return;
+
+        const riskData = this.calculateTargetRisk(target);
+        const roll = Math.random() * 100;
+
+        if (roll > riskData.totalRisk) {
+            // Erfolg
+            this.#isBiking = true;
+            this.#activeBicycleTargets = [];
+            
+            // UI Feedback (CSS Klasse für Speed-Feeling etc)
+            document.getElementById('app-container')?.classList.add('state-biking');
+            document.body.classList.add('state-biking');
+            
+            eventBus.emit('SHOW_TOAST', { msg: "Rad geknackt! Du bist jetzt lautlos und schnell.", type: 'success' });
+            
+            this.#notifyStateChange();
+        } else {
+            // Scheitern -> Bestehende Busted-Logik
+            eventBus.emit('SHOW_TOAST', { msg: "Verdammt! Ein Zeuge hat dich gesehen!", type: 'fail' });
+            eventBus.emit('PLAYER_BUSTED');
+        }
     }
 
     calculateLoot(riskData) {
@@ -725,6 +809,56 @@ class Game {
         this.#missionPhase = 3;
         this.#emitMissionUpdate();
         this.#notifyStateChange();
+    }
+
+    findNearestHairdresser() {
+        const playerNode = this.#mapData.getNode(this.#currentPlayerNodeId);
+        if (!playerNode) return null;
+
+        const hairdressers = this.#mapData.getHairdressers();
+        if (!hairdressers || hairdressers.length === 0) {
+            const fallback = {
+                id: 'barber-fallback',
+                tags: { name: "Schnittwunde (Schwarzmarkt)" },
+                lat: playerNode.lat + 0.002,
+                lon: playerNode.lon + 0.002
+            };
+            const access = this.#mapData.findNearestGraphNode(fallback.lat, fallback.lon);
+            return { ...fallback, accessNodeId: access ? String(access.id) : null };
+        }
+
+        let nearest = null;
+        let minDist = Infinity;
+
+        hairdressers.forEach(h => {
+            const d = this.#mapData.calculateDistance(playerNode, h);
+            if (d < minDist) {
+                minDist = d;
+                nearest = h;
+            }
+        });
+
+        if (nearest) {
+            const access = this.#mapData.findNearestGraphNode(nearest.lat, nearest.lon);
+            return { ...nearest, accessNodeId: access ? String(access.id) : null };
+        }
+
+        return nearest;
+    }
+
+    setActiveBarber(barber) {
+        this.#activeBarber = barber;
+        this.#notifyStateChange();
+    }
+
+    applyBarberBuff() {
+        this.#isDisguised = true;
+        this.#activeBarber = null; // POI deaktivieren (aus dem State entfernen)
+        this.#notifyStateChange();
+    }
+
+    getActiveBicycleTargets() {
+        return this.#activeBicycleTargets;
     }
 
     getBurglaryData(targetId) {
