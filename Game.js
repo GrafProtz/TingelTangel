@@ -384,7 +384,7 @@ class Game {
         
         eventBus.emit('SHOW_INFO_CASCADE', {
             title: "Willkommen in der Unterwelt",
-            fullText: "Willkommen in " + cityName + ", Grünschnabel. Die städtische Verbrecher-Innung gewährt dir ein Startkapital von 300 Euro. Betrachte es als Vorschuss. Dein erstes Ziel: Beweg deinen Hintern in die Kneipe namens '" + this.#targetPubName + "', nicht weit weg von hier. Dort schnappen wir ein paar lukrative Gerüchte auf, wie man hier an echtes Geld kommt.<br><br>Aber merk dir eins: Wir spazieren hier nicht gemütlich über den Bürgersteig. Wir bewegen uns von Ecke zu Ecke, von Knotenpunkt zu Knotenpunkt - wir schleichen vorsichtig durch die Stadt. Und das kostet! Jeder verdammte Meter frisst dein Guthaben auf. Plane deine Route über die grünen Punkte also extrem clever, sonst bist du pleite, bevor du überhaupt dein erstes Ding gedreht hast.",
+            fullText: "Willkommen in " + cityName + ", Grünschnabel. Die städtische Verbrecher-Innung gewährt dir ein Startkapital von 300 Euro. Betrachte es als Vorschuss. Dein erstes Ziel: Beweg deinen Hintern in die Kneipe namens '" + this.#targetPubName + "', nicht weit weg von hier. Dort schnappen wir ein paar lukrative Gerüchte auf, wie man hier an echtes Geld kommt.<br><br>Aber merk dir eins: Wir spazieren hier nicht gemütlich über den Bürgersteig. Wir bewegen uns von Ecke zu Ecke, von Knotenpunkt zu Knotenpunkt - wir schleichen vorsichtig durch die Stadt. Und das kostet! Die Straße verlangt ihren Tribut. Jeder Schritt kostet Schmiergeld – exakt 10 Cent pro Meter, mindestens jedoch 1 € pro Knotenpunkt-Sprung. Behalte dein Budget im Auge. Plane deine Route über die grünen Punkte also extrem clever, sonst bist du pleite, bevor du überhaupt dein erstes Ding gedreht hast.",
             shortText: "Ziel: Erreiche die Kneipe '" + this.#targetPubName + "'. (Achtung: Jeder Meter über die Knotenpunkte kostet Startkapital!)",
             logId: 'goal-visit-pub'
         });
@@ -563,6 +563,12 @@ class Game {
         // Ziel-Prüfung
         if (String(this.#currentPlayerNodeId) === String(this.#targetPubNodeId)) {
             this.#checkPubArrival();
+        }
+
+        // Zufalls-Begegnung (Encounter Hook)
+        const encounterChance = 0.15;
+        if (Math.random() <= encounterChance) {
+            eventBus.emit('SHOW_TOAST', { msg: "Jetzt passiert ein Ereignis", type: 'info' });
         }
 
         this.#notifyStateChange();

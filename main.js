@@ -167,6 +167,9 @@ async function initApp() {
                         // Risiko-Breakdown (Gauner-Jargon)
                         const policeMalus = riskData.proximityRisk + riskData.interferenceRisk;
                         const dialogText = `
+                                <p style="color: var(--color-warning); font-size: 0.9rem; margin-bottom: 12px; border-left: 3px solid var(--color-warning); padding-left: 8px;">
+                                    Achtung: Auf dem Rad bist du schneller, aber auffälliger. Deine Informanten verlangen einen Risikoaufschlag. Die Fortbewegung kostet dich auf dem Bike 15 Cent pro Meter statt der üblichen 10 Cent.
+                                </p>
                                 <div class="scouting-report" style="line-height: 1.6;">
                                     <p style="margin-bottom: 16px;">"Die Rechnung ist einfach, Kumpel. Schau dir die Zahlen an, bevor du den Schneider ansetzt..."</p>
                                     
@@ -225,7 +228,7 @@ async function initApp() {
     eventBus.subscribe('BICYCLE_THEFT_SUCCESS_DONE', () => {
         eventBus.emit('SHOW_INFO_CASCADE', {
             title: "Fahrrad-Modus",
-            shortText: "Taste 'F' zum Auf/Absteigen. Schneller, aber Hehler-Preise steigen!",
+            shortText: "Hotkey F: Auf/Absteigen. Vorsicht: 15 Cent/Meter (1,5x Preise)!",
             fullText: "Hör zu, Freundchen. Das Rad gehört jetzt dir. Damit bist du doppelt so schnell unterwegs, aber du fällst auch mehr auf. Die Hehler schlagen bei Radlern 50% drauf. Mit 'F' kannst du jederzeit auf- oder absteigen, um unauffällig zu bleiben.",
             nextEvent: "RESUME_GAME"
         });
@@ -441,10 +444,16 @@ async function initApp() {
     devBtn.innerText = "🚨 Wipe Cache";
     devBtn.style.cssText = "position:fixed; bottom:10px; left:10px; z-index:9999; background:red; color:white; padding:8px 12px; font-weight:bold; border-radius:5px; cursor:pointer; border:2px solid darkred;";
     devBtn.onclick = () => {
+        localStorage.clear();
+        console.warn("DEV-TOOL: Kompletter LocalStorage und Savegames wurden gelöscht!");
         const req = indexedDB.deleteDatabase('GridCrimeOSM');
         req.onsuccess = () => {
-            console.warn("DEV: Cache gelöscht. Lade neu...");
-            window.location.reload(true);
+            console.warn("DEV: Map-Cache gelöscht. Lade neu...");
+            window.location.reload();
+        };
+        req.onerror = () => {
+            console.error("DEV: Fehler beim Löschen der DB. Lade trotzdem neu...");
+            window.location.reload();
         };
     };
     document.body.appendChild(devBtn);
