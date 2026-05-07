@@ -247,7 +247,7 @@ class Game {
                 });
 
                 // Logbuch-Update
-                eventBus.emit('COMPLETE_LOG_ENTRY', { logId: 'goal-steal-bicycle' });
+                eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-steal-bicycle' });
             } else {
                 // Erwischt
                 const fine = Math.ceil(this.#budget * 0.1);

@@ -193,8 +193,6 @@ async function initApp() {
                                 </div>
                             `;
 
-                        console.log("TRACE 1: Dialog Payload Text ist:", dialogText);
-
                         // Diebstahl-Dialog (Blueprint Immobilien)
                         eventBus.emit('SHOW_DIALOG', {
                             title: 'Drahtesel im Visier',
@@ -225,9 +223,6 @@ async function initApp() {
     });
 
     eventBus.subscribe('BICYCLE_THEFT_SUCCESS_DONE', () => {
-        console.log("TRACE 2: 'Hervorragend' geklickt. Feuere Event BICYCLE_THEFT_SUCCESS_DONE...");
-        console.log("TRACE 3: Event empfangen! Starte Logbuch-Segel-Animation für Hotkey.");
-        
         eventBus.emit('SHOW_INFO_CASCADE', {
             title: "Fahrrad-Modus",
             shortText: "Taste 'F' zum Auf/Absteigen. Schneller, aber Hehler-Preise steigen!",
