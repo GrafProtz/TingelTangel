@@ -507,16 +507,62 @@ class MapData {
         return this.#nodes.get(String(id));
     }
 
-    getNeighbors(id) {
-        const edges = this.#macroGraph.get(String(id));
-        if (!edges) return [];
-        return edges
-            .map(edge => {
-                const node = this.#nodes.get(edge.to);
-                if (!node) return null;
-                return { ...node, edgeData: edge };
-            })
-            .filter(Boolean);
+    getNeighbors(id, isBiking = false) {
+        const startId = String(id);
+        const edges1 = this.#macroGraph.get(startId);
+        if (!edges1) return [];
+
+        const results = new Map();
+
+        // Tiefe 1
+        edges1.forEach(edge1 => {
+            const node = this.#nodes.get(edge1.to);
+            if (node) {
+                results.set(edge1.to, { 
+                    ...node, 
+                    edgeData: { ...edge1 } 
+                });
+            }
+        });
+
+        // Tiefe 2
+        if (isBiking) {
+            edges1.forEach(edge1 => {
+                const intermediateId = edge1.to;
+                const edges2 = this.#macroGraph.get(intermediateId);
+                if (!edges2) return;
+
+                edges2.forEach(edge2 => {
+                    const targetId = edge2.to;
+                    
+                    // Strikte Filterung: 
+                    // 1. Nicht zum Start zurück
+                    if (targetId === startId) return;
+                    
+                    // 2. Wenn bereits in Tiefe 1 vorhanden, direkten Weg bevorzugen
+                    if (results.has(targetId)) return;
+
+                    const node = this.#nodes.get(targetId);
+                    if (node) {
+                        // Pfad-Verkettung & Distanz-Summe
+                        // path1 endet beim Ziel, path2 startet beim Ziel+1 (Dank MacroGraph-Logik)
+                        const combinedPath = edge1.path.concat(edge2.path);
+                        
+                        results.set(targetId, {
+                            ...node,
+                            edgeData: {
+                                to: targetId,
+                                distance: edge1.distance + edge2.distance,
+                                path: combinedPath
+                            }
+                        });
+                    }
+                });
+            });
+            console.log("TRACE BIKING: Gefundene Nachbarn Tiefe 1 & 2 gesamt:", results.size);
+        }
+
+        return Array.from(results.values());
     }
 
     getEdge(fromId, toId) {

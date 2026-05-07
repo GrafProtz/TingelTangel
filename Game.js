@@ -319,6 +319,8 @@ class Game {
             activeBicycleTargets: this.#activeBicycleTargets,
             isDisguised: this.#isDisguised,
             hasBoltCutter: this.#hasBoltCutter,
+            isBiking: this.#isBiking,
+            hasBicycle: this.#hasBicycle,
             logbook: this.#logbook
         });
     }
@@ -484,8 +486,12 @@ class Game {
     moveToNode(targetId) {
         if (!this.#gameActive || this.#isMoving) return;
 
-        const edge = this.#mapData.getEdge(this.#currentPlayerNodeId, targetId);
-        if (!edge) return;
+        // Validierung über getNeighbors (berücksichtigt Tiefe 2 bei Biking)
+        const neighbors = this.#mapData.getNeighbors(this.#currentPlayerNodeId, this.#isBiking);
+        const neighbor = neighbors.find(nb => String(nb.id) === String(targetId));
+        
+        if (!neighbor) return;
+        const edge = neighbor.edgeData;
 
         this.#isMoving = true;
         this.#notifyStateChange();
@@ -493,10 +499,11 @@ class Game {
         const startNode = this.#mapData.getNode(this.#currentPlayerNodeId);
         const fullPath = [[startNode.lat, startNode.lon], ...edge.path];
 
-        const totalCost = Math.max(1, Math.ceil(edge.distance * CONFIG.COST_PER_METER));
+        const costMultiplier = this.#isBiking ? 1.5 : 1.0;
+        const totalCost = Math.max(1, Math.ceil(edge.distance * CONFIG.COST_PER_METER * costMultiplier));
         const budgetAtStart = this.#budget;
 
-        const speed = 120; // Meter pro Sekunde
+        const speed = this.#isBiking ? 240 : 120; // Doppelt so schnell auf dem Rad
         const durationMs = (edge.distance / speed) * 1000;
         const startTime = performance.now();
 
