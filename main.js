@@ -161,8 +161,49 @@ async function initApp() {
                             return;
                         }
 
-                        // Starte Diebstahl-Logik
-                        game.startBicycleTheft(target.id);
+                        // Risiko berechnen
+                        const riskData = game.calculateTargetRisk(target);
+
+                        // Risiko-Breakdown (Gauner-Jargon)
+                        const policeMalus = riskData.proximityRisk + riskData.interferenceRisk;
+                        const dialogText = `
+                                <div class="scouting-report" style="line-height: 1.6;">
+                                    <p style="margin-bottom: 16px;">"Die Rechnung ist einfach, Kumpel. Schau dir die Zahlen an, bevor du den Schneider ansetzt..."</p>
+                                    
+                                    <div style="background: rgba(0,0,0,0.05); padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 0.95rem;">
+                                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;">
+                                            <span>Grund-Chance (Statistik):</span>
+                                            <span>9,7%</span>
+                                        </div>
+                                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px; color: ${policeMalus > 0 ? 'var(--color-danger)' : 'inherit'};">
+                                            <span>Bullen-Präsenz vor Ort:</span>
+                                            <span>+${policeMalus}%</span>
+                                        </div>
+                                        ${riskData.isDisguised ? `
+                                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px; color: var(--color-secondary);">
+                                            <span>Friseur-Tarnung:</span>
+                                            <span>-50%</span>
+                                        </div>` : ''}
+                                    </div>
+
+                                    <div style="border-top: 2px solid var(--color-text); padding-top: 12px; display:flex; justify-content:space-between; font-weight:bold; font-size:1.2rem; color:var(--color-danger);">
+                                        <span>GESAMTRISIKO:</span>
+                                        <span>${riskData.totalRisk}%</span>
+                                    </div>
+                                </div>
+                            `;
+
+                        console.log("TRACE 1: Dialog Payload Text ist:", dialogText);
+
+                        // Diebstahl-Dialog (Blueprint Immobilien)
+                        eventBus.emit('SHOW_DIALOG', {
+                            title: 'Drahtesel im Visier',
+                            text: dialogText,
+                            buttons: [
+                                { text: 'Einverstanden (Knacken)', event: 'START_BICYCLE_THEFT_RNG', payload: { target, riskData }, className: 'btn-danger' },
+                                { text: 'Lieber nicht', event: 'RESUME_GAME', className: 'btn-secondary' }
+                            ]
+                        });
                     }
                 });
             });
@@ -173,6 +214,25 @@ async function initApp() {
         const neighbors = mapData.getNeighbors(state.currentPlayerNodeId);
         mapView.renderNeighbors(neighbors, state.targetPubNodeId, (clickedId) => {
             game.moveToNode(clickedId);
+        });
+    });
+
+    // Globaler Key-Listener für Fahrrad-Toggle (Taste F)
+    window.addEventListener('keydown', (e) => {
+        if (e.key.toLowerCase() === 'f') {
+            eventBus.emit('TOGGLE_BICYCLE');
+        }
+    });
+
+    eventBus.subscribe('BICYCLE_THEFT_SUCCESS_DONE', () => {
+        console.log("TRACE 2: 'Hervorragend' geklickt. Feuere Event BICYCLE_THEFT_SUCCESS_DONE...");
+        console.log("TRACE 3: Event empfangen! Starte Logbuch-Segel-Animation für Hotkey.");
+        
+        eventBus.emit('SHOW_INFO_CASCADE', {
+            title: "Fahrrad-Modus",
+            shortText: "Taste 'F' zum Auf/Absteigen. Schneller, aber Hehler-Preise steigen!",
+            fullText: "Hör zu, Freundchen. Das Rad gehört jetzt dir. Damit bist du doppelt so schnell unterwegs, aber du fällst auch mehr auf. Die Hehler schlagen bei Radlern 50% drauf. Mit 'F' kannst du jederzeit auf- oder absteigen, um unauffällig zu bleiben.",
+            nextEvent: "RESUME_GAME"
         });
     });
 

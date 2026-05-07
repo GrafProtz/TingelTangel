@@ -33,6 +33,15 @@ export class UIManager {
             }
         });
 
+        eventBus.subscribe('COMPLETE_LOG_ENTRY', (data) => {
+            const el = document.getElementById(data.logId);
+            if (el) {
+                el.classList.add('log-entry-completed');
+                el.style.opacity = '0.5';
+                el.style.textDecoration = 'line-through';
+            }
+        });
+
         eventBus.subscribe('ADD_LOG_ENTRY', (data) => {
             this.handleAddLogEntry(data);
             if (data.notify) {

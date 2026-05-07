@@ -40,6 +40,7 @@ class Game {
     #isDisguised = false;
     #hasBoltCutter = false;
     #isBiking = false;
+    #hasBicycle = false;
     #activeBicycleTargets = [];
 
     /**
@@ -219,6 +220,65 @@ class Game {
                 }
                 this.#resetBurglaryState();
             }, 500);
+        });
+
+        eventBus.subscribe('START_BICYCLE_THEFT_RNG', ({ target, riskData }) => {
+            const roll = Math.random() * 100;
+            
+            if (roll > riskData.totalRisk) {
+                // Erfolg
+                this.#isBiking = true;
+                this.#hasBicycle = true;
+                
+                // UI Feedback & Status
+                document.getElementById('app-container')?.classList.add('state-biking');
+                document.body.classList.add('state-biking');
+
+                eventBus.emit('SHOW_DIALOG', {
+                    title: 'Erfolg!',
+                    text: `
+                        <div style="text-align:center;">
+                            <div style="font-size: 3rem; margin-bottom: 1rem;">🚲</div>
+                            <p>Rad geknackt! Du bist jetzt lautlos und schnell unterwegs.</p>
+                            <p style="font-size: 0.9rem; opacity: 0.7; margin-top: 1rem;">(Drücke 'F' zum Auf/Absteigen)</p>
+                        </div>
+                    `,
+                    buttons: [{ text: 'Hervorragend', event: 'BICYCLE_THEFT_SUCCESS_DONE' }]
+                });
+
+                // Logbuch-Update
+                eventBus.emit('COMPLETE_LOG_ENTRY', { logId: 'goal-steal-bicycle' });
+            } else {
+                // Erwischt
+                const fine = Math.ceil(this.#budget * 0.1);
+                this.deductBudget(fine);
+                eventBus.emit('SHOW_DIALOG', {
+                    title: 'Erwischt!',
+                    text: `Ein aufmerksamer Zeuge hat dich beim Knacken beobachtet! Die Polizei hat dich gestellt. Du musstest ${fine} € Strafe zahlen.`,
+                    buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
+                });
+            }
+
+            // Cleanup in jedem Fall
+            this.#activeBicycleTargets = [];
+            this.#notifyStateChange();
+        });
+
+        eventBus.subscribe('TOGGLE_BICYCLE', () => {
+            if (!this.#hasBicycle) return;
+            
+            this.#isBiking = !this.#isBiking;
+            
+            if (this.#isBiking) {
+                document.getElementById('app-container')?.classList.add('state-biking');
+                document.body.classList.add('state-biking');
+                eventBus.emit('SHOW_TOAST', { msg: "Aufgestiegen. Du bist jetzt schneller.", type: 'success' });
+            } else {
+                document.getElementById('app-container')?.classList.remove('state-biking');
+                document.body.classList.remove('state-biking');
+                eventBus.emit('SHOW_TOAST', { msg: "Abgestiegen. Du bist wieder zu Fuß unterwegs.", type: 'success' });
+            }
+            this.#notifyStateChange();
         });
 
         eventBus.subscribe('RESUME_GAME', () => {
@@ -724,7 +784,8 @@ class Game {
             interferenceRisk: interferenceRisk,
             nearbyCount: nearbyCount,
             totalRisk: Number(totalRisk.toFixed(1)),
-            successProbability: Number(successProbability.toFixed(1))
+            successProbability: Number(successProbability.toFixed(1)),
+            isDisguised: this.#isDisguised
         };
     }
 
