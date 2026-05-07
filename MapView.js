@@ -281,14 +281,14 @@ class MapView {
     // ----------------------------------------------------------------
     //  Nachbarn
     // ----------------------------------------------------------------
-
     /**
      * Rendert Nachbar-Kreuzungen als klickbare Marker.
      * @param {Array} neighbors - Objekte mit { id, lat, lon, edgeData }
-     * @param {string} targetNodeId - ID des aktuellen Hauptziels (Pub)
-     * @param {Function} onClickCb - Wird mit der nodeId aufgerufen
+     * @param {number} targetNodeId
+     * @param {boolean} isBiking
+     * @param {Function} onClickCb
      */
-    renderNeighbors(neighbors, targetNodeId, onClickCb) {
+    renderNeighbors(neighbors, targetNodeId, isBiking, onClickCb) {
         this._clearNeighbors();
         if (this._neighborTimeout) clearTimeout(this._neighborTimeout);
 
@@ -353,12 +353,18 @@ class MapView {
                 });
 
                 marker.on('mouseover', () => {
+                    console.log("TRACE HOVER: Maus betritt Marker. Setze Cursor-Klasse. Biking:", isBiking);
                     if (nb.edgeData?.path) {
                         this._drawGhostPath(nb.edgeData.path);
                     }
+                    if (isBiking) {
+                        this._map.getContainer().classList.add('biking-move-cursor');
+                    }
                 });
                 marker.on('mouseout', () => {
+                    console.log("TRACE HOVER: Maus verlässt Marker. Entferne Cursor-Klasse.");
                     this._clearGhostPath();
+                    this._map.getContainer().classList.remove('biking-move-cursor');
                 });
 
                 this._neighborMarkers.push(marker);
@@ -372,6 +378,12 @@ class MapView {
     }
 
     _clearNeighbors() {
+        const mapContainer = this._map.getContainer();
+        if (mapContainer.classList.contains('biking-move-cursor')) {
+            console.warn("TRACE LEAK: Zombie-Klasse gefunden! Mache Force-Remove.");
+            mapContainer.classList.remove('biking-move-cursor');
+        }
+
         this._neighborMarkers.forEach(m => this._map.removeLayer(m));
         this._neighborMarkers = [];
         this._clearGhostPath();

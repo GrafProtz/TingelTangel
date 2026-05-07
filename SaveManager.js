@@ -15,6 +15,7 @@ export class SaveManager {
     #setupListeners() {
         // Horcht auf jede Änderung des Game-States für Auto-Save
         eventBus.subscribe('GAME_STATE_CHANGED', (state) => {
+            console.trace('Game state changed trace');
             if (!this.#currentCity || !state.gameActive) return;
             this.#triggerAutoSave(state);
         });
@@ -80,6 +81,7 @@ export class SaveManager {
      */
     deleteSave(cityName) {
         if (!cityName) return;
+        console.trace("FATAL ERROR: Wer hat das Savegame gelöscht? Hier ist der Stack-Trace:");
         localStorage.removeItem(this.#getStorageKey(cityName));
         console.log(`[SaveManager] Savegame für ${cityName} gelöscht.`);
     }
