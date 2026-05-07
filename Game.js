@@ -384,7 +384,7 @@ class Game {
         
         eventBus.emit('SHOW_INFO_CASCADE', {
             title: "Willkommen in der Unterwelt",
-            fullText: "Willkommen in " + cityName + ", Grünschnabel. Die städtische Verbrecher-Innung gewährt dir ein Startkapital von 300 Euro. Betrachte es als Vorschuss. Dein erstes Ziel: Beweg deinen Hintern in die Kneipe namens '" + this.#targetPubName + "', nicht weit weg von hier. Dort schnappen wir ein paar lukrative Gerüchte auf, wie man hier an echtes Geld kommt.<br><br>Aber merk dir eins: Wir spazieren hier nicht gemütlich über den Bürgersteig. Wir bewegen uns unter dem Radar, von Knotenpunkt zu Knotenpunkt – wir 'hoppeln' quasi unsichtbar durch die Stadt. Und das kostet! Jeder verdammte Meter frisst dein Guthaben auf. Plane deine Route über die grünen Punkte also extrem clever, sonst bist du pleite, bevor du überhaupt dein erstes Ding gedreht hast.",
+            fullText: "Willkommen in " + cityName + ", Grünschnabel. Die städtische Verbrecher-Innung gewährt dir ein Startkapital von 300 Euro. Betrachte es als Vorschuss. Dein erstes Ziel: Beweg deinen Hintern in die Kneipe namens '" + this.#targetPubName + "', nicht weit weg von hier. Dort schnappen wir ein paar lukrative Gerüchte auf, wie man hier an echtes Geld kommt.<br><br>Aber merk dir eins: Wir spazieren hier nicht gemütlich über den Bürgersteig. Wir bewegen uns von Ecke zu Ecke, von Knotenpunkt zu Knotenpunkt - wir schleichen vorsichtig durch die Stadt. Und das kostet! Jeder verdammte Meter frisst dein Guthaben auf. Plane deine Route über die grünen Punkte also extrem clever, sonst bist du pleite, bevor du überhaupt dein erstes Ding gedreht hast.",
             shortText: "Ziel: Erreiche die Kneipe '" + this.#targetPubName + "'. (Achtung: Jeder Meter über die Knotenpunkte kostet Startkapital!)",
             logId: 'goal-visit-pub'
         });
@@ -575,13 +575,14 @@ class Game {
         const diff = (Date.now() - this.#lastPubVisit) / 1000;
         console.log("DEBUG 3: Berechnete Differenz in Sekunden (diff):", diff);
 
-        if (diff >= 180) {
+        const cooldownSec = CONFIG.PUB_COOLDOWN / 1000;
+        if (diff >= cooldownSec) {
             this.#gameActive = false;
             this.#isInPub = true;
             eventBus.emit('PUB_TARGET_REACHED', { nodeId: this.#currentPlayerNodeId });
             this.#notifyTargetReached();
         } else {
-            const remaining = Math.ceil(180 - diff);
+            const remaining = Math.ceil(cooldownSec - diff);
             eventBus.emit('SHOW_TOAST', { 
                 msg: "Der Kneipier ist mal kurz mit einem Gast in den Hinterraum gegangen und hat für " + remaining + " Sekunden keine Zeit.", 
                 type: 'fail' 
@@ -666,16 +667,14 @@ class Game {
             msg = opt.successMsg ? opt.successMsg(opt.reward) : `✅ Erfolg! Du kassierst ${opt.reward} € für "${opt.text}".`;
         }
 
-        this.#lastPubVisit = Date.now();
-        this.#gameActive = true;
-
         this.#logbook.push({ 
             time: Date.now(), 
             text: msg, 
             type: (roll < finalRisk) ? 'fail' : 'success' 
         });
 
-        this.#notifyStateChange();
+        this.#lastPubVisit = Date.now();
+        this.resume();
 
         // UI-Timeouts für Cooldown-Text
         setTimeout(() => {

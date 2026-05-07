@@ -283,12 +283,12 @@ class MapView {
     // ----------------------------------------------------------------
     /**
      * Rendert Nachbar-Kreuzungen als klickbare Marker.
-     * @param {Array} neighbors - Objekte mit { id, lat, lon, edgeData }
      * @param {number} targetNodeId
      * @param {boolean} isBiking
+     * @param {number} lastPubVisit - Zeitstempel des letzten Besuchs
      * @param {Function} onClickCb
      */
-    renderNeighbors(neighbors, targetNodeId, isBiking, onClickCb) {
+    renderNeighbors(neighbors, targetNodeId, isBiking, lastPubVisit, onClickCb) {
         this._clearNeighbors();
         if (this._neighborTimeout) clearTimeout(this._neighborTimeout);
 
@@ -305,6 +305,12 @@ class MapView {
         
         this._activePOIMarkers.forEach(poiMarker => {
             if (neighborIds.includes(String(poiMarker.accessNodeId))) {
+                // Cooldown-Check für Kneipen (Puls unterdrücken)
+                if (poiMarker.poiType === 'pub') {
+                    const diff = Date.now() - (lastPubVisit || 0);
+                    if (diff < CONFIG.PUB_COOLDOWN) return;
+                }
+                
                 const el = poiMarker.getElement();
                 if (el) activeElements.push(el);
             }
@@ -555,6 +561,7 @@ class MapView {
             const activeLayer = typeof marker !== 'undefined' ? marker : (typeof polygon !== 'undefined' ? polygon : null);
             if (activeLayer) {
                 activeLayer.accessNodeId = poi.accessNodeId;
+                activeLayer.poiType = poi.type || 'pub';
                 this._activePOIMarkers.push(activeLayer);
             }
 

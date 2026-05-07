@@ -210,7 +210,7 @@ async function initApp() {
         mapView.renderPOIs(poiList);
 
         const neighbors = mapData.getNeighbors(state.currentPlayerNodeId, state.isBiking);
-        mapView.renderNeighbors(neighbors, state.targetPubNodeId, state.isBiking, (clickedId) => {
+        mapView.renderNeighbors(neighbors, state.targetPubNodeId, state.isBiking, state.lastPubVisit, (clickedId) => {
             game.moveToNode(clickedId);
         });
     });

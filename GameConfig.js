@@ -10,7 +10,7 @@ export const CONFIG = {
     COST_PER_METER: 0.1, // 1 € pro 10 Meter
 
     // Zeitwerte (in ms)
-    PUB_COOLDOWN: 180000,    // 3 Minuten
+    PUB_COOLDOWN: 60000,     // 60 Sekunden (optimiert)
     RADAR_COOLDOWN: 300000,  // 5 Minuten
     RADAR_DURATION: 5000,    // 5 Sekunden Sichtbarkeit
     REWARD_READ_TIME: 10000, // 10 Sekunden für Option A
