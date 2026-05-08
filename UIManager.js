@@ -69,6 +69,11 @@ export class UIManager {
     }
 
     handleAddLogEntry(data) {
+        // Falls eine ID vorhanden ist, alten Eintrag gleichen Typs entfernen (Replacement-Logik)
+        if (data.logId) {
+            const existing = document.getElementById(data.logId);
+            if (existing) existing.remove();
+        }
         const entry = this._createLogEntry(data);
         this.sidebarLogContent.prepend(entry);
     }
@@ -163,6 +168,7 @@ export class UIManager {
                 </div>
             `,
             shortText: `Ereignis: ${event.title} (-${event.cost} €)`,
+            logId: 'last-encounter',
             nextEvent: 'RESUME_GAME'
         };
         

@@ -238,6 +238,12 @@ class Game {
         });
 
         eventBus.subscribe('START_BICYCLE_THEFT_RNG', ({ target, riskData }) => {
+            eventBus.emit('ADD_LOG_ENTRY', { 
+                shortText: "Knackversuch läuft...", 
+                logId: 'bicycle-theft-progress', 
+                notify: false 
+            });
+
             const roll = Math.random() * 100;
             
             if (roll > riskData.totalRisk) {
@@ -263,6 +269,12 @@ class Game {
 
                 // Logbuch-Update
                 eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-steal-bicycle' });
+                eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'bicycle-theft-progress' });
+                
+                eventBus.emit('ADD_LOG_ENTRY', {
+                    shortText: "✅ Fahrrad erfolgreich geklaut.",
+                    notify: true
+                });
             } else {
                 // Erwischt
                 const fine = Math.ceil(this.#budget * 0.1);
@@ -271,6 +283,12 @@ class Game {
                     title: 'Erwischt!',
                     text: `Ein aufmerksamer Zeuge hat dich beim Knacken beobachtet! Die Polizei hat dich gestellt. Du musstest ${fine} € Strafe zahlen.`,
                     buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
+                });
+
+                eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'bicycle-theft-progress' });
+                eventBus.emit('ADD_LOG_ENTRY', {
+                    shortText: "🚨 Beim Fahrraddiebstahl erwischt!",
+                    notify: true
                 });
             }
 
