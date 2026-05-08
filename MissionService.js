@@ -1,3 +1,5 @@
+import { CONFIG } from './GameConfig.js';
+
 /**
  * MissionService - Kapselt die Logik für Missionen, Szenarien und Ziel-Generierung.
  * Arbeitet eng mit MapData zusammen, um räumliche Analysen durchzuführen.
@@ -11,7 +13,7 @@ export class MissionService {
     }
 
     /**
-     * Erzeugt ein Tutorial-Szenario: POI als Ziel, Startknoten 100-200m entfernt.
+     * Erzeugt ein Tutorial-Szenario: POI als Ziel, Startknoten mind. MIN_DISTANCE_POI entfernt.
      * @returns {Object|null} { startNodeId, targetNodeId, poiName, startCoords, targetCoords }
      */
     spawnTutorialScenario() {
@@ -31,13 +33,14 @@ export class MissionService {
 
             const targetId = String(targetNode.id);
 
-            // Finde Startkandidaten in einer angenehmen Distanz (100-200m)
+            // Finde Startkandidaten in einer einsteigerfreundlichen Distanz
             const candidates = connectedIds.filter(id => {
                 if (id === targetId) return false;
                 const nd = this.#mapData.getNode(id);
                 if (!nd) return false;
                 const d = this.#mapData.calculateDistance(targetNode, nd);
-                return d >= 100 && d <= 200;
+                // Zwischen 50m und 150m für den schnellen Einstieg
+                return d >= 50 && d <= CONFIG.MAX_DISTANCE_TUTORIAL_PUB;
             });
 
             if (candidates.length === 0) continue;
@@ -86,8 +89,8 @@ export class MissionService {
 
             const dist = this.#mapData.calculateDistance(centerNode, { lat, lon });
             
-            // Suche Ziele im Umkreis von 50m bis 300m
-            if (dist >= 50 && dist <= 300) {
+            // Suche Ziele in anspruchsvollerer Distanz (mind. 600m)
+            if (dist >= CONFIG.MIN_DISTANCE_POI && dist <= (CONFIG.MIN_DISTANCE_POI + 600)) {
                 // Finde den nächstgelegenen Straßenzugang für dieses Gebäude
                 const accessNode = this.#mapData.findNearestGraphNode(lat, lon);
                 
@@ -105,9 +108,19 @@ export class MissionService {
         });
 
         // Zufällige Auswahl von bis zu 3 Zielen aus den Kandidaten
-        return candidates
-            .sort(() => Math.random() - 0.5)
-            .slice(0, 3);
+        // Bonus: Mindestabstand der Ziele untereinander (200m)
+        const selected = [];
+        const shuffled = candidates.sort(() => Math.random() - 0.5);
+
+        for (const cand of shuffled) {
+            if (selected.length >= 3) break;
+            const tooClose = selected.some(s => this.#mapData.calculateDistance(s, cand) < 200);
+            if (!tooClose) {
+                selected.push(cand);
+            }
+        }
+
+        return selected;
     }
 
     /**
@@ -129,7 +142,7 @@ export class MissionService {
                 console.log("TRACE BIKES: Prüfe Stellplatz", p.id, "Distance:", dist, "Hat AccessNode:", !!accessNode);
                 return { ...p, distance: dist, accessNode };
             })
-            .filter(p => p.distance >= 50 && p.distance <= 500 && p.accessNode !== null) // 50m bis 500m
+            .filter(p => p.distance >= CONFIG.MIN_DISTANCE_BIKE && p.distance <= (CONFIG.MIN_DISTANCE_BIKE + 600) && p.accessNode !== null) 
             .sort((a, b) => a.distance - b.distance);
 
         console.log("TRACE BIKES: Kandidaten nach Filterung:", candidates.length);

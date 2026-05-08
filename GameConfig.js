@@ -35,6 +35,10 @@ export const CONFIG = {
     RISK_PUBLIC: 70,
     
     // Gameplay
-    INFO_MENU_AUTO_OPEN_TURNS: 5,
-    PROXIMITY_TRIGGER_DISTANCE: 50 // Meter
+    PROXIMITY_TRIGGER_DISTANCE: 50, // Meter
+    
+    // Spawner-Distanzen (Mindestabstände)
+    MIN_DISTANCE_BIKE: 200, // Mindestens 200 Meter vom Startpunkt
+    MIN_DISTANCE_POI: 350,  // Mindestens 350 Meter vom Startpunkt
+    MAX_DISTANCE_TUTORIAL_PUB: 150 // Maximal 150 Meter für die erste Kneipe
 };
