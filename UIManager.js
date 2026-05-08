@@ -24,6 +24,7 @@ export class UIManager {
         });
 
         eventBus.subscribe('SHOW_INFO_CASCADE', this.handleCascade.bind(this));
+        eventBus.subscribe('SHOW_ENCOUNTER', this.showEncounterModal.bind(this));
         eventBus.subscribe('INTRO_COMPLETE', this.handleIntroComplete.bind(this));
         
         eventBus.subscribe('REMOVE_LOG_ENTRY', (data) => {
@@ -143,5 +144,32 @@ export class UIManager {
                 this.sidebarToggle.classList.remove('attention-pulse');
             }, 1500);
         }
+    }
+
+    /**
+     * Zeigt ein Zufallsereignis als Modal an.
+     * Nutzt die bestehende Modal-Struktur für hohe Aufmerksamkeit.
+     */
+    showEncounterModal(event) {
+        this.currentCascadeData = {
+            title: event.title,
+            fullText: `
+                <div style="line-height: 1.6;">
+                    <p style="margin-bottom: 20px;">${event.text}</p>
+                    <div style="color: var(--color-danger); font-weight: bold; font-size: 1.2rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+                        Verlust: -${event.cost} €
+                    </div>
+                </div>
+            `,
+            shortText: `Ereignis: ${event.title} (-${event.cost} €)`,
+            nextEvent: 'RESUME_GAME'
+        };
+        
+        this.infoModalTitle.innerText = this.currentCascadeData.title;
+        this.infoModalText.innerHTML = this.currentCascadeData.fullText;
+        this.infoModalBtn.innerText = "Verstanden";
+        
+        this.infoModal.classList.remove('hidden');
+        this.infoModal.classList.remove('fly-to-sidebar');
     }
 }

@@ -1,0 +1,53 @@
+import { eventBus } from './EventBus.js';
+import { ENCOUNTERS } from './EncounterData.js';
+
+/**
+ * EncounterManager - Die Logik-Zentrale für Zufallsereignisse.
+ * Entscheidet basierend auf Wahrscheinlichkeiten, ob und welches Event eintritt.
+ */
+export class EncounterManager {
+    /**
+     * Prüft, ob ein Zufallsereignis eintreten soll.
+     * @param {Object} state - Der aktuelle Game-State
+     */
+    static checkAndTriggerEvent(state) {
+        console.log("TRACE ENCOUNTER: Prüfung gestartet. In Kneipe:", state.isInPub);
+        
+        // 1. Gatekeeper: Zurück auf 5% Standard
+        const gateRoll = Math.random();
+        const encounterChance = 0.05; 
+        console.log("TRACE ENCOUNTER: Würfelwurf: " + gateRoll.toFixed(4) + " (Limit: " + encounterChance + ")");
+        
+        if (gateRoll > encounterChance) {
+            console.log("TRACE ENCOUNTER: Kein Ereignis in diesem Zug.");
+            return;
+        }
+
+        // 2. Blockade: Kein Event, wenn der Spieler in einer Kneipe ist
+        if (state.isInPub) {
+            console.log("TRACE ENCOUNTER: Wurf gelingt, aber Abbruch (In Kneipe).");
+            return;
+        }
+
+        console.log("TRACE ENCOUNTER: TREFFER! Berechne Gewichtung...");
+
+        // 3. Gewichtete Ziehung (Basis 550)
+        const totalWeight = ENCOUNTERS.reduce((sum, e) => sum + e.weight, 0);
+        let roll = Math.random() * totalWeight;
+        
+        let selectedEvent = null;
+        for (const encounter of ENCOUNTERS) {
+            if (roll < encounter.weight) {
+                selectedEvent = encounter;
+                break;
+            }
+            roll -= encounter.weight;
+        }
+
+        // 4. Trigger abfeuern
+        if (selectedEvent) {
+            console.log("TRACE ENCOUNTER: Event gewählt: " + selectedEvent.title + " (Kosten: " + selectedEvent.cost + "€)");
+            eventBus.emit('ENCOUNTER_TRIGGERED', selectedEvent);
+        }
+    }
+}

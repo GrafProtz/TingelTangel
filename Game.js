@@ -2,6 +2,7 @@ import { MapData } from './MapData.js';
 import { CONFIG } from './GameConfig.js';
 import { STRINGS } from './GameStrings.js';
 import { eventBus } from './EventBus.js';
+import { EncounterManager } from './EncounterManager.js';
 
 /**
  * Game - Die Logik-Schicht.
@@ -285,6 +286,16 @@ class Game {
             eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-find-target' });
             this.resume();
         });
+
+        eventBus.subscribe('ENCOUNTER_TRIGGERED', (encounter) => {
+            this.pause();
+            this.deductBudget(encounter.cost);
+            console.log("TRACE ENCOUNTER: Budget-Update in Game.js. Abzug: -" + encounter.cost + "€. Neues Budget: " + this.getState().budget);
+            
+            eventBus.emit('SHOW_ENCOUNTER', encounter);
+            this.#notifyStateChange();
+        });
+
         eventBus.subscribe('RADAR_ACKNOWLEDGED', () => {
             // Wird in main.js abgefangen für die Kamerafahrt, Game bleibt pausiert
         });
@@ -321,6 +332,7 @@ class Game {
             hasBoltCutter: this.#hasBoltCutter,
             isBiking: this.#isBiking,
             hasBicycle: this.#hasBicycle,
+            isInPub: this.#isInPub,
             logbook: this.#logbook
         });
     }
@@ -566,10 +578,7 @@ class Game {
         }
 
         // Zufalls-Begegnung (Encounter Hook)
-        const encounterChance = 0.15;
-        if (Math.random() <= encounterChance) {
-            eventBus.emit('SHOW_TOAST', { msg: "Jetzt passiert ein Ereignis", type: 'info' });
-        }
+        EncounterManager.checkAndTriggerEvent(this.getState());
 
         this.#notifyStateChange();
     }
