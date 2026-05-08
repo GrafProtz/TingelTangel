@@ -25,6 +25,7 @@ export class UIManager {
 
         eventBus.subscribe('SHOW_INFO_CASCADE', this.handleCascade.bind(this));
         eventBus.subscribe('SHOW_ENCOUNTER', this.showEncounterModal.bind(this));
+        eventBus.subscribe('SHOW_LOAN_MODAL', this.showLoanModal.bind(this));
         eventBus.subscribe('INTRO_COMPLETE', this.handleIntroComplete.bind(this));
         
         eventBus.subscribe('REMOVE_LOG_ENTRY', (data) => {
@@ -171,5 +172,27 @@ export class UIManager {
         
         this.infoModal.classList.remove('hidden');
         this.infoModal.classList.remove('fly-to-sidebar');
+    }
+
+    /**
+     * Zeigt das Modal für die "Zweite Chance" (Kredit der Innung).
+     */
+    showLoanModal() {
+        eventBus.emit('SHOW_DIALOG', {
+            title: 'Zweite Chance?',
+            text: `
+                <div style="line-height: 1.6;">
+                    <p>"Du bist pleite, du Opfer. Die Verbrecher*innen-Innung bietet dir einen Überbrückungskredit an, damit du dich weiter fortbewegen kannst."</p>
+                    <p style="color:var(--color-warning); font-weight:bold; margin-top:15px;">
+                        ⚠️ WARNUNG: Jeder Schritt kostet ab jetzt 1 € Zinsen. Rückzahlung erfolgt automatisch beim nächsten Ding.
+                    </p>
+                    <p>Akzeptierst du den Pakt?</p>
+                </div>
+            `,
+            buttons: [
+                { text: 'Annehmen', event: 'ACCEPT_LOAN', className: 'btn-danger' },
+                { text: 'Ablehnen (Spiel beenden)', event: 'REJECT_LOAN', className: 'btn-secondary' }
+            ]
+        });
     }
 }

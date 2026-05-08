@@ -229,7 +229,7 @@ async function initApp() {
         eventBus.emit('SHOW_INFO_CASCADE', {
             title: "Fahrrad-Modus",
             shortText: "Hotkey F: Auf/Absteigen. Vorsicht: 15 Cent/Meter (1,5x Preise)!",
-            fullText: "Hör zu, Freundchen. Das Rad gehört jetzt dir. Damit bist du doppelt so schnell unterwegs, aber du fällst auch mehr auf. Die Hehler schlagen bei Radlern 50% drauf. Mit 'F' kannst du jederzeit auf- oder absteigen, um unauffällig zu bleiben.",
+            fullText: "Hör zu, Freundchen. Das Rad gehört jetzt dir. Damit bist du doppelt so schnell unterwegs, aber du fällst auch mehr auf. Das kostet dich natürlich auch mehr. Logo, versteht sich. Mit 'F' kannst du jederzeit auf- oder absteigen, um unauffällig zu bleiben.",
             nextEvent: "RESUME_GAME"
         });
     });

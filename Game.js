@@ -43,6 +43,8 @@ class Game {
     #isBiking = false;
     #hasBicycle = false;
     #activeBicycleTargets = [];
+    #hasActiveLoan = false;
+    #loanInterestSteps = 0;
 
     /**
      * @param {MapData} mapData
@@ -211,11 +213,23 @@ class Game {
                 } else {
                     // 3. Erfolg
                     console.log("ERGEBNIS: ERFOLG!");
-                    const amount = this.calculateLoot(riskData);
+                    let amount = this.calculateLoot(riskData);
+                    let loanInfo = "";
+                    
+                    if (this.#hasActiveLoan) {
+                        const debt = 300 + this.#loanInterestSteps;
+                        const finalLoot = Math.max(0, amount - debt);
+                        loanInfo = `<br><br><span style="color:var(--color-danger); font-size:0.9rem;">Rückzahlung an die Innung: ${debt} € wurden von deiner Beute einbehalten. Deine Weste bei der Innung ist vorerst wieder sauber.</span>`;
+                        amount = finalLoot;
+                        this.#hasActiveLoan = false;
+                        this.#loanInterestSteps = 0;
+                        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'loan-entry' });
+                    }
+
                     this.addReward(amount);
                     eventBus.emit('SHOW_DIALOG', {
                         title: 'Erfolg!',
-                        text: `Du hast ${amount} € erbeutet!`,
+                        text: `Du hast ${amount} € erbeutet!${loanInfo}`,
                         buttons: [{ text: 'Hervorragend', event: 'RESUME_GAME' }]
                     });
                 }
@@ -299,6 +313,29 @@ class Game {
         eventBus.subscribe('RADAR_ACKNOWLEDGED', () => {
             // Wird in main.js abgefangen für die Kamerafahrt, Game bleibt pausiert
         });
+
+        eventBus.subscribe('ACCEPT_LOAN', () => {
+            this.#budget = 300;
+            this.#hasActiveLoan = true;
+            this.#loanInterestSteps = 0;
+            this.#gameActive = true;
+            
+            eventBus.emit('ADD_LOG_ENTRY', {
+                shortText: "Kredit bei der Innung: 300 € (Zinsen laufen...)",
+                logId: 'loan-entry',
+                notify: true
+            });
+
+            this.resume();
+            this.#notifyStateChange();
+        });
+
+        eventBus.subscribe('REJECT_LOAN', () => {
+            const cityName = this.#mapData.cityName;
+            eventBus.emit('GAME_OVER', { reason: 'OUT_OF_MONEY' });
+            // Savegame löschen wird normalerweise im SaveManager via GAME_OVER getriggert,
+            // aber wir forcieren es hier zur Sicherheit nochmal explizit.
+        });
     }
 
     // ----------------------------------------------------------------
@@ -333,6 +370,8 @@ class Game {
             isBiking: this.#isBiking,
             hasBicycle: this.#hasBicycle,
             isInPub: this.#isInPub,
+            hasActiveLoan: this.#hasActiveLoan,
+            loanInterestSteps: this.#loanInterestSteps,
             logbook: this.#logbook
         });
     }
@@ -498,6 +537,11 @@ class Game {
     moveToNode(targetId) {
         if (!this.#gameActive || this.#isMoving) return;
 
+        // Kredit-Zinsen: Jeder Schritt kostet 1 € Zinsen, wenn man Schulden hat
+        if (this.#hasActiveLoan) {
+            this.#loanInterestSteps += 1;
+        }
+
         // Validierung über getNeighbors (berücksichtigt Tiefe 2 bei Biking)
         const neighbors = this.#mapData.getNeighbors(this.#currentPlayerNodeId, this.#isBiking);
         const neighbor = neighbors.find(nb => String(nb.id) === String(targetId));
@@ -569,7 +613,12 @@ class Game {
         if (this.#budget <= 0) {
             this.#budget = 0;
             this.#gameActive = false;
-            eventBus.emit('GAME_OVER', { reason: 'OUT_OF_MONEY' });
+            
+            if (!this.#hasActiveLoan) {
+                eventBus.emit('SHOW_LOAN_MODAL');
+            } else {
+                eventBus.emit('GAME_OVER', { reason: 'OUT_OF_MONEY' });
+            }
         }
 
         // Ziel-Prüfung
