@@ -219,7 +219,7 @@ class Game {
                     if (this.#hasActiveLoan) {
                         const debt = 300 + this.#loanInterestSteps;
                         const finalLoot = Math.max(0, amount - debt);
-                        loanInfo = `<br><br><span style="color:var(--color-danger); font-size:0.9rem;">Rückzahlung an die Innung: ${debt} € wurden von deiner Beute einbehalten. Deine Weste bei der Innung ist vorerst wieder sauber.</span>`;
+                        loanInfo = `<br><br><span style="color:var(--color-danger); font-size:0.9rem;">Rückzahlung an die Verbrecher*innen-Innung: ${debt} € wurden von deiner Beute einbehalten. Deine Weste bei der Verbrecher*innen-Innung ist vorerst wieder sauber.</span>`;
                         amount = finalLoot;
                         this.#hasActiveLoan = false;
                         this.#loanInterestSteps = 0;
@@ -339,7 +339,7 @@ class Game {
             this.#gameActive = true;
             
             eventBus.emit('ADD_LOG_ENTRY', {
-                shortText: "Kredit bei der Innung: 300 € (Zinsen laufen...)",
+                shortText: "Kredit bei der Verbrecher*innen-Innung: 300 € (Zinsen laufen...)",
                 logId: 'loan-entry',
                 notify: true
             });
@@ -453,7 +453,7 @@ class Game {
         
         eventBus.emit('SHOW_INFO_CASCADE', {
             title: "Willkommen in der Unterwelt",
-            fullText: "Willkommen in " + cityName + ", Grünschnabel. Die städtische Verbrecher-Innung gewährt dir ein Startkapital von 300 Euro. Betrachte es als Vorschuss. Dein erstes Ziel: Beweg deinen Hintern in die Kneipe namens '" + this.#targetPubName + "', nicht weit weg von hier. Dort schnappen wir ein paar lukrative Gerüchte auf, wie man hier an echtes Geld kommt.<br><br>Aber merk dir eins: Wir spazieren hier nicht gemütlich über den Bürgersteig. Wir bewegen uns von Ecke zu Ecke, von Knotenpunkt zu Knotenpunkt - wir schleichen vorsichtig durch die Stadt. Und das kostet! Die Straße verlangt ihren Tribut. Jeder Schritt kostet Schmiergeld – exakt 10 Cent pro Meter, mindestens jedoch 1 € pro Knotenpunkt-Sprung. Behalte dein Budget im Auge. Plane deine Route über die grünen Punkte also extrem clever, sonst bist du pleite, bevor du überhaupt dein erstes Ding gedreht hast.",
+            fullText: "Willkommen in " + cityName + ", Grünschnabel. Die städtische Verbrecher*innen-Innung gewährt dir ein Startkapital von 300 Euro. Betrachte es als Vorschuss. Dein erstes Ziel: Beweg deinen Hintern in die Kneipe namens '" + this.#targetPubName + "', nicht weit weg von hier. Dort schnappen wir ein paar lukrative Gerüchte auf, wie man hier an echtes Geld kommt.<br><br>Aber merk dir eins: Wir spazieren hier nicht gemütlich über den Bürgersteig. Wir bewegen uns von Ecke zu Ecke, von Knotenpunkt zu Knotenpunkt - wir schleichen vorsichtig durch die Stadt. Und das kostet! Die Straße verlangt ihren Tribut. Jeder Schritt kostet Schmiergeld – exakt 10 Cent pro Meter, mindestens jedoch 1 € pro Knotenpunkt-Sprung. Behalte dein Budget im Auge. Plane deine Route über die grünen Punkte also extrem clever, sonst bist du pleite, bevor du überhaupt dein erstes Ding gedreht hast.",
             shortText: "Ziel: Erreiche die Kneipe '" + this.#targetPubName + "'. (Achtung: Jeder Meter über die Knotenpunkte kostet Startkapital!)",
             logId: 'goal-visit-pub'
         });

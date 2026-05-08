@@ -10,11 +10,19 @@ import { UIManager } from './UIManager.js';
 import { eventBus } from './EventBus.js';
 
 const CITIES = [
-    { name: "Berlin", coords: [52.5200, 13.4050] },
-    { name: "Hamburg", coords: [53.5511, 9.9937] },
-    { name: "München", coords: [48.1371, 11.5755] },
-    { name: "Dortmund", coords: [51.5139, 7.4653] },
-    { name: "Köln", coords: [50.9375, 6.9603] }
+    { id: "berlin", name: "Berlin", lat: 52.5200, lng: 13.4050, zoom: 15 },
+    { id: "hamburg", name: "Hamburg", lat: 53.5511, lng: 9.9937, zoom: 15 },
+    { id: "muenchen", name: "München", lat: 48.1371, lng: 11.5755, zoom: 15 },
+    { id: "dortmund", name: "Dortmund", lat: 51.5139, lng: 7.4653, zoom: 15 },
+    { id: "koeln", name: "Köln", lat: 50.9375, lng: 6.9603, zoom: 15 },
+    { id: "aachen", name: "Aachen", lat: 50.7753, lng: 6.0839, zoom: 15 },
+    { id: "fuerth", name: "Fürth", lat: 49.4783, lng: 10.9902, zoom: 15 },
+    { id: "siegburg", name: "Siegburg", lat: 50.7998, lng: 7.2075, zoom: 15 },
+    { id: "lueneburg", name: "Lüneburg", lat: 53.2464, lng: 10.4115, zoom: 15 },
+    { id: "dormagen", name: "Dormagen", lat: 51.0964, lng: 6.8400, zoom: 15 },
+    { id: "monheim", name: "Monheim am Rhein", lat: 51.0899, lng: 6.8906, zoom: 15 },
+    { id: "freiburg", name: "Freiburg", lat: 47.9990, lng: 7.8421, zoom: 15 },
+    { id: "bruehl", name: "Brühl", lat: 50.8295, lng: 6.9025, zoom: 15 }
 ];
 
 async function initApp() {
@@ -27,6 +35,18 @@ async function initApp() {
     const notification = new NotificationManager();
     const saveManager = new SaveManager();
     const uiManager = new UIManager();
+
+    // Dropdown dynamisch füllen
+    const dropdown = document.getElementById('city-dropdown-intro');
+    if (dropdown) {
+        dropdown.innerHTML = '<option value="" disabled selected>Einsatzort wählen...</option>';
+        CITIES.forEach((city, index) => {
+            const opt = document.createElement('option');
+            opt.value = index;
+            opt.textContent = city.name;
+            dropdown.appendChild(opt);
+        });
+    }
 
     let missionPOI = null;
 
@@ -373,9 +393,20 @@ async function initApp() {
         mapData.cityName = city.name;
         saveManager.setCurrentCity(city.name);
         
-        mapView = new MapView('map', city.coords);
+        const coords = [city.lat, city.lng];
+        mapView = new MapView('map', coords, city.zoom || 13);
         
-        await mapData.loadCityData(city.coords);
+        try {
+            await mapData.loadCityData(coords);
+        } catch (err) {
+            console.error("Critical Load Error:", err);
+            eventBus.emit('SHOW_DIALOG', {
+                title: 'Verbindungsfehler',
+                text: "Die Satelliten-Verbindung zum städtischen Bauamt ist aktuell gestört (Server Timeout). Bitte versuche es in ein paar Sekunden noch einmal oder wähle eine andere Stadt.",
+                buttons: [{ text: 'Zurück zum Hauptmenü', event: 'RELOAD_GAME' }]
+            });
+            return;
+        }
         
         mapView.setUIState('intro-overlay', false);
         mapView.setUIState('back-to-menu', true);

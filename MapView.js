@@ -15,9 +15,10 @@ class MapView {
     /**
      * @param {string} mapElementId
      * @param {Array} initialCoords - [lat, lon] für die initiale Zentrierung
+     * @param {number} initialZoom - Der initiale Zoom-Faktor (Default: 13)
      */
-    constructor(mapElementId, initialCoords = [51.5139, 7.4653]) {
-        this._map = L.map(mapElementId, { zoomControl: true }).setView(initialCoords, 13);
+    constructor(mapElementId, initialCoords = [51.5139, 7.4653], initialZoom = 13) {
+        this._map = L.map(mapElementId, { zoomControl: true }).setView(initialCoords, initialZoom);
         this._map.zoomControl.setPosition('bottomleft');
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {

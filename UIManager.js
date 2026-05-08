@@ -181,16 +181,16 @@ export class UIManager {
     }
 
     /**
-     * Zeigt das Modal für die "Zweite Chance" (Kredit der Innung).
+     * Zeigt das Modal für die "Zweite Chance" (Kredit der Verbrecher*innen-Innung).
      */
     showLoanModal() {
         eventBus.emit('SHOW_DIALOG', {
             title: 'Zweite Chance?',
             text: `
                 <div style="line-height: 1.6;">
-                    <p>"Du bist pleite, du Opfer. Die Verbrecher*innen-Innung bietet dir einen Überbrückungskredit an, damit du dich weiter fortbewegen kannst."</p>
+                    <p>"Du bist pleite. Die Verbrecher*innen-Innung bietet dir einen Überbrückungskredit an, damit du dein Ding weiter durchziehen kannst."</p>
                     <p style="color:var(--color-warning); font-weight:bold; margin-top:15px;">
-                        ⚠️ WARNUNG: Jeder Schritt kostet ab jetzt 1 € Zinsen. Rückzahlung erfolgt automatisch beim nächsten Ding.
+                        ⚠️ WARNUNG: Jeder Schritt kostet ab jetzt 1 € Zinsen. Rückzahlung erfolgt automatisch beim nächsten Erfolg.
                     </p>
                     <p>Akzeptierst du den Pakt?</p>
                 </div>

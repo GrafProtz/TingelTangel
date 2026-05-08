@@ -135,7 +135,7 @@ class MapData {
                 eventBus.emit('map:load:progress', { stage: 'download', progress: 0, message: 'Lade Stadt-Daten von OSM...' });
                 console.log(`MapData: Starte Overpass-Abfrage für "${this.cityName}"...`);
                 
-                const query = `[out:json][timeout:25];(
+                const query = `[out:json][timeout:60];(
                     way["highway"](${s},${w},${n},${e});
                     node["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
                     way["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
@@ -152,13 +152,38 @@ class MapData {
                     relation["office"="government"]["government"="police"](${s},${w},${n},${e});
                 );(._;>;);out body center;`;
 
-                const resp = await fetch('https://overpass-api.de/api/interpreter', {
-                    method: 'POST',
-                    body: 'data=' + encodeURIComponent(query),
-                    signal: this.#abortController.signal
-                });
+                let resp;
+                let retries = 3;
+                while (retries > 0) {
+                    try {
+                        resp = await fetch('https://overpass-api.de/api/interpreter', {
+                            method: 'POST',
+                            body: 'data=' + encodeURIComponent(query),
+                            signal: this.#abortController.signal
+                        });
 
-                if (!resp.ok) throw new Error(`HTTP-Fehler: ${resp.status}`);
+                        if (resp.ok) break;
+                        
+                        // Bei 504 (Timeout) oder 429 (Too Many Requests) versuchen wir es erneut
+                        if (resp.status === 504 || resp.status === 429) {
+                            console.warn(`Overpass Server busy (${resp.status}). Retrying in 3s... (${retries-1} left)`);
+                            eventBus.emit('map:load:progress', { message: `Server überlastet (${resp.status}). Erneuter Versuch...` });
+                        } else {
+                            throw new Error(`Overpass API Fehler: ${resp.status}`);
+                        }
+                    } catch (e) {
+                        if (e.name === 'AbortError') throw e;
+                        if (retries <= 1) throw e;
+                        console.warn("Fetch-Fehler, versuche erneut...", e);
+                    }
+                    
+                    retries--;
+                    if (retries > 0) await new Promise(r => setTimeout(r, 3000));
+                }
+
+                if (!resp || !resp.ok) {
+                    throw new Error(`Overpass API konnte nicht geladen werden (Status: ${resp?.status || 'N/A'})`);
+                }
 
                 data = await resp.json();
                 if (!data.elements || data.elements.length === 0) {
