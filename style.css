@@ -3,6 +3,8 @@
     --color-bg: #f8fafc;
     --color-bg-alt: #f1f5f9;
     --color-bg-panel: #ffffff;
+    --color-surface: #ffffff;
+    --color-border: #e2e8f0;
     --color-text: #1e293b;
     --color-text-muted: #64748b;
     
@@ -655,9 +657,4 @@ html, body {
 /* Cursor-Hack für Fahrräder */
 .biking-move-cursor, .biking-move-cursor .leaflet-interactive {
     cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' style='font-size:24px'%3E%3Ctext y='20'%3E🚲%3C/text%3E%3C/svg%3E") 16 16, pointer !important;
-}
-
-.neighbor-marker:hover {
-    transform: scale(1.5);
-    background: var(--color-secondary);
 }

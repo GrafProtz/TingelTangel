@@ -1,4 +1,5 @@
 import { eventBus } from './EventBus.js';
+import { sanitizeHTML } from './Utils.js';
 
 export class UIManager {
     constructor() {
@@ -84,8 +85,8 @@ export class UIManager {
         if (data.logId) {
             entry.id = data.logId;
         }
-        const title = data.title ? `<strong>${data.title}</strong><br>` : "";
-        entry.innerHTML = `${title}${data.shortText}`;
+        const title = data.title ? `<strong>${sanitizeHTML(data.title)}</strong><br>` : "";
+        entry.innerHTML = `${title}${sanitizeHTML(data.shortText)}`;
         return entry;
     }
 

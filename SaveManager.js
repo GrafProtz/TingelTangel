@@ -15,7 +15,6 @@ export class SaveManager {
     #setupListeners() {
         // Horcht auf jede Änderung des Game-States für Auto-Save
         eventBus.subscribe('GAME_STATE_CHANGED', (state) => {
-            console.trace('Game state changed trace');
             if (!this.#currentCity || !state.gameActive) return;
             this.#triggerAutoSave(state);
         });

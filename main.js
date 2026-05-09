@@ -8,6 +8,7 @@ import { MissionService } from './MissionService.js';
 import { SaveManager } from './SaveManager.js';
 import { UIManager } from './UIManager.js';
 import { eventBus } from './EventBus.js';
+import { sanitizeHTML } from './Utils.js';
 
 const CITIES = [
     { id: "berlin", name: "Berlin", lat: 52.5200, lng: 13.4050, zoom: 15 },
@@ -258,7 +259,7 @@ async function initApp() {
     
     eventBus.subscribe('OPTION_C_CLICKED', () => {
         const barber = game.findNearestHairdresser();
-        const barberName = barber?.tags?.name || "Schnittwunde";
+        const barberName = sanitizeHTML(barber?.tags?.name) || "Schnittwunde";
         
         eventBus.emit('SHOW_DIALOG', {
             title: 'Ein zwielichtiger Tipp',

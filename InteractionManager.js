@@ -1,4 +1,5 @@
 import { eventBus } from './EventBus.js';
+import { sanitizeHTML } from './Utils.js';
 
 /**
  * InteractionManager - Verwaltet dynamische Modals und Dialoge.
@@ -48,7 +49,7 @@ export class InteractionManager {
         dialogBox.className = `dialog-box glass-panel ${config.isWide ? 'modal-wide' : ''}`;
         
         // 3. Inhalt (Header & Body)
-        let html = `<h3 class="dialog-title">${config.title}</h3>`;
+        let html = `<h3 class="dialog-title">${sanitizeHTML(config.title)}</h3>`;
         html += `<div class="dialog-body">${config.body}</div>`;
         
         // 4. Button-Container
