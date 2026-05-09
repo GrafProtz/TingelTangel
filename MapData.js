@@ -112,7 +112,6 @@ class MapData {
     // ----------------------------------------------------------------
 
     async loadCityData(coords) {
-        console.warn("WICHTIG: Bitte lösche einmal manuell den IndexedDB Cache im Browser (Application -> Storage -> Clear site data), um die neuen Friseur-Daten von Overpass zu laden!");
         eventBus.emit('map:load:start', { message: 'Prüfe Cache...' });
 
         // 1. API Resilienz (Vorherigen Request abbrechen)

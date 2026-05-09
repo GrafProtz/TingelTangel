@@ -469,25 +469,6 @@ async function initApp() {
     });
 
     document.getElementById('back-to-menu')?.addEventListener('click', () => location.reload());
-
-    // DEV: Permanente Lösch-Funktion für Cross-Browser-Testing
-    const devBtn = document.createElement('button');
-    devBtn.innerText = "🚨 Wipe Cache";
-    devBtn.style.cssText = "position:fixed; bottom:10px; left:10px; z-index:9999; background:red; color:white; padding:8px 12px; font-weight:bold; border-radius:5px; cursor:pointer; border:2px solid darkred;";
-    devBtn.onclick = () => {
-        localStorage.clear();
-        console.warn("DEV-TOOL: Kompletter LocalStorage und Savegames wurden gelöscht!");
-        const req = indexedDB.deleteDatabase('GridCrimeOSM');
-        req.onsuccess = () => {
-            console.warn("DEV: Map-Cache gelöscht. Lade neu...");
-            window.location.reload();
-        };
-        req.onerror = () => {
-            console.error("DEV: Fehler beim Löschen der DB. Lade trotzdem neu...");
-            window.location.reload();
-        };
-    };
-    document.body.appendChild(devBtn);
 }
 
 document.addEventListener('DOMContentLoaded', initApp);

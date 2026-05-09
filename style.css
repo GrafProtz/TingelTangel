@@ -563,15 +563,17 @@ html, body {
     top: 0;
     right: 0;
     width: 320px;
-    height: 100vh;
+    height: 100%;
     background: var(--color-surface);
     border-left: 1px solid var(--color-border);
     z-index: 9000;
     padding: 1.5rem;
+    padding-bottom: 30px; /* Platz für die absolut positionierte Signatur */
     box-shadow: -5px 0 15px rgba(0,0,0,0.1);
     transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
 }
 
 #sidebar-toggle {

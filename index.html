@@ -65,7 +65,8 @@
     <button id="sidebar-toggle">Logbuch</button>
     <div id="sidebar-log" class="sidebar-closed">
         <button id="back-to-menu" style="display: none; margin-bottom: 1rem;">← Hauptmenü</button>
-        <div id="sidebar-log-content"></div>
+        <div id="sidebar-log-content" style="flex-grow: 1; overflow-y: auto;"></div>
+        <div style="position: absolute; bottom: 0; left: 0; width: 100%; background-color: rgba(30, 30, 30, 0.95); color: #ffffff; font-size: 9px; text-align: center; padding: 6px 0; z-index: 9999; font-family: sans-serif; border-top: 1px solid #444;">Idee und Realisierung: Volker Bombien</div>
     </div>
 
     <!-- Start der App via ES6-Modul -->
