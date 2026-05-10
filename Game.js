@@ -60,134 +60,128 @@ class Game {
      * Initialisiert alle Subscriber für externe Events.
      */
     #setupInteractionListeners() {
+        this.#registerInteractionSelection();
+        this.#registerPurchaseFlows();
+        this.#registerCategorySelection();
+        this.#registerBurglaryFlow();
+        this.#registerBicycleTheftFlow();
+        this.#registerGameControlFlows();
+        this.#registerEncounterHooks();
+        this.#registerLoanFlow();
+    }
+
+    #registerInteractionSelection() {
         eventBus.subscribe('INTERACTION_SELECTED', (payload) => {
             const { key, option } = payload;
             
             if (key === 'B') {
-                // Spezialfall: Investment Consultant
-                const cost = 75; // TODO: In CONFIG verschieben
-                if (this.canAfford(cost)) {
-                    this.deductBudget(cost);
+                this.#handleInvestmentConsultant();
+                return;
+            }
 
-                    // Cleanup altes Ziel
-                    eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
+            const msg = this.handleInteractionDecision(key, option);
+            
+            eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
+            eventBus.emit('CLOSE_INTERACTION');
 
-                    // Neues Ziel still hinzufügen mit Benachrichtigung
-                    eventBus.emit('ADD_LOG_ENTRY', {
-                        shortText: "Ziel: Halte an den grünen Knotenpunkten Ausschau nach lukrativen Objekten für deinen ersten Bruch.",
-                        logId: 'goal-find-target',
-                        notify: true
-                    });
-
-                    eventBus.emit('OPEN_INVESTMENT', { cityName: this.#mapData.cityName });
-                } else {
-                    eventBus.emit('SHOW_TOAST', { msg: "Nicht genug Geld für den Berater!", type: 'fail' });
-                    this.resume();
-                }
+            // Radar-Tutorial bei Erstkauf (Option A)
+            if (key === 'A' && this.#radarUnlocked && this.#missionPhase < 2) {
+                this.#triggerRadarTutorial();
             } else {
-                // Standard-Entscheidungen (A, C, D)
-                const msg = this.handleInteractionDecision(key, option);
-                
-                // Spezialfall: Radar-Tutorial bei Erstkauf (Option A)
-                // Wenn eine Kaskade folgt, unterdrücken wir den redundanten Toast
-                const isCascade = (key === 'A' && this.#radarUnlocked && this.#missionPhase < 2);
-
-                if (!isCascade) {
-                    eventBus.emit('SHOW_TOAST', { 
-                        msg, 
-                        type: (msg.includes('✅') || msg.includes('📡') || !msg.includes('❌')) ? 'success' : 'fail' 
-                    });
-                }
-
-                eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
-                eventBus.emit('CLOSE_INTERACTION');
-
-                // Spezialfall: Radar-Tutorial bei Erstkauf (Option A)
-                if (key === 'A' && this.#radarUnlocked) {
-                    this.#missionPhase = 2;
-                    this.#emitMissionUpdate();
-                    
-                    const numberOfPoliceStations = this.#mapData.getPoliceStations().length;
-                    
-                    eventBus.emit('SHOW_INFO_CASCADE', {
-                        title: "Auge des Gesetzes",
-                        fullText: "Wir haben in diesem Sektor " + numberOfPoliceStations + " Polizeistationen. Hör gut zu: Je näher du an einer Wache ein Ding drehst, desto extremer steigt dein Risiko, geschnappt zu werden.<br><br>Damit du nicht blind in die Falle läufst: Mit dem Hotkey 'P' kannst du alle 5 Minuten für 5 Sekunden die Standorte der Bullen aufdecken. Präg sie dir gut ein!",
-                        shortText: "Polizeipräsenz aufgedeckt. Hotkey 'P' nutzt einen 5-Sekunden-Scan (Cooldown: 5 Min).",
-                        nextEvent: "START_POLICE_REVEAL"
-                    });
-                } else {
-                    this.resume();
-                }
+                this.resume();
             }
         });
+    }
 
+    #handleInvestmentConsultant() {
+        const cost = 75; // TODO: In CONFIG verschieben
+        if (!this.canAfford(cost)) {
+            eventBus.emit('SHOW_TOAST', { msg: "Nicht genug Geld für den Berater!", type: 'fail' });
+            this.resume();
+            return;
+        }
+
+        this.deductBudget(cost);
+        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
+        eventBus.emit('ADD_LOG_ENTRY', {
+            shortText: "Ziel: Halte an den grünen Knotenpunkten Ausschau nach lukrativen Objekten für deinen ersten Bruch.",
+            logId: 'goal-find-target',
+            notify: true
+        });
+        eventBus.emit('OPEN_INVESTMENT', { cityName: this.#mapData.cityName });
+    }
+
+    #triggerRadarTutorial() {
+        this.#missionPhase = 2;
+        this.#emitMissionUpdate();
+        
+        const numberOfPoliceStations = this.#mapData.getPoliceStations().length;
+        
+        eventBus.emit('SHOW_INFO_CASCADE', {
+            title: "Auge des Gesetzes",
+            fullText: `Wir haben in diesem Sektor ${numberOfPoliceStations} Polizeistationen. Hör gut zu: Je näher du an einer Wache ein Ding drehst, desto extremer steigt dein Risiko, geschnappt zu werden.<br><br>Damit du nicht blind in die Falle läufst: Mit dem Hotkey 'P' kannst du alle 5 Minuten für 5 Sekunden die Standorte der Bullen aufdecken. Präg sie dir gut ein!`,
+            shortText: "Polizeipräsenz aufgedeckt. Hotkey 'P' nutzt einen 5-Sekunden-Scan (Cooldown: 5 Min).",
+            nextEvent: "START_POLICE_REVEAL"
+        });
+    }
+
+    #registerPurchaseFlows() {
         eventBus.subscribe('BUY_BOLT_CUTTER', (payload) => {
             const cost = payload.cost || 75;
-            if (this.canAfford(cost)) {
-                this.deductBudget(cost);
-                this.#hasBoltCutter = true;
-                
-                // Mission generieren
-                const playerNode = this.#mapData.getNode(this.#currentPlayerNodeId);
-                const targets = this.#missionService.spawnBicycleTargets(this.#mapData, playerNode);
-                this.#activeBicycleTargets = targets;
-
-                eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
-                eventBus.emit('ADD_LOG_ENTRY', {
-                    shortText: "Ziel: Knacke ein Fahrrad an einem der markierten Stellplätze.",
-                    logId: 'goal-steal-bicycle',
-                    notify: true
-                });
-
-                console.log("DEBUG: Bolzenschneider gekauft. 3 Fahrrad-Ziele generiert:", this.#activeBicycleTargets);
-                
-                // Kamera-Reveal vorbereiten
-                const coordsToFit = [];
-                if (playerNode) coordsToFit.push([playerNode.lat, playerNode.lon]);
-                targets.forEach(t => coordsToFit.push([t.lat, t.lon]));
-                eventBus.emit('CAMERA_FIT_BOUNDS_REQUESTED', coordsToFit);
-
-                eventBus.emit('CLOSE_INTERACTION');
-                this.resume();
-                this.#notifyStateChange();
-            } else {
+            if (!this.canAfford(cost)) {
                 eventBus.emit('SHOW_TOAST', { msg: "Nicht genug Geld für den Bolzenschneider!", type: 'fail' });
                 this.resume();
+                return;
             }
-        });
 
-        eventBus.subscribe('SELECT_CATEGORY_WOHNUNG', () => {
-            eventBus.emit('SPAWN_TARGETS', { targetType: 'residential', centerNodeId: this.#currentPlayerNodeId });
+            this.deductBudget(cost);
+            this.#hasBoltCutter = true;
+            
+            const playerNode = this.#mapData.getNode(this.#currentPlayerNodeId);
+            const targets = this.#missionService.spawnBicycleTargets(this.#mapData, playerNode);
+            this.#activeBicycleTargets = targets;
+
+            eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
+            eventBus.emit('ADD_LOG_ENTRY', {
+                shortText: "Ziel: Knacke ein Fahrrad an einem der markierten Stellplätze.",
+                logId: 'goal-steal-bicycle',
+                notify: true
+            });
+
+            const coordsToFit = [];
+            if (playerNode) coordsToFit.push([playerNode.lat, playerNode.lon]);
+            targets.forEach(t => coordsToFit.push([t.lat, t.lon]));
+            eventBus.emit('CAMERA_FIT_BOUNDS_REQUESTED', coordsToFit);
+
+            eventBus.emit('CLOSE_INTERACTION');
             this.resume();
+            this.#notifyStateChange();
         });
 
-        eventBus.subscribe('SELECT_CATEGORY_GEWERBE', () => {
-            eventBus.emit('SPAWN_TARGETS', { targetType: 'commercial', centerNodeId: this.#currentPlayerNodeId });
-            this.resume();
-        });
+        eventBus.subscribe('INVESTMENT_CANCELLED', () => this.resume());
+    }
 
-        eventBus.subscribe('SELECT_CATEGORY_OEFFENTLICH', () => {
-            eventBus.emit('SPAWN_TARGETS', { targetType: 'public', centerNodeId: this.#currentPlayerNodeId });
-            this.resume();
-        });
+    #registerCategorySelection() {
+        const categories = {
+            'WOHNUNG': 'residential',
+            'GEWERBE': 'commercial',
+            'OEFFENTLICH': 'public',
+            'LAUBE': 'allotments'
+        };
 
-        eventBus.subscribe('SELECT_CATEGORY_LAUBE', () => {
-            eventBus.emit('SPAWN_TARGETS', { targetType: 'allotments', centerNodeId: this.#currentPlayerNodeId });
-            this.resume();
+        Object.entries(categories).forEach(([key, type]) => {
+            eventBus.subscribe(`SELECT_CATEGORY_${key}`, () => {
+                eventBus.emit('SPAWN_TARGETS', { targetType: type, centerNodeId: this.#currentPlayerNodeId });
+                this.resume();
+            });
         });
+    }
 
-        eventBus.subscribe('INVESTMENT_CANCELLED', () => {
-            this.resume();
-        });
-
+    #registerBurglaryFlow() {
         eventBus.subscribe('START_BURGLARY', ({ target, riskData }) => {
             setTimeout(() => {
-                // 1. Abbruch-Check (Mechanische Sicherung)
-                const rollAbbruch = Math.random() * 100;
-                console.log("DEBUG WÜRFEL 1 (Abbruch): Gewürfelt " + rollAbbruch + " gegen Quote " + riskData.abortRate);
-                
-                if (rollAbbruch <= riskData.abortRate) {
-                    console.log("ERGEBNIS: ABBRUCH!");
+                // 1. Abbruch-Check
+                if (Math.random() * 100 <= riskData.abortRate) {
                     eventBus.emit('SHOW_DIALOG', {
                         title: 'Abbruch!',
                         text: "Die mechanischen Sicherungen waren zu stark. Du musstest abbrechen und fliehen!",
@@ -197,12 +191,8 @@ class Game {
                     return;
                 }
 
-                // 2. Risiko-Check (Entdeckung)
-                const rollRisiko = Math.random() * 100;
-                console.log("DEBUG WÜRFEL 2 (Risiko): Gewürfelt " + rollRisiko + " gegen Quote " + riskData.totalRisk);
-                
-                if (rollRisiko <= riskData.totalRisk) {
-                    console.log("ERGEBNIS: ERWISCHT!");
+                // 2. Risiko-Check
+                if (Math.random() * 100 <= riskData.totalRisk) {
                     const fine = Math.ceil(this.#budget * 0.2);
                     this.deductBudget(fine);
                     eventBus.emit('SHOW_DIALOG', {
@@ -212,105 +202,87 @@ class Game {
                     });
                 } else {
                     // 3. Erfolg
-                    console.log("ERGEBNIS: ERFOLG!");
-                    let amount = this.calculateLoot(riskData);
-                    let loanInfo = "";
-                    
-                    if (this.#hasActiveLoan) {
-                        const debt = 300 + this.#loanInterestSteps;
-                        const finalLoot = Math.max(0, amount - debt);
-                        loanInfo = `<br><br><span style="color:var(--color-danger); font-size:0.9rem;">Rückzahlung an die Verbrecher*innen-Innung: ${debt} € wurden von deiner Beute einbehalten. Deine Weste bei der Verbrecher*innen-Innung ist vorerst wieder sauber.</span>`;
-                        amount = finalLoot;
-                        this.#hasActiveLoan = false;
-                        this.#loanInterestSteps = 0;
-                        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'loan-entry' });
-                    }
-
-                    this.addReward(amount);
-                    eventBus.emit('SHOW_DIALOG', {
-                        title: 'Erfolg!',
-                        text: `Du hast ${amount} € erbeutet!${loanInfo}`,
-                        buttons: [{ text: 'Hervorragend', event: 'RESUME_GAME' }]
-                    });
+                    this.#handleBurglarySuccess(riskData);
                 }
                 this.#resetBurglaryState();
             }, 500);
         });
+    }
 
+    #handleBurglarySuccess(riskData) {
+        let amount = this.calculateLoot(riskData);
+        let loanInfo = "";
+        
+        if (this.#hasActiveLoan) {
+            const debt = 300 + this.#loanInterestSteps;
+            amount = Math.max(0, amount - debt);
+            loanInfo = `<br><br><span style="color:var(--color-danger); font-size:0.9rem;">Rückzahlung an die Verbrecher*innen-Innung: ${debt} € wurden von deiner Beute einbehalten. Deine Weste bei der Verbrecher*innen-Innung ist vorerst wieder sauber.</span>`;
+            this.#hasActiveLoan = false;
+            this.#loanInterestSteps = 0;
+            eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'loan-entry' });
+        }
+
+        this.addReward(amount);
+        eventBus.emit('SHOW_DIALOG', {
+            title: 'Erfolg!',
+            text: `Du hast ${amount} € erbeutet!${loanInfo}`,
+            buttons: [{ text: 'Hervorragend', event: 'RESUME_GAME' }]
+        });
+    }
+
+    #registerBicycleTheftFlow() {
         eventBus.subscribe('START_BICYCLE_THEFT_RNG', ({ target, riskData }) => {
-            eventBus.emit('ADD_LOG_ENTRY', { 
-                shortText: "Knackversuch läuft...", 
-                logId: 'bicycle-theft-progress', 
-                notify: false 
-            });
+            eventBus.emit('ADD_LOG_ENTRY', { shortText: "Knackversuch läuft...", logId: 'bicycle-theft-progress', notify: false });
 
-            const roll = Math.random() * 100;
-            
-            if (roll > riskData.totalRisk) {
-                // Erfolg
-                this.#isBiking = true;
-                this.#hasBicycle = true;
-                
-                // UI Feedback & Status
-                document.getElementById('app-container')?.classList.add('state-biking');
-                document.body.classList.add('state-biking');
-
-                eventBus.emit('SHOW_DIALOG', {
-                    title: 'Erfolg!',
-                    text: `
-                        <div style="text-align:center;">
-                            <div style="font-size: 3rem; margin-bottom: 1rem;">🚲</div>
-                            <p>Rad geknackt! Du bist jetzt lautlos und schnell unterwegs.</p>
-                            <p style="font-size: 0.9rem; opacity: 0.7; margin-top: 1rem;">(Drücke 'F' zum Auf/Absteigen)</p>
-                        </div>
-                    `,
-                    buttons: [{ text: 'Hervorragend', event: 'BICYCLE_THEFT_SUCCESS_DONE' }]
-                });
-
-                // Logbuch-Update
-                eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-steal-bicycle' });
-                eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'bicycle-theft-progress' });
-                
-                eventBus.emit('ADD_LOG_ENTRY', {
-                    shortText: "✅ Fahrrad erfolgreich geklaut.",
-                    notify: true
-                });
+            if (Math.random() * 100 > riskData.totalRisk) {
+                this.#handleBicycleTheftSuccess();
             } else {
-                // Erwischt
-                const fine = Math.ceil(this.#budget * 0.1);
-                this.deductBudget(fine);
-                eventBus.emit('SHOW_DIALOG', {
-                    title: 'Erwischt!',
-                    text: `Ein aufmerksamer Zeuge hat dich beim Knacken beobachtet! Die Polizei hat dich gestellt. Du musstest ${fine} € Strafe zahlen.`,
-                    buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
-                });
-
-                eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'bicycle-theft-progress' });
-                eventBus.emit('ADD_LOG_ENTRY', {
-                    shortText: "🚨 Beim Fahrraddiebstahl erwischt!",
-                    notify: true
-                });
+                this.#handleBicycleTheftFailure();
             }
 
-            // Cleanup in jedem Fall
             this.#activeBicycleTargets = [];
             this.#notifyStateChange();
         });
+    }
 
+    #handleBicycleTheftSuccess() {
+        this.#isBiking = true;
+        this.#hasBicycle = true;
+        document.getElementById('app-container')?.classList.add('state-biking');
+        document.body.classList.add('state-biking');
+
+        eventBus.emit('SHOW_DIALOG', {
+            title: 'Erfolg!',
+            text: '<div style="text-align:center;"><div style="font-size: 3rem; margin-bottom: 1rem;">🚲</div><p>Rad geknackt! Du bist jetzt lautlos und schnell unterwegs.</p><p style="font-size: 0.9rem; opacity: 0.7; margin-top: 1rem;">(Drücke \'F\' zum Auf/Absteigen)</p></div>',
+            buttons: [{ text: 'Hervorragend', event: 'BICYCLE_THEFT_SUCCESS_DONE' }]
+        });
+
+        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-steal-bicycle' });
+        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'bicycle-theft-progress' });
+        eventBus.emit('ADD_LOG_ENTRY', { shortText: "✅ Fahrrad erfolgreich geklaut.", notify: true });
+    }
+
+    #handleBicycleTheftFailure() {
+        const fine = Math.ceil(this.#budget * 0.1);
+        this.deductBudget(fine);
+        eventBus.emit('SHOW_DIALOG', {
+            title: 'Erwischt!',
+            text: `Ein aufmerksamer Zeuge hat dich beim Knacken beobachtet! Die Polizei hat dich gestellt. Du musstest ${fine} € Strafe zahlen.`,
+            buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
+        });
+
+        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'bicycle-theft-progress' });
+        eventBus.emit('ADD_LOG_ENTRY', { shortText: "🚨 Beim Fahrraddiebstahl erwischt!", notify: true });
+    }
+
+    #registerGameControlFlows() {
         eventBus.subscribe('TOGGLE_BICYCLE', () => {
             if (!this.#hasBicycle) return;
-            
             this.#isBiking = !this.#isBiking;
-            
-            if (this.#isBiking) {
-                document.getElementById('app-container')?.classList.add('state-biking');
-                document.body.classList.add('state-biking');
-                eventBus.emit('SHOW_TOAST', { msg: "Aufgestiegen. Du bist jetzt schneller.", type: 'success' });
-            } else {
-                document.getElementById('app-container')?.classList.remove('state-biking');
-                document.body.classList.remove('state-biking');
-                eventBus.emit('SHOW_TOAST', { msg: "Abgestiegen. Du bist wieder zu Fuß unterwegs.", type: 'success' });
-            }
+            const msg = this.#isBiking ? "Aufgestiegen. Du bist jetzt schneller." : "Abgestiegen. Du bist wieder zu Fuß unterwegs.";
+            document.getElementById('app-container')?.classList.toggle('state-biking', this.#isBiking);
+            document.body.classList.toggle('state-biking', this.#isBiking);
+            eventBus.emit('SHOW_TOAST', { msg, type: 'success' });
             this.#notifyStateChange();
         });
 
@@ -318,41 +290,32 @@ class Game {
             eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-find-target' });
             this.resume();
         });
+    }
 
+    #registerEncounterHooks() {
         eventBus.subscribe('ENCOUNTER_TRIGGERED', (encounter) => {
             this.pause();
             this.deductBudget(encounter.cost);
-            console.log("TRACE ENCOUNTER: Budget-Update in Game.js. Abzug: -" + encounter.cost + "€. Neues Budget: " + this.getState().budget);
-            
             eventBus.emit('SHOW_ENCOUNTER', encounter);
             this.#notifyStateChange();
         });
 
-        eventBus.subscribe('RADAR_ACKNOWLEDGED', () => {
-            // Wird in main.js abgefangen für die Kamerafahrt, Game bleibt pausiert
-        });
+        eventBus.subscribe('RADAR_ACKNOWLEDGED', () => {});
+    }
 
+    #registerLoanFlow() {
         eventBus.subscribe('ACCEPT_LOAN', () => {
             this.#budget = 300;
             this.#hasActiveLoan = true;
             this.#loanInterestSteps = 0;
             this.#gameActive = true;
-            
-            eventBus.emit('ADD_LOG_ENTRY', {
-                shortText: "Kredit bei der Verbrecher*innen-Innung: 300 € (Zinsen laufen...)",
-                logId: 'loan-entry',
-                notify: true
-            });
-
+            eventBus.emit('ADD_LOG_ENTRY', { shortText: "Kredit bei der Verbrecher*innen-Innung: 300 € (Zinsen laufen...)", logId: 'loan-entry', notify: true });
             this.resume();
             this.#notifyStateChange();
         });
 
         eventBus.subscribe('REJECT_LOAN', () => {
-            const cityName = this.#mapData.cityName;
             eventBus.emit('GAME_OVER', { reason: 'OUT_OF_MONEY' });
-            // Savegame löschen wird normalerweise im SaveManager via GAME_OVER getriggert,
-            // aber wir forcieren es hier zur Sicherheit nochmal explizit.
         });
     }
 
@@ -631,31 +594,9 @@ class Game {
         this.#isMoving = false;
         this.#moveCount++;
 
-        // Info-Menü Management
-        if (this.#isInfoMenuOpen && this.#infoMenuOpenUntilMove !== -1) {
-            if (this.#moveCount >= this.#infoMenuOpenUntilMove) {
-                this.#isInfoMenuOpen = false;
-                this.#infoMenuOpenUntilMove = -1;
-                eventBus.emit('INFO_MENU_STATE', false);
-            }
-        }
-
-        // Erst-Zug Logik
-        if (!this.#firstMoveFired) {
-            this.#firstMoveFired = true;
-            eventBus.emit('FIRST_MOVE_COMPLETED');
-        }
-
-        if (this.#budget <= 0) {
-            this.#budget = 0;
-            this.#gameActive = false;
-            
-            if (!this.#hasActiveLoan) {
-                eventBus.emit('SHOW_LOAN_MODAL');
-            } else {
-                eventBus.emit('GAME_OVER', { reason: 'OUT_OF_MONEY' });
-            }
-        }
+        this.#handleInfoMenuMoveLogic();
+        this.#handleFirstMoveLogic();
+        this.#handleBankruptcyCheck();
 
         // Ziel-Prüfung
         if (String(this.#currentPlayerNodeId) === String(this.#targetPubNodeId)) {
@@ -668,26 +609,51 @@ class Game {
         this.#notifyStateChange();
     }
 
-    #checkPubArrival() {
-        console.log("DEBUG 1: Letzter Besuchstempel (lastPubVisit):", this.#lastPubVisit);
-        console.log("DEBUG 2: Aktuelle Zeit (Date.now()):", Date.now());
+    #handleInfoMenuMoveLogic() {
+        if (!this.#isInfoMenuOpen || this.#infoMenuOpenUntilMove === -1) return;
+        if (this.#moveCount < this.#infoMenuOpenUntilMove) return;
 
-        const diff = (Date.now() - this.#lastPubVisit) / 1000;
-        console.log("DEBUG 3: Berechnete Differenz in Sekunden (diff):", diff);
+        this.#isInfoMenuOpen = false;
+        this.#infoMenuOpenUntilMove = -1;
+        eventBus.emit('INFO_MENU_STATE', false);
+    }
 
-        const cooldownSec = CONFIG.PUB_COOLDOWN / 1000;
-        if (diff >= cooldownSec) {
-            this.#gameActive = false;
-            this.#isInPub = true;
-            eventBus.emit('PUB_TARGET_REACHED', { nodeId: this.#currentPlayerNodeId });
-            this.#notifyTargetReached();
+    #handleFirstMoveLogic() {
+        if (this.#firstMoveFired) return;
+        this.#firstMoveFired = true;
+        eventBus.emit('FIRST_MOVE_COMPLETED');
+    }
+
+    #handleBankruptcyCheck() {
+        if (this.#budget > 0) return;
+
+        this.#budget = 0;
+        this.#gameActive = false;
+        
+        if (!this.#hasActiveLoan) {
+            eventBus.emit('SHOW_LOAN_MODAL');
         } else {
+            eventBus.emit('GAME_OVER', { reason: 'OUT_OF_MONEY' });
+        }
+    }
+
+    #checkPubArrival() {
+        const diff = (Date.now() - this.#lastPubVisit) / 1000;
+        const cooldownSec = CONFIG.PUB_COOLDOWN / 1000;
+
+        if (diff < cooldownSec) {
             const remaining = Math.ceil(cooldownSec - diff);
             eventBus.emit('SHOW_TOAST', { 
-                msg: "Der Kneipier ist mal kurz mit einem Gast in den Hinterraum gegangen und hat für " + remaining + " Sekunden keine Zeit.", 
+                msg: `Der Kneipier ist mal kurz mit einem Gast in den Hinterraum gegangen und hat für ${remaining} Sekunden keine Zeit.`, 
                 type: 'fail' 
             });
+            return;
         }
+
+        this.#gameActive = false;
+        this.#isInPub = true;
+        eventBus.emit('PUB_TARGET_REACHED', { nodeId: this.#currentPlayerNodeId });
+        this.#notifyTargetReached();
     }
 
     #interpolatePath(path, t) {
@@ -735,44 +701,66 @@ class Game {
         
         const finalRisk = opt.risk !== undefined ? opt.risk : Math.min(100, (opt.risk || 0) + riskData.riskMalus);
         const roll = Math.random() * 100;
-        let msg = '';
 
-        if (key === 'A') {
-            if (this.#radarUnlocked) {
-                msg = '📡 Du hast die Frequenz bereits!';
-            } else if (this.#budget >= CONFIG.RADAR_COST) {
-                this.deductBudget(CONFIG.RADAR_COST);
-                this.#radarUnlocked = true;
-                
-                const currentNode = this.#mapData.getNode(this.#currentPlayerNodeId);
-                const risk = this.#mapData.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
-                msg = `Der Barkeeper meint, dass hier ${risk.activeStations} Polizeiwache(n) in der Umgebung sind.`;
-            } else {
-                msg = `❌ Nicht genug Geld! Du brauchst ${CONFIG.RADAR_COST} €.`;
-            }
-        } else if (key === 'D') {
-            const cost = CONFIG.INFO_COST;
-            if (this.canAfford(cost)) {
-                this.deductBudget(cost);
-                msg = `Du kaufst Infos für ${cost} €. Ein Tipp: "Halte dich vom Osten fern."`;
-            } else {
-                msg = '❌ Nicht genug Geld für Informationen.';
-            }
-        } else if (roll < finalRisk) {
-            const fine = Math.ceil(opt.reward * 0.5);
-            this.deductBudget(fine);
-            msg = opt.caughtMsg ? opt.caughtMsg(fine) : `🚨 ERWISCHT! Strafe: ${fine} €.`;
-        } else {
-            this.addReward(opt.reward);
-            msg = opt.successMsg ? opt.successMsg(opt.reward) : `✅ Erfolg! Du kassierst ${opt.reward} € für "${opt.text}".`;
+        // 1. Radar-Kauf (Key A)
+        if (key === 'A') return this.#handleRadarPurchase();
+
+        // 2. Info-Kauf (Key D)
+        if (key === 'D') return this.#handleInfoPurchase();
+
+        // 3. Risiko-Check (Erwischt)
+        if (roll < finalRisk) {
+            return this.#handleInteractionFailure(opt);
         }
 
-        this.#logbook.push({ 
-            time: Date.now(), 
-            text: msg, 
-            type: (roll < finalRisk) ? 'fail' : 'success' 
-        });
+        // 4. Erfolg
+        return this.#handleInteractionSuccess(opt);
+    }
 
+    #handleRadarPurchase() {
+        if (this.#radarUnlocked) return '📡 Du hast die Frequenz bereits!';
+        
+        if (!this.canAfford(CONFIG.RADAR_COST)) {
+            return `❌ Nicht genug Geld! Du brauchst ${CONFIG.RADAR_COST} €.`;
+        }
+
+        this.deductBudget(CONFIG.RADAR_COST);
+        this.#radarUnlocked = true;
+        
+        const currentNode = this.#mapData.getNode(this.#currentPlayerNodeId);
+        const risk = this.#mapData.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
+        const msg = `Der Barkeeper meint, dass hier ${risk.activeStations} Polizeiwache(n) in der Umgebung sind.`;
+        
+        this.#recordDecision(msg, 'success');
+        return msg;
+    }
+
+    #handleInfoPurchase() {
+        if (!this.canAfford(CONFIG.INFO_COST)) return '❌ Nicht genug Geld für Informationen.';
+
+        this.deductBudget(CONFIG.INFO_COST);
+        const msg = `Du kaufst Infos für ${CONFIG.INFO_COST} €. Ein Tipp: "Halte dich vom Osten fern."`;
+        this.#recordDecision(msg, 'success');
+        return msg;
+    }
+
+    #handleInteractionFailure(opt) {
+        const fine = Math.ceil(opt.reward * 0.5);
+        this.deductBudget(fine);
+        const msg = opt.caughtMsg ? opt.caughtMsg(fine) : `🚨 ERWISCHT! Strafe: ${fine} €.`;
+        this.#recordDecision(msg, 'fail');
+        return msg;
+    }
+
+    #handleInteractionSuccess(opt) {
+        this.addReward(opt.reward);
+        const msg = opt.successMsg ? opt.successMsg(opt.reward) : `✅ Erfolg! Du kassierst ${opt.reward} € für "${opt.text}".`;
+        this.#recordDecision(msg, 'success');
+        return msg;
+    }
+
+    #recordDecision(msg, type) {
+        this.#logbook.push({ time: Date.now(), text: msg, type });
         this.#lastPubVisit = Date.now();
         this.resume();
 
@@ -786,8 +774,6 @@ class Game {
             this.#showPubCooldownText = false;
             this.#notifyStateChange();
         }, CONFIG.PUB_COOLDOWN);
-
-        return msg;
     }
 
     // ----------------------------------------------------------------
