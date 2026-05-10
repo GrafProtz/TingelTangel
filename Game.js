@@ -3,6 +3,7 @@ import { CONFIG } from './GameConfig.js';
 import { STRINGS } from './GameStrings.js';
 import { eventBus } from './EventBus.js';
 import { EncounterManager } from './EncounterManager.js';
+import { DialogFactory } from './DialogFactory.js';
 
 /**
  * Game - Die Logik-Schicht.
@@ -117,12 +118,7 @@ class Game {
         
         const numberOfPoliceStations = this.#mapData.getPoliceStations().length;
         
-        eventBus.emit('SHOW_INFO_CASCADE', {
-            title: "Auge des Gesetzes",
-            fullText: `Wir haben in diesem Sektor ${numberOfPoliceStations} Polizeistationen. Hör gut zu: Je näher du an einer Wache ein Ding drehst, desto extremer steigt dein Risiko, geschnappt zu werden.<br><br>Damit du nicht blind in die Falle läufst: Mit dem Hotkey 'P' kannst du alle 5 Minuten für 5 Sekunden die Standorte der Bullen aufdecken. Präg sie dir gut ein!`,
-            shortText: "Polizeipräsenz aufgedeckt. Hotkey 'P' nutzt einen 5-Sekunden-Scan (Cooldown: 5 Min).",
-            nextEvent: "START_POLICE_REVEAL"
-        });
+        eventBus.emit('SHOW_INFO_CASCADE', DialogFactory.getRadarTutorial(numberOfPoliceStations));
     }
 
     #registerPurchaseFlows() {
@@ -182,11 +178,7 @@ class Game {
             setTimeout(() => {
                 // 1. Abbruch-Check
                 if (Math.random() * 100 <= riskData.abortRate) {
-                    eventBus.emit('SHOW_DIALOG', {
-                        title: 'Abbruch!',
-                        text: "Die mechanischen Sicherungen waren zu stark. Du musstest abbrechen und fliehen!",
-                        buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
-                    });
+                    eventBus.emit('SHOW_DIALOG', DialogFactory.getBurglaryAbort());
                     this.#resetBurglaryState();
                     return;
                 }
@@ -195,11 +187,7 @@ class Game {
                 if (Math.random() * 100 <= riskData.totalRisk) {
                     const fine = Math.ceil(this.#budget * 0.2);
                     this.deductBudget(fine);
-                    eventBus.emit('SHOW_DIALOG', {
-                        title: 'Erwischt!',
-                        text: `Die Polizei war schneller. Du musstest ${fine} € Strafe zahlen.`,
-                        buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
-                    });
+                    eventBus.emit('SHOW_DIALOG', DialogFactory.getBurglaryCaught(fine));
                 } else {
                     // 3. Erfolg
                     this.#handleBurglarySuccess(riskData);
@@ -223,11 +211,8 @@ class Game {
         }
 
         this.addReward(amount);
-        eventBus.emit('SHOW_DIALOG', {
-            title: 'Erfolg!',
-            text: `Du hast ${amount} € erbeutet!${loanInfo}`,
-            buttons: [{ text: 'Hervorragend', event: 'RESUME_GAME' }]
-        });
+        const debt = this.#hasActiveLoan ? (300 + this.#loanInterestSteps) : 0;
+        eventBus.emit('SHOW_DIALOG', DialogFactory.getBurglarySuccess(amount, debt));
     }
 
     #registerBicycleTheftFlow() {
@@ -251,11 +236,7 @@ class Game {
         document.getElementById('app-container')?.classList.add('state-biking');
         document.body.classList.add('state-biking');
 
-        eventBus.emit('SHOW_DIALOG', {
-            title: 'Erfolg!',
-            text: '<div style="text-align:center;"><div style="font-size: 3rem; margin-bottom: 1rem;">🚲</div><p>Rad geknackt! Du bist jetzt lautlos und schnell unterwegs.</p><p style="font-size: 0.9rem; opacity: 0.7; margin-top: 1rem;">(Drücke \'F\' zum Auf/Absteigen)</p></div>',
-            buttons: [{ text: 'Hervorragend', event: 'BICYCLE_THEFT_SUCCESS_DONE' }]
-        });
+        eventBus.emit('SHOW_DIALOG', DialogFactory.getBicycleTheftSuccess());
 
         eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-steal-bicycle' });
         eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'bicycle-theft-progress' });
@@ -265,11 +246,7 @@ class Game {
     #handleBicycleTheftFailure() {
         const fine = Math.ceil(this.#budget * 0.1);
         this.deductBudget(fine);
-        eventBus.emit('SHOW_DIALOG', {
-            title: 'Erwischt!',
-            text: `Ein aufmerksamer Zeuge hat dich beim Knacken beobachtet! Die Polizei hat dich gestellt. Du musstest ${fine} € Strafe zahlen.`,
-            buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
-        });
+        eventBus.emit('SHOW_DIALOG', DialogFactory.getBicycleTheftFailure(fine));
 
         eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'bicycle-theft-progress' });
         eventBus.emit('ADD_LOG_ENTRY', { shortText: "🚨 Beim Fahrraddiebstahl erwischt!", notify: true });
@@ -414,12 +391,7 @@ class Game {
         // Modal SOFORT aufploppen lassen
         const cityName = this.#mapData.cityName || "der Stadt";
         
-        eventBus.emit('SHOW_INFO_CASCADE', {
-            title: "Willkommen in der Unterwelt",
-            fullText: "Willkommen in " + cityName + ", Grünschnabel. Die städtische Verbrecher*innen-Innung gewährt dir ein Startkapital von 300 Euro. Betrachte es als Vorschuss. Dein erstes Ziel: Beweg deinen Hintern in die Kneipe namens '" + this.#targetPubName + "', nicht weit weg von hier. Dort schnappen wir ein paar lukrative Gerüchte auf, wie man hier an echtes Geld kommt.<br><br>Aber merk dir eins: Wir spazieren hier nicht gemütlich über den Bürgersteig. Wir bewegen uns von Ecke zu Ecke, von Knotenpunkt zu Knotenpunkt - wir schleichen vorsichtig durch die Stadt. Und das kostet! Die Straße verlangt ihren Tribut. Jeder Schritt kostet Schmiergeld – exakt 10 Cent pro Meter, mindestens jedoch 1 € pro Knotenpunkt-Sprung. Behalte dein Budget im Auge. Plane deine Route über die grünen Punkte also extrem clever, sonst bist du pleite, bevor du überhaupt dein erstes Ding gedreht hast.",
-            shortText: "Ziel: Erreiche die Kneipe '" + this.#targetPubName + "'. (Achtung: Jeder Meter über die Knotenpunkte kostet Startkapital!)",
-            logId: 'goal-visit-pub'
-        });
+        eventBus.emit('SHOW_INFO_CASCADE', DialogFactory.getWelcomeDialog(cityName, this.#targetPubName));
     }
 
     triggerIntroRender() {

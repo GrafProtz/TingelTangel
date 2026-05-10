@@ -9,6 +9,7 @@ import { SaveManager } from './SaveManager.js';
 import { UIManager } from './UIManager.js';
 import { eventBus } from './EventBus.js';
 import { sanitizeHTML } from './Utils.js';
+import { DialogFactory } from './DialogFactory.js';
 
 const CITIES = [
     { id: "berlin", name: "Berlin", lat: 52.5200, lng: 13.4050, zoom: 15 },
@@ -325,18 +326,7 @@ async function initApp() {
     });
 
     eventBus.subscribe('OPTION_D_CLICKED', () => {
-        eventBus.emit('SHOW_DIALOG', {
-            title: 'Ein geschmeidiges Angebot',
-            text: `"Hör zu, Freundchen. Für 75 Kröten überlasse ich dir diesen Bolzenschneider. Damit knackst du die Drahtesel an den Stellplätzen da draußen. Die Bullen juckt das kaum – nicht mal 10 Prozent Aufklärungsquote, ein absoluter Witz! Wenn du auf so einem Bock sitzt, machst du gleich zwei Blocks auf einmal. Du bist ein verdammter Geist auf zwei Rädern. Haben wir einen Deal?"`,
-            buttons: [
-                { 
-                    text: 'Einverstanden (75 €)', 
-                    event: 'BUY_BOLT_CUTTER', 
-                    payload: { cost: 75 } 
-                },
-                { text: 'Vielleicht später', event: 'RESUME_GAME' }
-            ]
-        });
+        eventBus.emit('SHOW_DIALOG', DialogFactory.getBoltCutterDialog(75));
     });
 
     eventBus.subscribe('PUB_TARGET_REACHED', () => {
@@ -401,11 +391,7 @@ async function initApp() {
             await mapData.loadCityData(coords);
         } catch (err) {
             console.error("Critical Load Error:", err);
-            eventBus.emit('SHOW_DIALOG', {
-                title: 'Verbindungsfehler',
-                text: "Die Satelliten-Verbindung zum städtischen Bauamt ist aktuell gestört (Server Timeout). Bitte versuche es in ein paar Sekunden noch einmal oder wähle eine andere Stadt.",
-                buttons: [{ text: 'Zurück zum Hauptmenü', event: 'RELOAD_GAME' }]
-            });
+            eventBus.emit('SHOW_DIALOG', DialogFactory.getNetworkErrorDialog());
             return;
         }
         
