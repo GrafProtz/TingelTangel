@@ -1,4 +1,5 @@
 import { eventBus } from './EventBus.js';
+import { sanitizeHTML } from './Utils.js';
 
 /**
  * NotificationManager - Kümmert sich um Toasts, Popups und fliegende Animationen.
@@ -61,7 +62,7 @@ export class NotificationManager {
             pointerEvents: 'auto'
         });
 
-        toast.innerHTML = `<div>${msg}</div>`;
+        toast.textContent = msg;
         container.appendChild(toast);
 
         setTimeout(() => {
@@ -84,7 +85,7 @@ export class NotificationManager {
             transition: 'all 1s cubic-bezier(0.68, -0.55, 0.27, 1.55)'
         });
 
-        div.innerHTML = `<div style="font-weight: bold; color: var(--color-secondary);">${title}</div><p>${text}</p>`;
+        div.innerHTML = `<div style="font-weight: bold; color: var(--color-secondary);">${sanitizeHTML(title)}</div><p>${sanitizeHTML(text)}</p>`;
         document.body.appendChild(div);
 
         setTimeout(() => {

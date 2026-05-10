@@ -1,4 +1,5 @@
 import { eventBus } from './EventBus.js';
+import { sanitizeHTML } from './Utils.js';
 
 /**
  * HUDManager - Verwaltet die In-Game-UI (Budget, Info-Panels, Tutorials).
@@ -111,8 +112,8 @@ export class HUDManager {
             const cardEl = document.createElement('div');
             cardEl.className = 'info-card';
             cardEl.innerHTML = `
-                <div class="info-header">${card.title}</div>
-                <div class="info-body">${card.body}</div>
+                <div class="info-header">${sanitizeHTML(card.title)}</div>
+                <div class="info-body">${sanitizeHTML(card.body)}</div>
             `;
             this.#infoCardsContainer.appendChild(cardEl);
         });
@@ -129,7 +130,7 @@ export class HUDManager {
 
         const card = document.createElement('div');
         card.className = 'info-card';
-        card.innerHTML = `<div class="info-header">Mission</div><div class="info-body">${text}</div>`;
+        card.innerHTML = `<div class="info-header">Mission</div><div class="info-body">${sanitizeHTML(text)}</div>`;
         this.#infoCardsContainer.appendChild(card);
 
         this.#infoPanel.style.display = 'block';

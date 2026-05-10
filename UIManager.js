@@ -62,7 +62,7 @@ export class UIManager {
     handleCascade(data) {
         this.currentCascadeData = data;
         this.infoModalTitle.innerText = data.title || "Information";
-        this.infoModalText.innerHTML = data.fullText || "";
+        this.infoModalText.innerHTML = sanitizeHTML(data.fullText || "");
         
         // Reset classes
         this.infoModal.classList.remove('hidden');

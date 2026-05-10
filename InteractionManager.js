@@ -50,7 +50,7 @@ export class InteractionManager {
         
         // 3. Inhalt (Header & Body)
         let html = `<h3 class="dialog-title">${sanitizeHTML(config.title)}</h3>`;
-        html += `<div class="dialog-body">${config.body}</div>`;
+        html += `<div class="dialog-body">${sanitizeHTML(config.body)}</div>`;
         
         // 4. Button-Container
         const btnContainer = document.createElement('div');
@@ -59,7 +59,7 @@ export class InteractionManager {
         config.buttons.forEach((btnCfg, index) => {
             const btn = document.createElement('button');
             btn.className = `btn-base ${btnCfg.className || ''}`;
-            btn.innerHTML = btnCfg.text;
+            btn.innerHTML = sanitizeHTML(btnCfg.text);
             
             btn.onclick = () => {
                 this.closeAllOverlays();
@@ -130,7 +130,7 @@ export class InteractionManager {
             const preview = getPreviewFn(key);
             this.showDialog({
                 title: 'Bestätigung erforderlich',
-                body: `<div class="warning-box">${preview.text}</div>`,
+                body: `<div class="warning-box">${sanitizeHTML(preview.text)}</div>`,
                 buttons: [
                     { 
                         text: 'Risiko akzeptieren & Ausführen', 
