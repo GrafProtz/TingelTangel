@@ -1,114 +1,147 @@
 /**
- * EventBus - Ein leichtgewichtiger Pub/Sub-Mechanismus.
- * Kern-Architektur für lose gekoppelte Modulkommunikation.
+ * EventBus - Zentraler Pub/Sub-Mechanismus für GridCrime.
+ * 
+ * Diese Klasse ermöglicht eine lose Kopplung zwischen den Spiel-Modulen.
+ * Sie implementiert robuste Fehlerbehandlung, Memory-Leak-Prävention 
+ * und ein striktes Singleton-Pattern via ES6 Module Caching.
  */
 class EventBus {
-    // Private Field für die strikte Kapselung (ES2022)
+    /** @type {Map<string, Set<Function>>} */
     #listeners = new Map();
     
-    // Optionaler Debug-Modus für Performance- und Architektur-Tracking
-    #debugMode = false;
+    /** @type {boolean} */
+    #debug = false;
 
-    /**
-     * Aktiviert oder deaktiviert den Debug-Modus.
-     * @param {boolean} state 
-     */
-    setDebugMode(state) {
-        this.#debugMode = Boolean(state);
+    constructor() {
+        // Sicherstellung des Singletons bei direktem Aufruf (Defensive Programming)
+        if (EventBus.instance) {
+            return EventBus.instance;
+        }
+        EventBus.instance = this;
     }
 
     /**
-     * Registriert einen Callback für ein bestimmtes Event.
+     * Aktiviert das Logging für alle Events.
+     * @param {boolean} value 
+     */
+    set debug(value) {
+        this.#debug = !!value;
+    }
+
+    /**
+     * Abonniert ein Event.
+     * 
      * @param {string} event - Der Name des Events.
-     * @param {Function} callback - Die auszuführende Funktion.
-     * @returns {Function} Unsubscribe-Funktion, um den Listener sauber zu entfernen.
-     * @throws {TypeError} Wenn Event-Name kein String oder Callback keine Funktion ist.
+     * @param {Function} callback - Die Funktion, die bei Auslösung gerufen wird.
+     * @returns {Function} Eine Unsubscribe-Funktion (Closure), um den Listener sauber zu entfernen.
      */
     subscribe(event, callback) {
-        if (typeof event !== 'string' || event.trim() === '') {
-            throw new TypeError('EventBus: Event-Name muss ein nicht-leerer String sein.');
-        }
         if (typeof callback !== 'function') {
-            throw new TypeError(`EventBus: Callback für Event "${event}" muss eine Funktion sein.`);
+            console.error(`[EventBus] Fehler: Callback für "${event}" ist keine Funktion.`);
+            return () => {};
         }
 
         if (!this.#listeners.has(event)) {
             this.#listeners.set(event, new Set());
         }
+
         this.#listeners.get(event).add(callback);
 
-        if (this.#debugMode) {
-            console.log(`[EventBus] Subscribed to "${event}"`);
+        if (this.#debug) {
+            console.debug(`[EventBus] + Subscriber für "${event}". Gesamt: ${this.#listeners.get(event).size}`);
         }
 
-        // Return Unsubscribe-Funktion zur Memory-Leak Prävention
-        return () => this.unsubscribe(event, callback);
+        // Closure-Pattern zur Memory-Leak-Prävention
+        let isSubscribed = true;
+        return () => {
+            if (!isSubscribed) return;
+            isSubscribed = false;
+            this.#unsubscribe(event, callback);
+        };
     }
 
     /**
-     * Entfernt einen spezifischen Callback für ein bestimmtes Event.
-     * @param {string} event - Der Name des Events.
-     * @param {Function} callback - Die zu entfernende Funktion.
+     * Alias für subscribe (Common Pattern).
      */
-    unsubscribe(event, callback) {
-        if (!this.#listeners.has(event)) return;
-        
-        const eventListeners = this.#listeners.get(event);
-        const removed = eventListeners.delete(callback);
-
-        if (this.#debugMode && removed) {
-            console.log(`[EventBus] Unsubscribed from "${event}"`);
-        }
-
-        // Cleanup: Leeres Set entfernen, um Speicherplatz zu sparen
-        if (eventListeners.size === 0) {
-            this.#listeners.delete(event);
-        }
+    on(event, callback) {
+        return this.subscribe(event, callback);
     }
 
     /**
-     * Entfernt alle Callbacks für ein bestimmtes Event oder den kompletten Bus.
-     * @param {string} [event] - Optional. Wenn angegeben, wird nur dieses Event gecleart.
+     * Entfernt einen Listener intern.
+     * @param {string} event 
+     * @param {Function} callback 
      */
-    clear(event) {
-        if (event) {
-            this.#listeners.delete(event);
-            if (this.#debugMode) console.log(`[EventBus] Cleared all listeners for "${event}"`);
-        } else {
-            this.#listeners.clear();
-            if (this.#debugMode) console.log(`[EventBus] Cleared ALL events`);
+    #unsubscribe(event, callback) {
+        const eventSet = this.#listeners.get(event);
+        if (eventSet) {
+            eventSet.delete(callback);
+            if (eventSet.size === 0) {
+                this.#listeners.delete(event);
+            }
+            if (this.#debug) {
+                console.debug(`[EventBus] - Subscriber von "${event}" entfernt.`);
+            }
         }
     }
 
     /**
-     * Feuert ein Event und ruft alle registrierten Callbacks auf.
+     * Sendet ein Event an alle Abonnenten.
+     * 
      * @param {string} event - Der Name des Events.
-     * @param {any} [payload] - Die an die Callbacks zu übermittelnden Daten.
+     * @param {any} [payload] - Optionale Daten für die Subscriber.
      */
     emit(event, payload = null) {
-        if (this.#debugMode) {
-            console.log(`[EventBus] Emitting "${event}"`, payload);
+        const eventSet = this.#listeners.get(event);
+        
+        if (this.#debug) {
+            console.groupCollapsed(`[EventBus] Emit: "${event}"`);
+            console.log('Payload:', payload);
+            console.log('Abonnenten:', eventSet ? eventSet.size : 0);
+            console.groupEnd();
         }
 
-        if (!this.#listeners.has(event)) return;
+        if (!eventSet || eventSet.size === 0) return;
 
-        const eventListeners = this.#listeners.get(event);
-        
-        // Iteration über alle Callbacks
-        eventListeners.forEach(callback => {
-            // Error Isolation: Fehler in einem Callback blockieren nicht die anderen
+        // Kopie des Sets erstellen, um Probleme bei Unsubscribes während des Iterierens zu vermeiden
+        const currentListeners = [...eventSet];
+
+        currentListeners.forEach(callback => {
             try {
                 callback(payload);
-            } catch (err) {
-                console.error(`[EventBus] Fehler im Callback für Event "${event}":`, err);
-                if (this.#debugMode) {
-                    console.error('Payload:', payload);
-                    console.error('Stacktrace:', err.stack);
-                }
+            } catch (error) {
+                // Robustheit: Fehler in einem Subscriber dürfen die Kette nicht unterbrechen
+                console.error(
+                    `[EventBus] KRITISCHER FEHLER in Subscriber für Event "${event}":`,
+                    "\nFehler:", error.message,
+                    "\nStack:", error.stack,
+                    "\nPayload:", payload
+                );
             }
         });
     }
+
+    /**
+     * Alias für emit (Common Pattern).
+     */
+    publish(event, payload) {
+        this.emit(event, payload);
+    }
+
+    /**
+     * Entfernt alle Listener (Nützlich für harten Reset).
+     */
+    clearAll() {
+        this.#listeners.clear();
+        if (this.#debug) console.warn('[EventBus] Alle Listener wurden gelöscht.');
+    }
 }
 
-// Singleton Pattern: Nur eine Instanz global verfügbar machen und vor Modifikationen schützen
-export const eventBus = Object.freeze(new EventBus());
+// Erzeuge die Singleton-Instanz
+const instance = new EventBus();
+
+// Friere die Instanz ein, um Manipulationen an der API zu verhindern
+Object.freeze(instance);
+
+// Exportiere die Instanz (ES6 Module Caching sorgt für Singleton-Verhalten)
+export { instance as eventBus };
