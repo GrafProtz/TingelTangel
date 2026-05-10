@@ -565,11 +565,19 @@ class Game {
         const neighbor = neighbors.find(nb => String(nb.id) === String(targetId));
         
         if (!neighbor) return;
-        const edge = neighbor.edgeData;
 
         this.#isMoving = true;
         this.#notifyStateChange();
 
+        const ctx = this.#prepareMovement(neighbor, targetId);
+        this.#animFrameId = requestAnimationFrame((now) => this.#animateMovement(now, ctx));
+    }
+
+    /**
+     * Berechnet alle für die Animation benötigten Initialwerte.
+     */
+    #prepareMovement(neighbor, targetId) {
+        const edge = neighbor.edgeData;
         const startNode = this.#mapData.getNode(this.#currentPlayerNodeId);
         const fullPath = [[startNode.lat, startNode.lon], ...edge.path];
 
@@ -581,31 +589,41 @@ class Game {
         const durationMs = (edge.distance / speed) * 1000;
         const startTime = performance.now();
 
-        const animate = (now) => {
-            const elapsed = now - startTime;
-            const t = Math.min(elapsed / durationMs, 1);
-
-            const pos = this.#interpolatePath(fullPath, t);
-            
-            const costSoFar = Math.ceil(totalCost * t);
-            const newBudget = Math.max(0, budgetAtStart - costSoFar);
-            
-            if (newBudget !== this.#budget) {
-                const diff = newBudget - this.#budget;
-                this.#budget = newBudget;
-                this.#emitBudgetUpdate(diff);
-            }
-
-            eventBus.emit('PLAYER_POSITION_UPDATED', { lat: pos[0], lon: pos[1], budget: this.#budget });
-
-            if (t < 1) {
-                this.#animFrameId = requestAnimationFrame(animate);
-            } else {
-                this.#finishMovement(targetId);
-            }
+        return {
+            fullPath,
+            totalCost,
+            budgetAtStart,
+            durationMs,
+            startTime,
+            targetId
         };
+    }
 
-        this.#animFrameId = requestAnimationFrame(animate);
+    /**
+     * Der eigentliche rAF-Loop für die flüssige Bewegung.
+     */
+    #animateMovement(now, ctx) {
+        const elapsed = now - ctx.startTime;
+        const t = Math.min(elapsed / ctx.durationMs, 1);
+
+        const pos = this.#interpolatePath(ctx.fullPath, t);
+        
+        const costSoFar = Math.ceil(ctx.totalCost * t);
+        const newBudget = Math.max(0, ctx.budgetAtStart - costSoFar);
+        
+        if (newBudget !== this.#budget) {
+            const diff = newBudget - this.#budget;
+            this.#budget = newBudget;
+            this.#emitBudgetUpdate(diff);
+        }
+
+        eventBus.emit('PLAYER_POSITION_UPDATED', { lat: pos[0], lon: pos[1], budget: this.#budget });
+
+        if (t < 1) {
+            this.#animFrameId = requestAnimationFrame((nextNow) => this.#animateMovement(nextNow, ctx));
+        } else {
+            this.#finishMovement(ctx.targetId);
+        }
     }
 
     #finishMovement(targetId) {
