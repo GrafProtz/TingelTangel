@@ -27,9 +27,9 @@ class MapView {
         }).addTo(this._map);
 
         this._playerMarker    = null;
-        this._neighborMarkers = [];
+        this._neighborMarkers = new Map(); // Key: nodeId, Value: L.marker
         this._ghostPath       = null;
-        this._activePOIMarkers = [];
+        this._activePOIMarkers = new Map(); // Key: poiId, Value: L.marker
         this._radarMarkers    = [];
         this._debugLines      = [];
 
@@ -290,9 +290,20 @@ class MapView {
      * @param {Function} onClickCb
      */
     renderNeighbors(neighbors, targetNodeId, isBiking, lastPubVisit, onClickCb) {
-        this._clearNeighbors();
         if (this._neighborTimeout) clearTimeout(this._neighborTimeout);
 
+        // 1. Welche IDs werden JETZT benötigt?
+        const newNeighborIds = new Set(neighbors.map(nb => String(nb.id)));
+
+        // 2. Diffing: Alte Marker entfernen, die nicht mehr in der Liste sind
+        for (const [id, marker] of this._neighborMarkers.entries()) {
+            if (!newNeighborIds.has(id)) {
+                this._map.removeLayer(marker);
+                this._neighborMarkers.delete(id);
+            }
+        }
+
+        // 3. UI-Status für das aktuelle Haupt-Ziel zurücksetzen (Pointer-Events etc.)
         if (this._targetMarker) {
             const el = this._targetMarker.getElement();
             if (el) {
@@ -301,38 +312,36 @@ class MapView {
             }
         }
 
+        // 4. Pulsing-Elemente sammeln (Nodes, die bereit zum Betreten sind)
         const activeElements = [];
-        const neighborIds = neighbors.map(nb => String(nb.id));
-        
         this._activePOIMarkers.forEach(poiMarker => {
-            if (neighborIds.includes(String(poiMarker.accessNodeId))) {
+            if (newNeighborIds.has(String(poiMarker.accessNodeId))) {
                 // Cooldown-Check für Kneipen (Puls unterdrücken)
                 if (poiMarker.poiType === 'pub') {
                     const diff = Date.now() - (lastPubVisit || 0);
                     if (diff < CONFIG.PUB_COOLDOWN) return;
                 }
-                
                 const el = poiMarker.getElement();
                 if (el) activeElements.push(el);
             }
         });
 
-        if (neighborIds.includes(String(targetNodeId)) && this._targetMarker) {
+        if (newNeighborIds.has(String(targetNodeId)) && this._targetMarker) {
             const el = this._targetMarker.getElement();
             if (el) activeElements.push(el);
         }
 
         UIAnimator.applyReadyPulse(activeElements);
 
+        // 5. Neue Marker hinzufügen (staggered für Performance und flüssige Optik)
         let currentIndex = 0;
-        const total = neighbors.length;
-
         const drawNext = () => {
-            if (currentIndex >= total) return;
+            if (currentIndex >= neighbors.length) return;
 
             const nb = neighbors[currentIndex];
             const nbId = String(nb.id);
 
+            // Spezialfall: Das Ziel-POI-Icon selbst wird als Interaktions-Punkt genutzt
             if (nbId === String(targetNodeId) && this._targetMarker) {
                 const el = this._targetMarker.getElement();
                 if (el) {
@@ -345,7 +354,9 @@ class MapView {
                         onClickCb(nbId);
                     }, { once: true });
                 }
-            } else {
+            } 
+            // Normalfall: Kleine Kreuzungs-Marker
+            else if (!this._neighborMarkers.has(nbId)) {
                 const marker = L.marker([nb.lat, nb.lon], {
                     icon: L.divIcon({
                         className: 'neighbor-marker',
@@ -360,7 +371,6 @@ class MapView {
                 });
 
                 marker.on('mouseover', () => {
-                    console.log("TRACE HOVER: Maus betritt Marker. Setze Cursor-Klasse. Biking:", isBiking);
                     if (nb.edgeData?.path) {
                         this._drawGhostPath(nb.edgeData.path);
                     }
@@ -369,16 +379,15 @@ class MapView {
                     }
                 });
                 marker.on('mouseout', () => {
-                    console.log("TRACE HOVER: Maus verlässt Marker. Entferne Cursor-Klasse.");
                     this._clearGhostPath();
                     this._map.getContainer().classList.remove('biking-move-cursor');
                 });
 
-                this._neighborMarkers.push(marker);
+                this._neighborMarkers.set(nbId, marker);
             }
 
             currentIndex++;
-            this._neighborTimeout = setTimeout(drawNext, 40);
+            this._neighborTimeout = setTimeout(drawNext, 20); // 20ms Staggering
         };
 
         drawNext();
@@ -387,12 +396,11 @@ class MapView {
     _clearNeighbors() {
         const mapContainer = this._map.getContainer();
         if (mapContainer.classList.contains('biking-move-cursor')) {
-            console.warn("TRACE LEAK: Zombie-Klasse gefunden! Mache Force-Remove.");
             mapContainer.classList.remove('biking-move-cursor');
         }
 
         this._neighborMarkers.forEach(m => this._map.removeLayer(m));
-        this._neighborMarkers = [];
+        this._neighborMarkers.clear();
         this._clearGhostPath();
     }
 
@@ -446,12 +454,21 @@ class MapView {
      * }]
      */
     renderPOIs(poiArray) {
-        // Zwingende Initialisierung falls noch nicht geschehen (Defensive Programming)
-        if (!this._activePOIMarkers) this._activePOIMarkers = [];
+        // Zwingende Initialisierung falls noch nicht geschehen
+        if (!(this._activePOIMarkers instanceof Map)) this._activePOIMarkers = new Map();
 
-        // 1. Alle alten Marker und Debug-Linien entfernen
-        this._activePOIMarkers.forEach(m => this._map.removeLayer(m));
-        this._activePOIMarkers = [];
+        // 1. Welche IDs werden JETZT benötigt?
+        const newPoiIds = new Set(poiArray.map(poi => String(poi.id)));
+
+        // 2. Diffing: Alte POI-Marker entfernen, die nicht mehr in der Liste sind
+        for (const [id, marker] of this._activePOIMarkers.entries()) {
+            if (!newPoiIds.has(id)) {
+                this._map.removeLayer(marker);
+                this._activePOIMarkers.delete(id);
+            }
+        }
+
+        // 3. Debug-Linien entfernen (werden immer neu gezeichnet)
         this._debugLines.forEach(l => this._map.removeLayer(l));
         this._debugLines = [];
 
@@ -471,31 +488,59 @@ class MapView {
                 this._debugLines.push(line);
             }
 
-            const isSpecial = (poi.type === 'barber' || poi.type === 'bicycle');
-            const svg = this._getPOISVG(poi.type || 'pub');
+            const poiId = String(poi.id);
+            let activeLayer = this._activePOIMarkers.get(poiId);
 
-            const innerStyle = isSpecial 
-                ? 'display: inline-block; transform-origin: center center; width: 36px; height: 36px; line-height: 36px; text-align: center; font-size: 20px; background-color: #ffffff; border-radius: 50%; border: 2.5px solid #1e293b; box-shadow: 0 4px 10px rgba(0,0,0,0.5);'
-                : 'display: inline-block; transform-origin: center center;';
+            if (!activeLayer) {
+                const isSpecial = (poi.type === 'barber' || poi.type === 'bicycle');
+                const svg = this._getPOISVG(poi.type || 'pub');
 
-            const html = `
-                <div class="target-marker-wrapper">
-                    <div class="target-marker-inner" style="${innerStyle}">
-                        ${svg}
+                const innerStyle = isSpecial 
+                    ? 'display: inline-block; transform-origin: center center; width: 36px; height: 36px; line-height: 36px; text-align: center; font-size: 20px; background-color: #ffffff; border-radius: 50%; border: 2.5px solid #1e293b; box-shadow: 0 4px 10px rgba(0,0,0,0.5);'
+                    : 'display: inline-block; transform-origin: center center;';
+
+                const html = `
+                    <div class="target-marker-wrapper">
+                        <div class="target-marker-inner" style="${innerStyle}">
+                            ${svg}
+                        </div>
                     </div>
-                </div>
-            `;
+                `;
 
-            let marker, polygon;
+                let marker, polygon;
 
-            if (poi.type === 'allotments') {
-                // BUGFIX: Koordinaten kommen jetzt als poi.resolvedCoords vom Controller,
-                // nicht mehr über this._mapData._nodes (das hier nie existiert hat).
-                const coords = poi.resolvedCoords ?? [];
+                if (poi.type === 'allotments') {
+                    const coords = poi.resolvedCoords ?? [];
 
-                if (coords.length === 0) {
-                    // Kein Polygon-Rendering möglich – Fallback auf Standard-Marker
-                    console.warn(`MapView.renderPOIs: Keine resolvedCoords für allotments-POI ${poi.id}. Fallback auf Punkt-Marker.`);
+                    if (coords.length === 0) {
+                        marker = L.marker([poi.lat, poi.lon], {
+                            icon: L.divIcon({
+                                className: 'target-marker',
+                                html: html,
+                                iconSize: [36, 36],
+                                iconAnchor: [18, 18]
+                            }),
+                            pane: 'popupPane',
+                            zIndexOffset: 2000,
+                            interactive: !!poi.onClickCallback
+                        }).addTo(this._map);
+                        
+                        if (marker.getElement()) {
+                            marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
+                            UIAnimator.applySpawnEffect(poi.id, marker.getElement());
+                        }
+                    } else {
+                        polygon = L.polygon(coords, {
+                            color: '#fbbf24',
+                            fillColor: '#fbbf24',
+                            fillOpacity: 0.5,
+                            weight: 2,
+                            interactive: !!poi.onClickCallback,
+                            className: 'target-marker'
+                        }).addTo(this._map);
+                        if (polygon.getElement()) polygon.getElement().setAttribute('data-node-id', poi.accessNodeId);
+                    }
+                } else {
                     marker = L.marker([poi.lat, poi.lon], {
                         icon: L.divIcon({
                             className: 'target-marker',
@@ -512,61 +557,30 @@ class MapView {
                         marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
                         UIAnimator.applySpawnEffect(poi.id, marker.getElement());
                     }
-                } else {
-                    polygon = L.polygon(coords, {
-                        color: '#fbbf24',
-                        fillColor: '#fbbf24',
-                        fillOpacity: 0.5,
-                        weight: 2,
-                        interactive: !!poi.onClickCallback,
-                        className: 'target-marker'
-                    }).addTo(this._map);
-                    if (polygon.getElement()) polygon.getElement().setAttribute('data-node-id', poi.accessNodeId);
                 }
-            } else {
-                // Standard-Marker für alle anderen Ziele
-                marker = L.marker([poi.lat, poi.lon], {
-                    icon: L.divIcon({
-                        className: 'target-marker',
-                        html: html,
-                        iconSize: [36, 36],
-                        iconAnchor: [18, 18]
-                    }),
-                    pane: 'popupPane',
-                    zIndexOffset: 2000,
-                    interactive: !!poi.onClickCallback
-                }).addTo(this._map);
-                
-                if (marker.getElement()) {
-                    marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
-                    const el = marker.getElement();
-                    UIAnimator.applySpawnEffect(poi.id, el);
 
-                    // 10-Sekunden-Puls für Fahrräder entfernt - jetzt rein über proximity gesteuert
+                if (poi.onClickCallback) {
+                    const layer = typeof marker !== 'undefined' ? marker : polygon;
+                    const el = layer?.getElement();
+                    if (el) {
+                        el.style.pointerEvents = 'auto';
+                        el.addEventListener('pointerdown', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            poi.onClickCallback();
+                        });
+                    }
+                }
+
+                activeLayer = typeof marker !== 'undefined' ? marker : (typeof polygon !== 'undefined' ? polygon : null);
+                if (activeLayer) {
+                    activeLayer.accessNodeId = poi.accessNodeId;
+                    activeLayer.poiType = poi.type || 'pub';
+                    this._activePOIMarkers.set(poiId, activeLayer);
                 }
             }
 
-            if (poi.onClickCallback) {
-                const layer = typeof marker !== 'undefined' ? marker : polygon;
-                const el = layer?.getElement();
-                if (el) {
-                    el.style.pointerEvents = 'auto';
-                    el.addEventListener('pointerdown', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        poi.onClickCallback();
-                    });
-                }
-            }
-
-            const activeLayer = typeof marker !== 'undefined' ? marker : (typeof polygon !== 'undefined' ? polygon : null);
-            if (activeLayer) {
-                activeLayer.accessNodeId = poi.accessNodeId;
-                activeLayer.poiType = poi.type || 'pub';
-                this._activePOIMarkers.push(activeLayer);
-            }
-
-            if (poi.type === 'pub' || poi.isPrimary) {
+            if ((poi.type === 'pub' || poi.isPrimary) && activeLayer) {
                 this._targetMarker = activeLayer;
             }
         });
