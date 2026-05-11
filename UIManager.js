@@ -67,6 +67,8 @@ export class UIManager {
         // Reset classes
         this.infoModal.classList.remove('hidden');
         this.infoModal.classList.remove('fly-to-sidebar');
+        
+        setTimeout(() => this.infoModalBtn.focus(), 10);
     }
 
     handleAddLogEntry(data) {
@@ -179,6 +181,8 @@ export class UIManager {
         
         this.infoModal.classList.remove('hidden');
         this.infoModal.classList.remove('fly-to-sidebar');
+        
+        setTimeout(() => this.infoModalBtn.focus(), 10);
     }
 
     /**

@@ -47,9 +47,14 @@ export class InteractionManager {
         // 2. Dialog-Box
         const dialogBox = document.createElement('div');
         dialogBox.className = `dialog-box glass-panel ${config.isWide ? 'modal-wide' : ''}`;
+        dialogBox.setAttribute('role', 'dialog');
+        dialogBox.setAttribute('aria-modal', 'true');
+        
+        const titleId = `dialog-title-${Date.now()}`;
+        dialogBox.setAttribute('aria-labelledby', titleId);
         
         // 3. Inhalt (Header & Body)
-        let html = `<h3 class="dialog-title">${sanitizeHTML(config.title)}</h3>`;
+        let html = `<h3 id="${titleId}" class="dialog-title">${sanitizeHTML(config.title)}</h3>`;
         html += `<div class="dialog-body">${sanitizeHTML(config.body)}</div>`;
         
         // 4. Button-Container

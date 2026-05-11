@@ -26,13 +26,13 @@
 <body>
 
     <!-- Startbildschirm -->
-    <div id="intro-overlay">
+    <div id="intro-overlay" role="region" aria-label="GridCrime Startbildschirm">
         <div class="branding">
             <h1>GridCrime</h1>
             <p>DAS VERBRECHEN IN DEINER STADT</p>
         </div>
         <div class="menu-card">
-            <select id="city-dropdown-intro">
+            <select id="city-dropdown-intro" aria-label="Einsatzort wählen">
                 <option value="" disabled selected>Einsatzort wählen...</option>
             </select>
             <button class="start-btn" id="btn-new-game">MISSION STARTEN</button>
@@ -41,13 +41,13 @@
     </div>
 
     <!-- In-Game UI -->
-    <div id="budget-panel" style="display: none;">
+    <div id="budget-panel" style="display: none;" aria-live="polite">
         Budget: 0 €
     </div>
 
 
     <div id="app-container">
-        <div id="map"></div>
+        <div id="map" aria-label="Stadtkarte"></div>
     </div>
     
     <!-- Cinematic Loop Overlay (Lockpick-Animation & Clickblock) -->
@@ -57,13 +57,13 @@
     <div id="pub-overlay-ui" class="pub-inactive" style="display: none;"></div>
 
     <!-- Info Modal & Sidebar Log -->
-    <div id="info-modal" class="hidden">
+    <div id="info-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="info-modal-title">
         <h2 id="info-modal-title"></h2>
         <p id="info-modal-text"></p>
         <button id="info-modal-btn">Verstanden</button>
     </div>
-    <button id="sidebar-toggle">Logbuch</button>
-    <div id="sidebar-log" class="sidebar-closed">
+    <button id="sidebar-toggle" aria-label="Logbuch öffnen">Logbuch</button>
+    <div id="sidebar-log" class="sidebar-closed" role="complementary" aria-label="Logbuch">
         <button id="back-to-menu" style="display: none; margin-bottom: 1rem;">← Hauptmenü</button>
         <div id="sidebar-log-content" style="flex-grow: 1; overflow-y: auto;"></div>
         <div style="position: absolute; bottom: 0; left: 0; width: 100%; background-color: rgba(30, 30, 30, 0.95); color: #ffffff; font-size: 9px; text-align: center; padding: 6px 0; z-index: 9999; font-family: sans-serif; border-top: 1px solid #444;">Idee und Realisierung: Volker Bombien</div>
