@@ -301,6 +301,26 @@ class Game {
     // ----------------------------------------------------------------
 
     /**
+     * Zentraler Check für die Nähe zu einem POI.
+     * Gültig, wenn der Spieler auf dem Zugriffsknoten steht ODER ein direkter Nachbar ist.
+     * @param {string|number} targetNodeId 
+     * @returns {boolean}
+     */
+    checkProximity(targetNodeId) {
+        return this.#checkProximity(targetNodeId);
+    }
+
+    #checkProximity(targetNodeId) {
+        const currentId = String(this.#currentPlayerNodeId);
+        const sid = String(targetNodeId);
+        
+        if (currentId === sid) return true;
+
+        const neighbors = this.#mapData.getNeighbors(currentId, this.#isBiking);
+        return neighbors.some(nb => String(nb.id) === sid);
+    }
+
+    /**
      * Gibt eine tiefe Kopie des aktuellen Spielzustands zurück.
      * Nutzt structuredClone, um Referenz-Leaks zu verhindern.
      */
@@ -320,9 +340,18 @@ class Game {
             missionPhase: this.#missionPhase,
             infoMenuOpenUntilMove: this.#infoMenuOpenUntilMove,
             isInfoMenuOpen: this.#isInfoMenuOpen,
-            activeCrimeTargets: this.#activeCrimeTargets,
-            activeBarber: this.#activeBarber,
-            activeBicycleTargets: this.#activeBicycleTargets,
+            activeCrimeTargets: this.#activeCrimeTargets.map(t => ({
+                ...t,
+                isPlayerAtTarget: this.#checkProximity(t.accessNodeId)
+            })),
+            activeBarber: this.#activeBarber ? {
+                ...this.#activeBarber,
+                isPlayerAtBarber: this.#checkProximity(this.#activeBarber.accessNodeId)
+            } : null,
+            activeBicycleTargets: this.#activeBicycleTargets.map(t => ({
+                ...t,
+                isPlayerAtBicycle: this.#checkProximity(t.accessNodeId)
+            })),
             isDisguised: this.#isDisguised,
             hasBoltCutter: this.#hasBoltCutter,
             isBiking: this.#isBiking,
@@ -549,7 +578,10 @@ class Game {
         if (newBudget !== this.#budget) {
             const diff = newBudget - this.#budget;
             this.#budget = newBudget;
-            this.#emitBudgetUpdate(diff);
+            
+            // Während der Animation feuern wir nur ein leichtgewichtiges Event für die UI,
+            // um den teuren structuredClone in #notifyStateChange zu vermeiden.
+            eventBus.emit('BUDGET_TICK', { total: this.#budget, diff });
         }
 
         eventBus.emit('PLAYER_POSITION_UPDATED', { lat: pos[0], lon: pos[1], budget: this.#budget });

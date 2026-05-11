@@ -119,11 +119,7 @@ async function initApp() {
                     ...target,
                     accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                     onClickCallback: () => {
-                        const markerEl = document.querySelector(`.target-marker[data-node-id="${target.accessNodeId}"]`);
-                        const innerEl = markerEl?.querySelector('.target-marker-inner');
-                        const isAtAccessNode = innerEl?.classList.contains('poi-ready-pulse');
-
-                        if (!isAtAccessNode) {
+                        if (!game.checkProximity(target.accessNodeId)) {
                             eventBus.emit('SHOW_TOAST', { msg: "Du musst exakt am Icon stehen!", type: 'fail' });
                             return;
                         }
@@ -145,11 +141,7 @@ async function initApp() {
                 type: 'barber',
                 accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                 onClickCallback: () => {
-                    const markerEl = document.querySelector(`.target-marker[data-node-id="${b.accessNodeId}"]`);
-                    const innerEl = markerEl?.querySelector('.target-marker-inner');
-                    const isAtAccessNode = innerEl?.classList.contains('poi-ready-pulse');
-
-                    if (!isAtAccessNode) {
+                    if (!game.checkProximity(b.accessNodeId)) {
                         eventBus.emit('SHOW_TOAST', { msg: "Geh näher ran an den Salon!", type: 'fail' });
                         return;
                     }
@@ -175,11 +167,7 @@ async function initApp() {
                     type: 'bicycle',
                     accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                     onClickCallback: () => {
-                        const markerEl = document.querySelector(`.target-marker[data-node-id="${target.accessNodeId}"]`);
-                        const innerEl = markerEl?.querySelector('.target-marker-inner');
-                        const isAtAccessNode = innerEl?.classList.contains('poi-ready-pulse');
-
-                        if (!isAtAccessNode) {
+                        if (!game.checkProximity(target.accessNodeId)) {
                             eventBus.emit('SHOW_TOAST', { msg: "Steh direkt am Rad, um es zu knacken!", type: 'fail' });
                             return;
                         }

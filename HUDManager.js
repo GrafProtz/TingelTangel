@@ -36,6 +36,7 @@ export class HUDManager {
     #setupListeners() {
         // Ausschließlich auf Events hören, kein aktives Pulling
         eventBus.subscribe('BUDGET_UPDATED', (data) => this.#updateBudget(data));
+        eventBus.subscribe('BUDGET_TICK', (data) => this.#updateBudget(data));
         eventBus.subscribe('INFO_UPDATED', (data) => this.#updateInfoPanel(data));
         eventBus.subscribe('INFO_MENU_STATE', (data) => this.#setInfoMenuState(data));
         eventBus.subscribe('SHOW_TUTORIAL', (data) => this.#showTutorial(data));

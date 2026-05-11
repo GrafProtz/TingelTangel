@@ -83,6 +83,7 @@ class MapView {
 
     #isLockCamera;
     #lockTimer;
+    #targetClickHandler;
 
     // ----------------------------------------------------------------
     //  Polizei-Radar
@@ -310,6 +311,10 @@ class MapView {
             if (el) {
                 el.style.pointerEvents = 'none';
                 el.style.zIndex = '2000';
+                if (this.#targetClickHandler) {
+                    el.removeEventListener('pointerdown', this.#targetClickHandler);
+                    this.#targetClickHandler = null;
+                }
             }
         }
 
@@ -348,12 +353,15 @@ class MapView {
                 if (el) {
                     el.style.pointerEvents = 'auto';
                     el.style.zIndex = '10000';
-                    el.addEventListener('pointerdown', (e) => {
+                    
+                    this.#targetClickHandler = (e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         this._clearGhostPath();
                         onClickCb(nbId);
-                    }, { once: true });
+                    };
+
+                    el.addEventListener('pointerdown', this.#targetClickHandler, { once: true });
                 }
             } 
             // Normalfall: Kleine Kreuzungs-Marker
