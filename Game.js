@@ -7,6 +7,7 @@ import { DialogFactory } from './DialogFactory.js';
 import { EVENTS } from './EventTypes.js';
 import { BudgetManager } from './BudgetManager.js';
 import { MovementEngine } from './MovementEngine.js';
+import { RiskCalculator } from './RiskCalculator.js';
 
 /**
  * Game - Die Logik-Schicht.
@@ -25,6 +26,7 @@ class Game {
     #currentPlayerNodeId = null;
     #gameActive = false;
     #movementEngine;
+    #riskCalculator;
     #targetPubNodeId = null;
     #targetPubName = "Kneipe";
     #radarUnlocked = false;
@@ -56,6 +58,7 @@ class Game {
         this.#missionService = missionService;
         this.#budgetManager = new BudgetManager();
         this.#movementEngine = new MovementEngine(this.#mapData);
+        this.#riskCalculator = new RiskCalculator(this.#mapData);
         this.#setupInteractionListeners();
     }
 
@@ -729,7 +732,7 @@ class Game {
         const targetNode = this.#mapData.getNode(this.#targetPubNodeId);
         if (!targetNode) return null;
 
-        const riskData = this.#mapData.getPoliceRiskModifier([targetNode.lat, targetNode.lon]);
+        const riskData = this.#riskCalculator.getPoliceRiskModifier([targetNode.lat, targetNode.lon]);
         const baseRisk = (key === 'B') ? CONFIG.RISK_PUB_EASY : CONFIG.RISK_PUB_HARD;
         const finalRisk = Math.min(100, baseRisk + riskData.riskMalus);
 
@@ -745,59 +748,7 @@ class Game {
     }
 
     calculateTargetRisk(targetNode) {
-        const statsMap = {
-            'residential': { baseRisk: 15, abortRate: 47, minLoot: 1500, maxLoot: 6100, label: 'Wohnobjekt' },
-            'commercial':  { baseRisk: 30, abortRate: 28, minLoot: 500,  maxLoot: 15000, label: 'Gewerbeobjekt' },
-            'public':      { baseRisk: 30, abortRate: 25, minLoot: 100,  maxLoot: 8000,  label: 'Öffentliche Einrichtung' },
-            'allotments':  { baseRisk: 15, abortRate: 15, minLoot: 50,   maxLoot: 1950,  label: 'Kleingarten/Schuppen' },
-            'bicycle':     { baseRisk: 9.7, abortRate: 0, minLoot: 0,    maxLoot: 0,     label: 'Fahrradständer' }
-        };
-
-        const category = targetNode.type || 'residential';
-        const config = statsMap[category] || statsMap.residential;
-
-        const stations = this.#mapData.getPoliceStations();
-        let proximityRisk = 0;
-        let nearbyCount = 0;
-
-        stations.forEach(station => {
-            const dist = this.#mapData.calculateDistance(
-                { lat: targetNode.lat, lon: targetNode.lon },
-                { lat: station.lat, lon: station.lon }
-            );
-
-            if (dist < 500) {
-                nearbyCount++;
-                proximityRisk += (500 - dist) / 500 * 25;
-            }
-        });
-
-        const interferenceRisk = nearbyCount > 1 ? (nearbyCount - 1) * 15 : 0;
-        
-        let totalRisk = Math.min(95, config.baseRisk + proximityRisk + interferenceRisk);
-        let abortRate = config.abortRate;
-
-        // Tarnung-Buff anwenden (Halbierung)
-        if (this.#isDisguised) {
-            totalRisk *= 0.5;
-            abortRate *= 0.5;
-        }
-
-        const successProbability = 100 - totalRisk;
-
-        return {
-            label: config.label,
-            minLoot: config.minLoot,
-            maxLoot: config.maxLoot,
-            baseRisk: config.baseRisk,
-            abortRate: Number(abortRate.toFixed(1)),
-            proximityRisk: Number(proximityRisk.toFixed(1)),
-            interferenceRisk: interferenceRisk,
-            nearbyCount: nearbyCount,
-            totalRisk: Number(totalRisk.toFixed(1)),
-            successProbability: Number(successProbability.toFixed(1)),
-            isDisguised: this.#isDisguised
-        };
+        return this.#riskCalculator.calculateTargetRisk(targetNode, this.#isDisguised);
     }
 
     startBicycleTheft(targetId) {
@@ -938,7 +889,7 @@ class Game {
         const target = this.#activeCrimeTargets?.find(t => t.id === targetId);
         if (!target) return null;
 
-        const riskData = this.#mapData.getPoliceRiskModifier([target.lat, target.lon]);
+        const riskData = this.#riskCalculator.getPoliceRiskModifier([target.lat, target.lon]);
         
         let mult = 1.0;
         if (target.type === 'commercial') mult = 1.2;
