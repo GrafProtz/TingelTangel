@@ -1,4 +1,5 @@
 import { CONFIG } from './GameConfig.js';
+import { log } from './Utils.js';
 
 /**
  * MissionService - Kapselt die Logik für Missionen, Szenarien und Ziel-Generierung.
@@ -131,7 +132,7 @@ export class MissionService {
      */
     spawnBicycleTargets(mapData, playerCoords) {
         const allParkings = mapData.getBicycleParkings();
-        console.log("TRACE BIKES: Rohdaten Stellplätze gefunden:", allParkings.length);
+        log("TRACE BIKES: Rohdaten Stellplätze gefunden:", allParkings.length);
         
         if (!allParkings || allParkings.length === 0) return [];
 
@@ -139,13 +140,13 @@ export class MissionService {
             .map(p => {
                 const dist = mapData.calculateDistance(playerCoords, p);
                 const accessNode = mapData.findNearestGraphNode(p.lat, p.lon);
-                console.log("TRACE BIKES: Prüfe Stellplatz", p.id, "Distance:", dist, "Hat AccessNode:", !!accessNode);
+                log("TRACE BIKES: Prüfe Stellplatz", p.id, "Distance:", dist, "Hat AccessNode:", !!accessNode);
                 return { ...p, distance: dist, accessNode };
             })
             .filter(p => p.distance >= CONFIG.MIN_DISTANCE_BIKE && p.distance <= (CONFIG.MIN_DISTANCE_BIKE + 600) && p.accessNode !== null) 
             .sort((a, b) => a.distance - b.distance);
 
-        console.log("TRACE BIKES: Kandidaten nach Filterung:", candidates.length);
+        log("TRACE BIKES: Kandidaten nach Filterung:", candidates.length);
 
         // Die 3 nächsten Stellplätze auswählen
         const selected = candidates.slice(0, 3);

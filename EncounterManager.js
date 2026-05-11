@@ -1,5 +1,6 @@
 import { eventBus } from './EventBus.js';
 import { ENCOUNTERS } from './EncounterData.js';
+import { log } from './Utils.js';
 
 /**
  * EncounterManager - Die Logik-Zentrale für Zufallsereignisse.
@@ -11,25 +12,25 @@ export class EncounterManager {
      * @param {Object} state - Der aktuelle Game-State
      */
     static checkAndTriggerEvent(state) {
-        console.log("TRACE ENCOUNTER: Prüfung gestartet. In Kneipe:", state.isInPub);
+        log("TRACE ENCOUNTER: Prüfung gestartet. In Kneipe:", state.isInPub);
         
         // 1. Gatekeeper: Zurück auf 5% Standard
         const gateRoll = Math.random();
         const encounterChance = 0.05; 
-        console.log("TRACE ENCOUNTER: Würfelwurf: " + gateRoll.toFixed(4) + " (Limit: " + encounterChance + ")");
+        log("TRACE ENCOUNTER: Würfelwurf: " + gateRoll.toFixed(4) + " (Limit: " + encounterChance + ")");
         
         if (gateRoll > encounterChance) {
-            console.log("TRACE ENCOUNTER: Kein Ereignis in diesem Zug.");
+            log("TRACE ENCOUNTER: Kein Ereignis in diesem Zug.");
             return;
         }
 
         // 2. Blockade: Kein Event, wenn der Spieler in einer Kneipe ist
         if (state.isInPub) {
-            console.log("TRACE ENCOUNTER: Wurf gelingt, aber Abbruch (In Kneipe).");
+            log("TRACE ENCOUNTER: Wurf gelingt, aber Abbruch (In Kneipe).");
             return;
         }
 
-        console.log("TRACE ENCOUNTER: TREFFER! Berechne Gewichtung...");
+        log("TRACE ENCOUNTER: TREFFER! Berechne Gewichtung...");
 
         // 3. Gewichtete Ziehung (Basis 550)
         const totalWeight = ENCOUNTERS.reduce((sum, e) => sum + e.weight, 0);
@@ -46,7 +47,7 @@ export class EncounterManager {
 
         // 4. Trigger abfeuern
         if (selectedEvent) {
-            console.log("TRACE ENCOUNTER: Event gewählt: " + selectedEvent.title + " (Kosten: " + selectedEvent.cost + "€)");
+            log("TRACE ENCOUNTER: Event gewählt: " + selectedEvent.title + " (Kosten: " + selectedEvent.cost + "€)");
             eventBus.emit('ENCOUNTER_TRIGGERED', selectedEvent);
         }
     }

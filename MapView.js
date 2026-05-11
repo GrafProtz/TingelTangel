@@ -1,4 +1,5 @@
 import { eventBus } from './EventBus.js';
+import { log } from './Utils.js';
 import { UIAnimator } from './UIAnimator.js';
 import { CONFIG } from './GameConfig.js';
 
@@ -45,7 +46,7 @@ class MapView {
         });
 
         eventBus.subscribe('START_BARBER_REVEAL', (data) => {
-            console.log("DEBUG: Barber Reveal gestartet mit Node:", data.node);
+            log("DEBUG: Barber Reveal gestartet mit Node:", data.node);
             if (!data.node) return;
             this._isIntroFlying = true;
 

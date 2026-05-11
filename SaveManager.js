@@ -1,4 +1,5 @@
 import { eventBus } from './EventBus.js';
+import { log } from './Utils.js';
 
 /**
  * SaveManager - Verwaltet persistente Spielstände (pro Stadt) im localStorage.
@@ -46,7 +47,7 @@ export class SaveManager {
                 const key = this.#getStorageKey(this.#currentCity);
                 localStorage.setItem(key, JSON.stringify(state));
                 eventBus.emit('SAVE_COMPLETED');
-                console.log(`[SaveManager] Auto-Save für ${this.#currentCity} erfolgreich.`);
+                log(`[SaveManager] Auto-Save für ${this.#currentCity} erfolgreich.`);
             } catch (err) {
                 console.error('[SaveManager] Auto-Save fehlgeschlagen:', err);
             }
@@ -80,8 +81,7 @@ export class SaveManager {
      */
     deleteSave(cityName) {
         if (!cityName) return;
-        console.trace("FATAL ERROR: Wer hat das Savegame gelöscht? Hier ist der Stack-Trace:");
         localStorage.removeItem(this.#getStorageKey(cityName));
-        console.log(`[SaveManager] Savegame für ${cityName} gelöscht.`);
+        log(`[SaveManager] Savegame für ${cityName} gelöscht.`);
     }
 }

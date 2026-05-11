@@ -7,6 +7,7 @@ import { NotificationManager } from './NotificationManager.js';
 import { MissionService } from './MissionService.js';
 import { SaveManager } from './SaveManager.js';
 import { UIManager } from './UIManager.js';
+import { log } from './Utils.js';
 import { eventBus } from './EventBus.js';
 import { sanitizeHTML } from './Utils.js';
 import { DialogFactory } from './DialogFactory.js';
@@ -344,7 +345,7 @@ async function initApp() {
 
         await mapView.playPoliceRevealSequence(policeStations, playerCoords);
         
-        console.log('[MAIN] Police-Reveal beendet, Spiel wird freigegeben.');
+        log('TRACE: Police-Reveal beendet, Spiel wird freigegeben.');
         game.resume();
     });
 

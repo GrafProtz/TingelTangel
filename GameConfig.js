@@ -3,6 +3,7 @@
  * Verhindert "Magic Numbers" im Code.
  */
 export const CONFIG = {
+    DEBUG_MODE: true, // Zentrales Flag für Logging
     // Finanzen
     INITIAL_BUDGET: 300,
     RADAR_COST: 50,
@@ -39,6 +40,6 @@ export const CONFIG = {
     
     // Spawner-Distanzen (Mindestabstände)
     MIN_DISTANCE_BIKE: 200, // Mindestens 200 Meter vom Startpunkt
-    MIN_DISTANCE_POI: 350,  // Mindestens 350 Meter vom Startpunkt
+    MIN_DISTANCE_POI: 150,  // Mindestens 150 Meter vom Startpunkt
     MAX_DISTANCE_TUTORIAL_PUB: 150 // Maximal 150 Meter für die erste Kneipe
 };
