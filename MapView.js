@@ -1,4 +1,5 @@
 import { eventBus } from './EventBus.js';
+import { EVENTS } from './EventTypes.js';
 import { log } from './Utils.js';
 import { UIAnimator } from './UIAnimator.js';
 import { CONFIG } from './GameConfig.js';
@@ -38,14 +39,14 @@ class MapView {
         this._isIntroFlying = false;
 
         // Globaler Kamera-Listener für entkoppelte Steuerung
-        eventBus.subscribe('CAMERA_FIT_BOUNDS_REQUESTED', (coords) => this.fitBounds(coords));
+        eventBus.subscribe(EVENTS.CAMERA_FIT_BOUNDS_REQUESTED, (coords) => this.fitBounds(coords));
         
         // Entsperre die Kamera, wenn das Intro vorbei ist
-        eventBus.subscribe('INTRO_COMPLETE', () => {
+        eventBus.subscribe(EVENTS.INTRO_COMPLETE, () => {
             this._isIntroFlying = false;
         });
 
-        eventBus.subscribe('START_BARBER_REVEAL', (data) => {
+        eventBus.subscribe(EVENTS.START_BARBER_REVEAL, (data) => {
             log("DEBUG: Barber Reveal gestartet mit Node:", data.node);
             if (!data.node) return;
             this._isIntroFlying = true;

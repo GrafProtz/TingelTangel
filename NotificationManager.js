@@ -1,5 +1,6 @@
 import { eventBus } from './EventBus.js';
 import { sanitizeHTML } from './Utils.js';
+import { EVENTS } from './EventTypes.js';
 
 /**
  * NotificationManager - Kümmert sich um Toasts, Popups und fliegende Animationen.
@@ -10,12 +11,12 @@ export class NotificationManager {
     }
 
     setupListeners() {
-        eventBus.subscribe('SHOW_TOAST', (data) => {
+        eventBus.subscribe(EVENTS.SHOW_TOAST, (data) => {
             console.log('TRACE 4: NotificationManager hat Event empfangen:', data);
             this.showToast(data);
         });
-        eventBus.subscribe('FLYING_REWARD', (data) => this.animateRewardToMenu(data));
-        eventBus.subscribe('FLYING_INFO', (data) => this.animateInfoToMenu(data));
+        eventBus.subscribe(EVENTS.FLYING_REWARD, (data) => this.animateRewardToMenu(data));
+        eventBus.subscribe(EVENTS.FLYING_INFO, (data) => this.animateInfoToMenu(data));
     }
 
     /**

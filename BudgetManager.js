@@ -128,8 +128,8 @@ export class BudgetManager {
                 title: 'Pleite!',
                 text: 'Du hast keinen Cent mehr in der Tasche. Ein alter Bekannter bietet dir einen Not-Kredit von 1.500 € an. Aber pass auf: Er will das Geld nach dem nächsten erfolgreichen Bruch mit Zinsen zurück!',
                 buttons: [
-                    { text: 'Kredit annehmen', event: 'ACCEPT_LOAN_OFFER' },
-                    { text: 'Aufgeben', event: 'RELOAD_GAME' }
+                    { text: 'Kredit annehmen', event: EVENTS.ACCEPT_LOAN_OFFER },
+                    { text: 'Aufgeben', event: EVENTS.RELOAD_GAME }
                 ]
             });
         } else {

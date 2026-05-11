@@ -1,4 +1,5 @@
 import { eventBus } from './EventBus.js';
+import { EVENTS } from './EventTypes.js';
 import { sanitizeHTML } from './Utils.js';
 
 /**
@@ -14,10 +15,10 @@ export class InteractionManager {
 
     #setupListeners() {
         // Mapping von Fach-Events auf das generische Dialog-System
-        eventBus.subscribe('OPEN_INTERACTION', (data) => this.#handlePubInteraction(data));
-        eventBus.subscribe('OPEN_INVESTMENT', (data) => this.#handleInvestmentInteraction(data));
-        eventBus.subscribe('OPEN_SCOUTING_REPORT', (data) => this.#handleScoutingReport(data));
-        eventBus.subscribe('SHOW_DIALOG', (data) => this.showDialog({
+        eventBus.subscribe(EVENTS.OPEN_INTERACTION, (data) => this.#handlePubInteraction(data));
+        eventBus.subscribe(EVENTS.OPEN_INVESTMENT, (data) => this.#handleInvestmentInteraction(data));
+        eventBus.subscribe(EVENTS.OPEN_SCOUTING_REPORT, (data) => this.#handleScoutingReport(data));
+        eventBus.subscribe(EVENTS.SHOW_DIALOG, (data) => this.showDialog({
             title: data.title,
             body: data.text,
             buttons: data.buttons.map(btn => ({
@@ -27,10 +28,10 @@ export class InteractionManager {
                 className: 'btn-primary'
             })),
             // Radar-Unlock Spezial-Logik: Wir hängen das Event einfach an die Buttons an
-            onClose: data.isRadarUnlock ? () => eventBus.emit('RADAR_SEQUENCE_START') : null
+            onClose: data.isRadarUnlock ? () => eventBus.emit(EVENTS.RADAR_SEQUENCE_START) : null
         }));
 
-        eventBus.subscribe('CLOSE_INTERACTION', () => this.closeAllOverlays());
+        eventBus.subscribe(EVENTS.CLOSE_INTERACTION, () => this.closeAllOverlays());
     }
 
     /**
@@ -119,7 +120,7 @@ export class InteractionManager {
                     // Wenn Bestätigung nötig, triggere Phase 2 lokal im Manager
                     onclick: opt.requiresConfirmation ? () => renderPhase2(key, opt) : null,
                     // Ansonsten feure direkt die Entscheidung oder ein Custom Event
-                    event: opt.requiresConfirmation ? null : (opt.customEvent || 'INTERACTION_SELECTED'),
+                    event: opt.requiresConfirmation ? null : (opt.customEvent || EVENTS.INTERACTION_SELECTED),
                     payload: opt.requiresConfirmation ? null : (opt.customPayload || { key, option: opt })
                 });
             });
@@ -140,7 +141,7 @@ export class InteractionManager {
                     { 
                         text: 'Risiko akzeptieren & Ausführen', 
                         className: 'btn-danger',
-                        event: 'INTERACTION_SELECTED',
+                        event: EVENTS.INTERACTION_SELECTED,
                         payload: { key, option: { ...opt, risk: preview.risk } }
                     },
                     { 
@@ -159,7 +160,7 @@ export class InteractionManager {
         const options = [
             { 
                 type: 'residential', 
-                event: 'SELECT_CATEGORY_WOHNUNG',
+                event: EVENTS.SELECT_CATEGORY_RESIDENTIAL,
                 title: 'Wohnungen', 
                 subtitle: '(Residential Assets)',
                 desc: 'Der Blue-Chip. 78.000 Fälle/Jahr. Bullen-Quote: nur 15%. Dividende: Ø 3.800€. Sicher und profitabel.',
@@ -167,7 +168,7 @@ export class InteractionManager {
             },
             { 
                 type: 'commercial', 
-                event: 'SELECT_CATEGORY_GEWERBE',
+                event: EVENTS.SELECT_CATEGORY_COMMERCIAL,
                 title: 'Gewerbe', 
                 subtitle: '(High-Risk Derivate)',
                 desc: 'Lager und Büros. Extrem heiß! Alarmanlagen treiben die Bullen-Quote auf 20-40%. Payoff: Stark variabel bis >10.000€. Nur für starke Nerven.',
@@ -175,7 +176,7 @@ export class InteractionManager {
             },
             { 
                 type: 'public', 
-                event: 'SELECT_CATEGORY_OEFFENTLICH',
+                event: EVENTS.SELECT_CATEGORY_PUBLIC,
                 title: 'Behörden', 
                 subtitle: '(Public Bonds)',
                 desc: 'Schulen und Ämter. Risiko ebenfalls bei 20-40%. Beute unberechenbar – von der Kaffeekasse bis zum Tresor. Ein volatiler Markt.',
@@ -183,7 +184,7 @@ export class InteractionManager {
             },
             { 
                 type: 'allotments', 
-                event: 'SELECT_CATEGORY_LAUBE',
+                event: EVENTS.SELECT_CATEGORY_ALLOTMENTS,
                 title: 'Schrebergärten', 
                 subtitle: '(Penny Stocks)',
                 desc: 'Lauben und Schuppen. Riesiger Markt (108.000 Fälle), Bullen-Quote unter 15%. Rendite mau (< 2.000€), aber dafür quasi stressfrei.',
@@ -208,7 +209,7 @@ export class InteractionManager {
                     event: opt.event,
                     className: 'btn-investment'
                 })),
-                { text: 'Portfolio schließen', event: 'INVESTMENT_CANCELLED', className: 'btn-secondary' }
+                { text: 'Portfolio schließen', event: EVENTS.INVESTMENT_CANCELLED, className: 'btn-secondary' }
             ]
         });
     }
@@ -248,13 +249,13 @@ export class InteractionManager {
                 { 
                     text: 'Einbruch durchziehen', 
                     className: 'btn-danger',
-                    event: 'START_BURGLARY',
+                    event: EVENTS.START_BURGLARY,
                     payload: { target, riskData }
                 },
                 { 
                     text: 'Rückzug', 
                     className: 'btn-secondary',
-                    event: 'RESUME_GAME'
+                    event: EVENTS.RESUME_GAME
                 }
             ]
         });

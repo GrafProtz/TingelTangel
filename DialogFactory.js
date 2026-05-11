@@ -1,3 +1,5 @@
+import { EVENTS } from './EventTypes.js';
+
 /**
  * DialogFactory - Erzeugt standardisierte Konfigurationsobjekte für den InteractionManager.
  * Trennt UI-Template-Logik von der Geschäftslogik.
@@ -26,8 +28,8 @@ export class DialogFactory {
             title: 'Drahtesel im Visier',
             text: dialogBody,
             buttons: [
-                { text: 'Einverstanden (Knacken)', event: 'START_BICYCLE_THEFT_RNG', payload: { target, riskData }, className: 'btn-danger' },
-                { text: 'Lieber nicht', event: 'RESUME_GAME', className: 'btn-secondary' }
+                { text: 'Einverstanden (Knacken)', event: EVENTS.START_BICYCLE_THEFT_RNG, payload: { target, riskData }, className: 'btn-danger' },
+                { text: 'Lieber nicht', event: EVENTS.RESUME_GAME, className: 'btn-secondary' }
             ]
         };
     }
@@ -37,8 +39,8 @@ export class DialogFactory {
             title: 'Ein neues Gesicht?',
             text: `"Brauchst du ein neues Gesicht, Kumpel? Die Schmiere ist dir dicht auf den Fersen. Setz dich auf den Stuhl, lass mich die Konturen nachziehen und die Matte färben. Wenn du hier rausgehst, erkennt dich nicht mal deine eigene Mutter wieder. Dein Entdeckungsrisiko für den nächsten Bruch schmilzt auf die Hälfte zusammen, und deine Nerven bleiben wie Drahtseile – die Abbruchquote halbiert sich gleich mit. Was sagst du? Ein paar Kröten für ein Ticket in die Unsichtbarkeit?"`,
             buttons: [
-                { text: 'Umstyling starten (50 €)', event: 'BARBER_TRANSFORM_START' },
-                { text: 'Später vielleicht', event: 'RESUME_GAME' }
+                { text: 'Umstyling starten (50 €)', event: EVENTS.BARBER_TRANSFORM_START },
+                { text: 'Später vielleicht', event: EVENTS.RESUME_GAME }
             ]
         };
     }
@@ -48,8 +50,8 @@ export class DialogFactory {
             title: 'Ein geschmeidiges Angebot',
             text: `"Hör zu, Freundchen. Für ${cost} Kröten überlasse ich dir diesen Bolzenschneider. Damit knackst du die Drahtesel an den Stellplätzen da draußen. Die Bullen juckt das kaum – nicht mal 10 Prozent Aufklärungsquote, ein absoluter Witz! Wenn du auf so einem Bock sitzt, machst du gleich zwei Blocks auf einmal. Du bist ein verdammter Geist auf zwei Rädern. Haben wir einen Deal?"`,
             buttons: [
-                { text: `Einverstanden (${cost} €)`, event: 'BUY_BOLT_CUTTER', payload: { cost } },
-                { text: 'Vielleicht später', event: 'RESUME_GAME' }
+                { text: `Einverstanden (${cost} €)`, event: EVENTS.BUY_BOLT_CUTTER, payload: { cost } },
+                { text: 'Vielleicht später', event: EVENTS.RESUME_GAME }
             ]
         };
     }
@@ -58,7 +60,7 @@ export class DialogFactory {
         return {
             title: 'Verbindungsfehler',
             text: "Die Satelliten-Verbindung zum städtischen Bauamt ist aktuell gestört (Server Timeout). Bitte versuche es in ein paar Sekunden noch einmal oder wähle eine andere Stadt.",
-            buttons: [{ text: 'Zurück zum Hauptmenü', event: 'RELOAD_GAME' }]
+            buttons: [{ text: 'Zurück zum Hauptmenü', event: EVENTS.RELOAD_GAME }]
         };
     }
 
@@ -67,7 +69,7 @@ export class DialogFactory {
             title: "Auge des Gesetzes",
             fullText: `Wir haben in diesem Sektor ${count} Polizeistationen. Hör gut zu: Je näher du an einer Wache ein Ding drehst, desto extremer steigt dein Risiko, geschnappt zu werden.<br><br>Damit du nicht blind in die Falle läufst: Mit dem Hotkey 'P' kannst du alle 5 Minuten für 5 Sekunden die Standorte der Bullen aufdecken. Präg sie dir gut ein!`,
             shortText: "Polizeipräsenz aufgedeckt. Hotkey 'P' nutzt einen 5-Sekunden-Scan (Cooldown: 5 Min).",
-            nextEvent: "START_POLICE_REVEAL"
+            nextEvent: EVENTS.START_POLICE_REVEAL
         };
     }
 
@@ -75,7 +77,7 @@ export class DialogFactory {
         return {
             title: 'Abbruch!',
             text: "Die mechanischen Sicherungen waren zu stark. Du musstest abbrechen und fliehen!",
-            buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
+            buttons: [{ text: 'Verdammt', event: EVENTS.RESUME_GAME }]
         };
     }
 
@@ -83,7 +85,7 @@ export class DialogFactory {
         return {
             title: 'Erwischt!',
             text: `Die Polizei war schneller. Du musstest ${fine} € Strafe zahlen.`,
-            buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
+            buttons: [{ text: 'Verdammt', event: EVENTS.RESUME_GAME }]
         };
     }
 
@@ -95,7 +97,7 @@ export class DialogFactory {
         return {
             title: 'Erfolg!',
             text: `Du hast ${amount} € erbeutet!${loanInfo}`,
-            buttons: [{ text: 'Hervorragend', event: 'RESUME_GAME' }]
+            buttons: [{ text: 'Hervorragend', event: EVENTS.RESUME_GAME }]
         };
     }
 
@@ -103,7 +105,7 @@ export class DialogFactory {
         return {
             title: 'Erfolg!',
             text: '<div style="text-align:center;"><div style="font-size: 3rem; margin-bottom: 1rem;">🚲</div><p>Rad geknackt! Du bist jetzt lautlos und schnell unterwegs.</p><p style="font-size: 0.9rem; opacity: 0.7; margin-top: 1rem;">(Drücke \'F\' zum Auf/Absteigen)</p></div>',
-            buttons: [{ text: 'Hervorragend', event: 'BICYCLE_THEFT_SUCCESS_DONE' }]
+            buttons: [{ text: 'Hervorragend', event: EVENTS.BICYCLE_THEFT_SUCCESS_DONE }]
         };
     }
 
@@ -111,7 +113,7 @@ export class DialogFactory {
         return {
             title: 'Erwischt!',
             text: `Ein aufmerksamer Zeuge hat dich beim Knacken beobachtet! Die Polizei hat dich gestellt. Du musstest ${fine} € Strafe zahlen.`,
-            buttons: [{ text: 'Verdammt', event: 'RESUME_GAME' }]
+            buttons: [{ text: 'Verdammt', event: EVENTS.RESUME_GAME }]
         };
     }
 

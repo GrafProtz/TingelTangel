@@ -1,5 +1,6 @@
 import { CONFIG } from './GameConfig.js';
 import { eventBus } from './EventBus.js';
+import { EVENTS } from './EventTypes.js';
 
 /**
  * Leichtgewichtiger Wrapper für IndexedDB, spezifisch für Map-Caching.
@@ -112,7 +113,7 @@ class MapData {
     // ----------------------------------------------------------------
 
     async loadCityData(coords) {
-        eventBus.emit('map:load:start', { message: 'Prüfe Cache...' });
+        eventBus.emit(EVENTS.MAP_LOAD_START, { message: 'Prüfe Cache...' });
 
         // 1. API Resilienz (Vorherigen Request abbrechen)
         if (this.#abortController) this.#abortController.abort();
@@ -131,7 +132,7 @@ class MapData {
             if (data) {
                 console.log(`MapData: Lade "${this.cityName}" aus IndexedDB Cache...`);
             } else {
-                eventBus.emit('map:load:progress', { stage: 'download', progress: 0, message: 'Lade Stadt-Daten von OSM...' });
+                eventBus.emit(EVENTS.MAP_LOAD_PROGRESS, { stage: 'download', progress: 0, message: 'Lade Stadt-Daten von OSM...' });
                 console.log(`MapData: Starte Overpass-Abfrage für "${this.cityName}"...`);
                 
                 const query = `[out:json][timeout:60];(
@@ -166,7 +167,7 @@ class MapData {
                         // Bei 504 (Timeout) oder 429 (Too Many Requests) versuchen wir es erneut
                         if (resp.status === 504 || resp.status === 429) {
                             console.warn(`Overpass Server busy (${resp.status}). Retrying in 3s... (${retries-1} left)`);
-                            eventBus.emit('map:load:progress', { message: `Server überlastet (${resp.status}). Erneuter Versuch...` });
+                            eventBus.emit(EVENTS.MAP_LOAD_PROGRESS, { message: `Server überlastet (${resp.status}). Erneuter Versuch...` });
                         } else {
                             throw new Error(`Overpass API Fehler: ${resp.status}`);
                         }
@@ -200,7 +201,7 @@ class MapData {
                 throw new Error('Keine befahrbaren Straßen gefunden.');
             }
 
-            eventBus.emit('map:load:success');
+            eventBus.emit(EVENTS.MAP_LOAD_SUCCESS);
 
         } catch (err) {
             if (err.name === 'AbortError') {
@@ -208,7 +209,7 @@ class MapData {
                 return;
             }
             console.error('MapData: Overpass/Loading-Fehler', err);
-            eventBus.emit('map:load:error', { error: err.message });
+            eventBus.emit(EVENTS.MAP_LOAD_ERROR, { error: err.message });
             throw err;
         } finally {
             this.#abortController = null;
@@ -220,7 +221,7 @@ class MapData {
     // ----------------------------------------------------------------
 
     async #parseOSMData(data) {
-        eventBus.emit('map:load:progress', { stage: 'parsing', progress: 0, message: 'Verarbeite Kartendaten...' });
+        eventBus.emit(EVENTS.MAP_LOAD_PROGRESS, { stage: 'parsing', progress: 0, message: 'Verarbeite Kartendaten...' });
         
         this.#nodes.clear();
         this.#ways.clear();
@@ -290,7 +291,7 @@ class MapData {
 
             // Time-Slicing
             if (performance.now() - lastYield > this.#YIELD_THRESHOLD_MS) {
-                eventBus.emit('map:load:progress', { stage: 'parsing', progress: Math.round((i / total) * 100), message: 'Verarbeite Kartendaten...' });
+                eventBus.emit(EVENTS.MAP_LOAD_PROGRESS, { stage: 'parsing', progress: Math.round((i / total) * 100), message: 'Verarbeite Kartendaten...' });
                 await this.#yieldToMain();
                 lastYield = performance.now();
             }
@@ -305,7 +306,7 @@ class MapData {
     // ----------------------------------------------------------------
 
     async #buildMacroGraph() {
-        eventBus.emit('map:load:progress', { stage: 'graph', progress: 0, message: 'Erstelle Wegenetz...' });
+        eventBus.emit(EVENTS.MAP_LOAD_PROGRESS, { stage: 'graph', progress: 0, message: 'Erstelle Wegenetz...' });
         
         // 1. Zähle, wie oft jeder Knoten in allen Wegen vorkommt
         const nodeUsage = new Map();
@@ -365,7 +366,7 @@ class MapData {
             }
 
             if (performance.now() - lastYield > this.#YIELD_THRESHOLD_MS) {
-                eventBus.emit('map:load:progress', { stage: 'graph', progress: Math.round((i / waysArray.length) * 100), message: 'Erstelle Wegenetz...' });
+                eventBus.emit(EVENTS.MAP_LOAD_PROGRESS, { stage: 'graph', progress: Math.round((i / waysArray.length) * 100), message: 'Erstelle Wegenetz...' });
                 await this.#yieldToMain();
                 lastYield = performance.now();
             }

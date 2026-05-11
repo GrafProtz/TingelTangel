@@ -2,6 +2,7 @@
  * MapLayerManager.js - Performantes Batch-Rendering von Leaflet-Layern.
  */
 import { eventBus } from './EventBus.js';
+import { EVENTS } from './EventTypes.js';
 
 export class MapLayerManager {
     #map = null;
@@ -14,7 +15,7 @@ export class MapLayerManager {
     }
 
     #setupListeners() {
-        eventBus.subscribe('DATA_LOADED', (osmData) => this.renderBatch(osmData));
+        eventBus.subscribe(EVENTS.DATA_LOADED, (osmData) => this.renderBatch(osmData));
     }
 
     renderBatch(osmData) {

@@ -55,16 +55,16 @@ async function initApp() {
     let missionPOI = null;
 
     // ----- Core Game Events -----
-    eventBus.subscribe('PLAYER_POSITION_UPDATED', ({ lat, lon }) => {
+    eventBus.subscribe(EVENTS.PLAYER_POSITION_UPDATED, ({ lat, lon }) => {
         mapView.updatePlayerPosition([lat, lon]);
     });
 
-    eventBus.subscribe('FIRST_MOVE_COMPLETED', () => {
-        eventBus.emit('TOGGLE_INFO', false);
+    eventBus.subscribe(EVENTS.FIRST_MOVE_COMPLETED, () => {
+        eventBus.emit(EVENTS.TOGGLE_INFO, false);
     });
 
     // ----- Mission & Target Spawning -----
-    eventBus.subscribe('SPAWN_TARGETS', ({ targetType, centerNodeId }) => {
+    eventBus.subscribe(EVENTS.SPAWN_TARGETS, ({ targetType, centerNodeId }) => {
         const targets = missionService.spawnTargets(targetType, centerNodeId);
         if (targets.length > 0) {
             game.setCrimeTargets(targets);
@@ -87,11 +87,11 @@ async function initApp() {
             });
 
             // Event für MapView abfeuern
-            eventBus.emit('CAMERA_FIT_BOUNDS_REQUESTED', coordsToFit);
+            eventBus.emit(EVENTS.CAMERA_FIT_BOUNDS_REQUESTED, coordsToFit);
             
-            eventBus.emit('SHOW_TOAST', { msg: `${targets.length} Ziele in der Nähe markiert!`, type: 'success' });
+            eventBus.emit(EVENTS.SHOW_TOAST, { msg: `${targets.length} Ziele in der Nähe markiert!`, type: 'success' });
         } else {
-            eventBus.emit('SHOW_TOAST', { msg: "Keine passenden Gebäude gefunden.", type: 'fail' });
+            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Keine passenden Gebäude gefunden.", type: 'fail' });
         }
     });
 
@@ -201,63 +201,42 @@ async function initApp() {
     // Globaler Key-Listener für Fahrrad-Toggle (Taste F)
     window.addEventListener('keydown', (e) => {
         if (e.key.toLowerCase() === 'f') {
-            eventBus.emit('TOGGLE_BICYCLE');
+            eventBus.emit(EVENTS.TOGGLE_BICYCLE);
         }
     });
 
-    eventBus.subscribe('BICYCLE_THEFT_SUCCESS_DONE', () => {
-        eventBus.emit('SHOW_INFO_CASCADE', {
+    eventBus.subscribe(EVENTS.BICYCLE_THEFT_SUCCESS_DONE, () => {
+        eventBus.emit(EVENTS.SHOW_INFO_CASCADE, {
             title: "Fahrrad-Modus",
             shortText: "Hotkey F: Auf/Absteigen. Vorsicht: 15 Cent/Meter (1,5x Preise)!",
             fullText: "Hör zu, Freundchen. Das Rad gehört jetzt dir. Damit bist du doppelt so schnell unterwegs, aber du fällst auch mehr auf. Das kostet dich natürlich auch mehr. Logo, versteht sich. Mit 'F' kannst du jederzeit auf- oder absteigen, um unauffällig zu bleiben.",
-            nextEvent: "RESUME_GAME"
+            nextEvent: EVENTS.RESUME_GAME
         });
     });
 
-    eventBus.subscribe('RELOAD_GAME', () => location.reload());
+    eventBus.subscribe(EVENTS.RELOAD_GAME, () => location.reload());
     
-    eventBus.subscribe('OPTION_C_CLICKED', () => {
+    eventBus.subscribe(EVENTS.OPTION_C_CLICKED, () => {
         const barber = game.findNearestHairdresser();
         const barberName = sanitizeHTML(barber?.tags?.name) || "Schnittwunde";
         
-        eventBus.emit('SHOW_DIALOG', {
+        eventBus.emit(EVENTS.SHOW_DIALOG, {
             title: 'Ein zwielichtiger Tipp',
             text: `Ich kenne da jemanden. Geh zu '<strong>${barberName}</strong>'. Lass dir die Haare färben, setz eine Brille auf. Wenn du nicht aussiehst wie ein typischer Einbrecher, fällst du weniger auf. Das halbiert dein Risiko und die Hausbesitzer schöpfen nicht so schnell Verdacht, was deine Abbruchquote drastisch senkt.`,
             buttons: [
                 { 
                     text: 'Einverstanden (50 €)', 
-                    event: 'BUY_BARBER_TICKET', 
+                    event: EVENTS.BUY_BARBER_TICKET, 
                     payload: { barber, barberName } 
                 },
-                { text: 'Ablehnen', event: 'RESUME_GAME' }
+                { text: 'Ablehnen', event: EVENTS.RESUME_GAME }
             ]
         });
     });
 
-    eventBus.subscribe('BUY_BARBER_TICKET', ({ barber, barberName }) => {
-        if (game.canAfford(50)) {
-            game.deductBudget(50);
-            eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
-            eventBus.emit('CLOSE_INTERACTION');
-            
-            eventBus.emit('ADD_LOG_ENTRY', { 
-                shortText: "Ziel: Besuche " + barberName + " für eine Tarnung.", 
-                logId: 'goal-visit-barber', 
-                notify: true 
-            });
 
-            if (barber) {
-                eventBus.emit('START_BARBER_REVEAL', { node: barber });
-                game.setActiveBarber(barber);
-            }
-            
-            game.resume();
-        } else {
-            eventBus.emit('SHOW_TOAST', { msg: "Nicht genug Kohle für den Friseur!", type: 'fail' });
-        }
-    });
 
-    eventBus.subscribe('BARBER_TRANSFORM_START', () => {
+    eventBus.subscribe(EVENTS.BARBER_TRANSFORM_START, () => {
         // 1. Visuelles Feedback: Segel-Animation zum Logbuch
         const flyer = document.createElement('div');
         flyer.className = 'fly-to-sidebar';
@@ -276,18 +255,18 @@ async function initApp() {
         game.applyBarberBuff();
         
         // 3. Logbuch bereinigen (Eintrag entfernen statt nur markieren)
-        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-barber' });
+        eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-barber' });
         
-        eventBus.emit('SHOW_TOAST', { msg: "Tarnung aktiv! Du bist jetzt ein Geist.", type: 'success' });
-        eventBus.emit('CLOSE_INTERACTION');
+        eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Tarnung aktiv! Du bist jetzt ein Geist.", type: 'success' });
+        eventBus.emit(EVENTS.CLOSE_INTERACTION);
         game.resume();
     });
 
-    eventBus.subscribe('OPTION_D_CLICKED', () => {
-        eventBus.emit('SHOW_DIALOG', DialogFactory.getBoltCutterDialog(75));
+    eventBus.subscribe(EVENTS.OPTION_D_CLICKED, () => {
+        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBoltCutterDialog(75));
     });
 
-    eventBus.subscribe('PUB_TARGET_REACHED', () => {
+    eventBus.subscribe(EVENTS.PUB_TARGET_REACHED, () => {
         game.pause();
         mapView.playCinematicSequence('door', 1500, () => {
             // OPEN_INTERACTION via Game.js #notifyTargetReached
@@ -295,7 +274,7 @@ async function initApp() {
     });
 
     // ----- Police Reveal Sequence (Kamerafahrt nach Intro Dialog) -----
-    eventBus.subscribe('START_POLICE_REVEAL', async () => {
+        eventBus.subscribe(EVENTS.START_POLICE_REVEAL, async () => {
         const policeStations = mapData.getPoliceStations();
         const playerNode = mapData.getNode(game.getState().currentPlayerNodeId);
         const playerCoords = playerNode ? [playerNode.lat, playerNode.lon] : null;
@@ -307,7 +286,7 @@ async function initApp() {
     });
 
     // ----- Radar Sequence (Kamerafahrt nach Kauf durch Hotkey P) -----
-    eventBus.subscribe('RADAR_SEQUENCE_START', async () => {
+    eventBus.subscribe(EVENTS.RADAR_SEQUENCE_START, async () => {
         const result = game.triggerRadar(true); // force=true um Cooldown zu ignorieren
         if (result && result !== 'cooldown') {
             // Warten bis die gesamte Choreografie (Zoom raus -> 5s Display -> Zoom rein) fertig ist
@@ -349,7 +328,7 @@ async function initApp() {
             await mapData.loadCityData(coords);
         } catch (err) {
             console.error("Critical Load Error:", err);
-            eventBus.emit('SHOW_DIALOG', DialogFactory.getNetworkErrorDialog());
+            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getNetworkErrorDialog());
             return;
         }
         
@@ -368,7 +347,7 @@ async function initApp() {
                     mapView.focusLocation([playerNode.lat, playerNode.lon]);
                 }
             } else {
-                eventBus.emit('SHOW_TOAST', { msg: "Fehler beim Laden des Spielstands.", type: 'fail' });
+                eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Fehler beim Laden des Spielstands.", type: 'fail' });
             }
         } else {
             // Bei neuem Spiel evtl. altes Savegame löschen
@@ -376,7 +355,7 @@ async function initApp() {
             
             const scenario = missionService.spawnTutorialScenario();
             if (!scenario) {
-                eventBus.emit('SHOW_TOAST', { msg: "Fehler bei der Szenario-Generierung.", type: 'fail' });
+                eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Fehler bei der Szenario-Generierung.", type: 'fail' });
                 return;
             }
 
@@ -384,7 +363,7 @@ async function initApp() {
             game.startMission(scenario.startNodeId, scenario.targetNodeId, scenario.poiName);
 
             // Wenn das Modal weggeklickt wird, erwacht die Karte zum Leben
-            eventBus.subscribe('START_MAP_INTRO', () => {
+            eventBus.subscribe(EVENTS.START_MAP_INTRO, () => {
                 console.log("DEBUG 1: Event START_MAP_INTRO ist in main.js angekommen!");
                 mapView.renderPlayer(scenario.startCoords);
                 

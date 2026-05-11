@@ -1,6 +1,7 @@
 import { eventBus } from './EventBus.js';
 import { ENCOUNTERS } from './EncounterData.js';
 import { log } from './Utils.js';
+import { EVENTS } from './EventTypes.js';
 
 /**
  * EncounterManager - Die Logik-Zentrale für Zufallsereignisse.
@@ -48,7 +49,7 @@ export class EncounterManager {
         // 4. Trigger abfeuern
         if (selectedEvent) {
             log("TRACE ENCOUNTER: Event gewählt: " + selectedEvent.title + " (Kosten: " + selectedEvent.cost + "€)");
-            eventBus.emit('ENCOUNTER_TRIGGERED', selectedEvent);
+            eventBus.emit(EVENTS.ENCOUNTER_TRIGGERED, selectedEvent);
         }
     }
 }

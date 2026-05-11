@@ -1,4 +1,5 @@
 import { eventBus } from './EventBus.js';
+import { EVENTS } from './EventTypes.js';
 import { log } from './Utils.js';
 
 /**
@@ -15,13 +16,13 @@ export class SaveManager {
 
     #setupListeners() {
         // Horcht auf jede Änderung des Game-States für Auto-Save
-        eventBus.subscribe('GAME_STATE_CHANGED', (state) => {
+        eventBus.subscribe(EVENTS.GAME_STATE_CHANGED, (state) => {
             if (!this.#currentCity || !state.gameActive) return;
             this.#triggerAutoSave(state);
         });
 
         // Horcht auf das Ende des Spiels, um den Speicherstand zu löschen
-        eventBus.subscribe('GAME_OVER', () => {
+        eventBus.subscribe(EVENTS.GAME_OVER, () => {
             this.deleteSave(this.#currentCity);
         });
     }
@@ -46,7 +47,7 @@ export class SaveManager {
             try {
                 const key = this.#getStorageKey(this.#currentCity);
                 localStorage.setItem(key, JSON.stringify(state));
-                eventBus.emit('SAVE_COMPLETED');
+                eventBus.emit(EVENTS.SAVE_COMPLETED);
                 log(`[SaveManager] Auto-Save für ${this.#currentCity} erfolgreich.`);
             } catch (err) {
                 console.error('[SaveManager] Auto-Save fehlgeschlagen:', err);

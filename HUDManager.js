@@ -1,5 +1,6 @@
 import { eventBus } from './EventBus.js';
 import { sanitizeHTML } from './Utils.js';
+import { EVENTS } from './EventTypes.js';
 
 /**
  * HUDManager - Verwaltet die In-Game-UI (Budget, Info-Panels, Tutorials).
@@ -26,7 +27,7 @@ export class HUDManager {
         // Initialer Zustand des Toggle-Buttons
         if (this.#toggleBtn) {
             this.#toggleBtn.addEventListener('click', () => {
-                eventBus.emit('TOGGLE_INFO');
+                eventBus.emit(EVENTS.TOGGLE_INFO);
             });
         }
 
@@ -35,13 +36,13 @@ export class HUDManager {
 
     #setupListeners() {
         // Ausschließlich auf Events hören, kein aktives Pulling
-        eventBus.subscribe('BUDGET_UPDATED', (data) => this.#updateBudget(data));
-        eventBus.subscribe('BUDGET_TICK', (data) => this.#updateBudget(data));
-        eventBus.subscribe('INFO_UPDATED', (data) => this.#updateInfoPanel(data));
-        eventBus.subscribe('INFO_MENU_STATE', (data) => this.#setInfoMenuState(data));
-        eventBus.subscribe('SHOW_TUTORIAL', (data) => this.#showTutorial(data));
-        eventBus.subscribe('TOGGLE_INFO', (data) => this.#toggleInfoMenu(data));
-        eventBus.subscribe('SAVE_COMPLETED', () => this.#showSaveIndicator());
+        eventBus.subscribe(EVENTS.BUDGET_UPDATED, (data) => this.#updateBudget(data));
+        eventBus.subscribe(EVENTS.BUDGET_TICK, (data) => this.#updateBudget(data));
+        eventBus.subscribe(EVENTS.INFO_UPDATED, (data) => this.#updateInfoPanel(data));
+        eventBus.subscribe(EVENTS.INFO_MENU_STATE, (data) => this.#setInfoMenuState(data));
+        eventBus.subscribe(EVENTS.SHOW_TUTORIAL, (data) => this.#showTutorial(data));
+        eventBus.subscribe(EVENTS.TOGGLE_INFO, (data) => this.#toggleInfoMenu(data));
+        eventBus.subscribe(EVENTS.SAVE_COMPLETED, () => this.#showSaveIndicator());
     }
 
     /**

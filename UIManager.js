@@ -1,4 +1,5 @@
 import { eventBus } from './EventBus.js';
+import { EVENTS } from './EventTypes.js';
 import { sanitizeHTML } from './Utils.js';
 
 export class UIManager {
@@ -24,19 +25,19 @@ export class UIManager {
             }
         });
 
-        eventBus.subscribe('SHOW_INFO_CASCADE', this.handleCascade.bind(this));
-        eventBus.subscribe('SHOW_ENCOUNTER', this.showEncounterModal.bind(this));
-        eventBus.subscribe('SHOW_LOAN_MODAL', this.showLoanModal.bind(this));
-        eventBus.subscribe('INTRO_COMPLETE', this.handleIntroComplete.bind(this));
+        eventBus.subscribe(EVENTS.SHOW_INFO_CASCADE, this.handleCascade.bind(this));
+        eventBus.subscribe(EVENTS.SHOW_ENCOUNTER, this.showEncounterModal.bind(this));
+        eventBus.subscribe(EVENTS.SHOW_LOAN_MODAL, this.showLoanModal.bind(this));
+        eventBus.subscribe(EVENTS.INTRO_COMPLETE, this.handleIntroComplete.bind(this));
         
-        eventBus.subscribe('REMOVE_LOG_ENTRY', (data) => {
+        eventBus.subscribe(EVENTS.REMOVE_LOG_ENTRY, (data) => {
             if (data && data.logId) {
                 const el = document.getElementById(data.logId);
                 if (el) el.remove();
             }
         });
 
-        eventBus.subscribe('COMPLETE_LOG_ENTRY', (data) => {
+        eventBus.subscribe(EVENTS.COMPLETE_LOG_ENTRY, (data) => {
             const el = document.getElementById(data.logId);
             if (el) {
                 el.classList.add('log-entry-completed');
@@ -45,7 +46,7 @@ export class UIManager {
             }
         });
 
-        eventBus.subscribe('ADD_LOG_ENTRY', (data) => {
+        eventBus.subscribe(EVENTS.ADD_LOG_ENTRY, (data) => {
             this.handleAddLogEntry(data);
             if (data.notify) {
                 this._notifyLogEntry();
@@ -137,7 +138,7 @@ export class UIManager {
             if (nextEvent) {
                 eventBus.emit(nextEvent);
             } else {
-                eventBus.emit('START_MAP_INTRO');
+                eventBus.emit(EVENTS.START_MAP_INTRO);
             }
         }, 600);
     }
@@ -172,7 +173,7 @@ export class UIManager {
             `,
             shortText: `Ereignis: ${event.title} (-${event.cost} €)`,
             logId: 'last-encounter',
-            nextEvent: 'RESUME_GAME'
+            nextEvent: EVENTS.RESUME_GAME
         };
         
         this.infoModalTitle.innerText = this.currentCascadeData.title;
@@ -189,7 +190,7 @@ export class UIManager {
      * Zeigt das Modal für die "Zweite Chance" (Kredit der Verbrecher*innen-Innung).
      */
     showLoanModal() {
-        eventBus.emit('SHOW_DIALOG', {
+        eventBus.emit(EVENTS.SHOW_DIALOG, {
             title: 'Zweite Chance?',
             text: `
                 <div style="line-height: 1.6;">
@@ -201,8 +202,8 @@ export class UIManager {
                 </div>
             `,
             buttons: [
-                { text: 'Annehmen', event: 'ACCEPT_LOAN', className: 'btn-danger' },
-                { text: 'Ablehnen (Spiel beenden)', event: 'REJECT_LOAN', className: 'btn-secondary' }
+                { text: 'Annehmen', event: EVENTS.ACCEPT_LOAN_OFFER, className: 'btn-danger' },
+                { text: 'Ablehnen (Spiel beenden)', event: EVENTS.REJECT_LOAN, className: 'btn-secondary' }
             ]
         });
     }

@@ -54,10 +54,11 @@ class Game {
         this.#registerGameControlFlows();
         this.#registerEncounterHooks();
         this.#registerLoanFlow();
+        this.#registerBarberFlow(); // Neu: Friseur-Logik konsolidiert
     }
 
     #registerInteractionSelection() {
-        eventBus.subscribe('INTERACTION_SELECTED', (payload) => {
+        eventBus.subscribe(EVENTS.INTERACTION_SELECTED, (payload) => {
             const { key, option } = payload;
             
             if (key === 'B') {
@@ -67,8 +68,8 @@ class Game {
 
             const msg = this.handleInteractionDecision(key, option);
             
-            eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
-            eventBus.emit('CLOSE_INTERACTION');
+            eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-pub' });
+            eventBus.emit(EVENTS.CLOSE_INTERACTION);
 
             // Radar-Tutorial bei Erstkauf (Option A)
             if (key === 'A' && this.#gameState.radarUnlocked && this.#gameState.missionPhase < 2) {
@@ -82,19 +83,19 @@ class Game {
     #handleInvestmentConsultant() {
         const cost = 75; // TODO: In CONFIG verschieben
         if (!this.canAfford(cost)) {
-            eventBus.emit('SHOW_TOAST', { msg: "Nicht genug Geld für den Berater!", type: 'fail' });
+            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Nicht genug Geld für den Berater!", type: 'fail' });
             this.resume();
             return;
         }
 
         this.deductBudget(cost);
-        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
-        eventBus.emit('ADD_LOG_ENTRY', {
+        eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-pub' });
+        eventBus.emit(EVENTS.ADD_LOG_ENTRY, {
             shortText: "Ziel: Halte an den grünen Knotenpunkten Ausschau nach lukrativen Objekten für deinen ersten Bruch.",
             logId: 'goal-find-target',
             notify: true
         });
-        eventBus.emit('OPEN_INVESTMENT', { cityName: this.#mapData.cityName });
+        eventBus.emit(EVENTS.OPEN_INVESTMENT, { cityName: this.#mapData.cityName });
     }
 
     #triggerRadarTutorial() {
@@ -103,14 +104,14 @@ class Game {
         
         const numberOfPoliceStations = this.#mapData.getPoliceStations().length;
         
-        eventBus.emit('SHOW_INFO_CASCADE', DialogFactory.getRadarTutorial(numberOfPoliceStations));
+        eventBus.emit(EVENTS.SHOW_INFO_CASCADE, DialogFactory.getRadarTutorial(numberOfPoliceStations));
     }
 
     #registerPurchaseFlows() {
-        eventBus.subscribe('BUY_BOLT_CUTTER', (payload) => {
+        eventBus.subscribe(EVENTS.BUY_BOLT_CUTTER, (payload) => {
             const cost = payload.cost || 75;
             if (!this.canAfford(cost)) {
-                eventBus.emit('SHOW_TOAST', { msg: "Nicht genug Geld für den Bolzenschneider!", type: 'fail' });
+                eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Nicht genug Geld für den Bolzenschneider!", type: 'fail' });
                 this.resume();
                 return;
             }
@@ -122,48 +123,80 @@ class Game {
             const targets = this.#missionService.spawnBicycleTargets(this.#mapData, playerNode);
             this.#gameState.activeBicycleTargets = targets;
 
-            eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-visit-pub' });
-            eventBus.emit('ADD_LOG_ENTRY', {
-                shortText: "Ziel: Knacke ein Fahrrad an einem der markierten Stellplätze.",
-                logId: 'goal-steal-bicycle',
-                notify: true
+            eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-pub' });
+            
+            // Fix Etappe 7.2.1: Direkter Logbuch-Aufruf für Persistenz
+            this.#gameState.addLogEntry({
+                time: Date.now(),
+                text: "Ziel: Knacke ein Fahrrad an einem der markierten Stellplätze.",
+                type: 'info'
             });
 
             const coordsToFit = [];
             if (playerNode) coordsToFit.push([playerNode.lat, playerNode.lon]);
             targets.forEach(t => coordsToFit.push([t.lat, t.lon]));
-            eventBus.emit('CAMERA_FIT_BOUNDS_REQUESTED', coordsToFit);
+            eventBus.emit(EVENTS.CAMERA_FIT_BOUNDS_REQUESTED, coordsToFit);
 
-            eventBus.emit('CLOSE_INTERACTION');
+            eventBus.emit(EVENTS.CLOSE_INTERACTION);
             this.resume();
             this.#notifyStateChange();
         });
 
-        eventBus.subscribe('INVESTMENT_CANCELLED', () => this.resume());
+        // Fix Etappe 7.2.1: Friseur-Ticket Flow konsolidiert
+        eventBus.subscribe(EVENTS.BUY_BARBER_TICKET, ({ barber, barberName }) => {
+            const cost = 50; 
+            if (!this.canAfford(cost)) {
+                eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Nicht genug Kohle für den Friseur!", type: 'fail' });
+                return;
+            }
+
+            this.deductBudget(cost);
+            eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-pub' });
+            eventBus.emit(EVENTS.CLOSE_INTERACTION);
+            
+            // Logbuch-Eintrag (Goal) für Persistenz
+            this.#gameState.addLogEntry({
+                time: Date.now(),
+                text: `Ziel: Besuche ${barberName} für eine Tarnung.`,
+                type: 'info'
+            });
+
+            if (barber) {
+                eventBus.emit(EVENTS.START_BARBER_REVEAL, { node: barber });
+                this.setActiveBarber(barber);
+            }
+            
+            this.resume();
+            this.#notifyStateChange();
+        });
+
+        eventBus.subscribe(EVENTS.INVESTMENT_CANCELLED, () => this.resume());
     }
 
     #registerCategorySelection() {
-        const categories = {
-            'WOHNUNG': 'residential',
-            'GEWERBE': 'commercial',
-            'OEFFENTLICH': 'public',
-            'LAUBE': 'allotments'
+        // Mapping von deutschen UI-Konzepten auf interne Typen & Event-Konstanten.
+        // Dies behebt den Bug, dass EVENTS[`SELECT_CATEGORY_${key}`] undefined war.
+        const categoryMap = {
+            'WOHNUNG':      { type: 'residential', event: EVENTS.SELECT_CATEGORY_RESIDENTIAL },
+            'GEWERBE':      { type: 'commercial',  event: EVENTS.SELECT_CATEGORY_COMMERCIAL },
+            'OEFFENTLICH':  { type: 'public',      event: EVENTS.SELECT_CATEGORY_PUBLIC },
+            'KLEINGARTEN':  { type: 'allotments',  event: EVENTS.SELECT_CATEGORY_ALLOTMENTS }
         };
 
-        Object.entries(categories).forEach(([key, type]) => {
-            eventBus.subscribe(`SELECT_CATEGORY_${key}`, () => {
-                eventBus.emit('SPAWN_TARGETS', { targetType: type, centerNodeId: this.#gameState.currentPlayerNodeId });
+        Object.values(categoryMap).forEach(({ type, event }) => {
+            eventBus.subscribe(event, () => {
+                eventBus.emit(EVENTS.SPAWN_TARGETS, { targetType: type, centerNodeId: this.#gameState.currentPlayerNodeId });
                 this.resume();
             });
         });
     }
 
     #registerBurglaryFlow() {
-        eventBus.subscribe('START_BURGLARY', ({ target, riskData }) => {
+        eventBus.subscribe(EVENTS.START_BURGLARY, ({ target, riskData }) => {
             setTimeout(() => {
                 // 1. Abbruch-Check
                 if (Math.random() * 100 <= riskData.abortRate) {
-                    eventBus.emit('SHOW_DIALOG', DialogFactory.getBurglaryAbort());
+                    eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglaryAbort());
                     this.#resetBurglaryState();
                     return;
                 }
@@ -172,7 +205,7 @@ class Game {
                 if (Math.random() * 100 <= riskData.totalRisk) {
                     const fine = Math.ceil(this.#budgetManager.budget * 0.2);
                     this.deductBudget(fine);
-                    eventBus.emit('SHOW_DIALOG', DialogFactory.getBurglaryCaught(fine));
+                    eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglaryCaught(fine));
                 } else {
                     // 3. Erfolg
                     this.#handleBurglarySuccess(riskData);
@@ -190,16 +223,16 @@ class Game {
             const debt = this.#budgetManager.processLoanRepayment();
             amount = Math.max(0, amount - debt);
             loanInfo = `<br><br><span style="color:var(--color-danger); font-size:0.9rem;">Rückzahlung an die Verbrecher*innen-Innung: ${debt} € wurden von deiner Beute einbehalten. Deine Weste bei der Verbrecher*innen-Innung ist vorerst wieder sauber.</span>`;
-            eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'loan-entry' });
+            eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'loan-entry' });
         }
 
         this.addReward(amount);
-        eventBus.emit('SHOW_DIALOG', DialogFactory.getBurglarySuccess(amount, loanInfo));
+        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglarySuccess(amount, loanInfo));
     }
 
     #registerBicycleTheftFlow() {
-        eventBus.subscribe('START_BICYCLE_THEFT_RNG', ({ target, riskData }) => {
-            eventBus.emit('ADD_LOG_ENTRY', { shortText: "Knackversuch läuft...", logId: 'bicycle-theft-progress', notify: false });
+        eventBus.subscribe(EVENTS.START_BICYCLE_THEFT_RNG, ({ target, riskData }) => {
+            eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: "Knackversuch läuft...", logId: 'bicycle-theft-progress', notify: false });
 
             if (Math.random() * 100 > riskData.totalRisk) {
                 this.#handleBicycleTheftSuccess();
@@ -218,58 +251,59 @@ class Game {
         document.getElementById('app-container')?.classList.add('state-biking');
         document.body.classList.add('state-biking');
 
-        eventBus.emit('SHOW_DIALOG', DialogFactory.getBicycleTheftSuccess());
+        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleTheftSuccess());
 
-        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-steal-bicycle' });
-        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'bicycle-theft-progress' });
-        eventBus.emit('ADD_LOG_ENTRY', { shortText: "✅ Fahrrad erfolgreich geklaut.", notify: true });
+        eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-steal-bicycle' });
+        eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'bicycle-theft-progress' });
+        eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: "✅ Fahrrad erfolgreich geklaut.", notify: true });
     }
 
     #handleBicycleTheftFailure() {
         const fine = Math.ceil(this.#budgetManager.budget * 0.1);
         this.deductBudget(fine);
-        eventBus.emit('SHOW_DIALOG', DialogFactory.getBicycleTheftFailure(fine));
+        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleTheftFailure(fine));
 
-        eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'bicycle-theft-progress' });
-        eventBus.emit('ADD_LOG_ENTRY', { shortText: "🚨 Beim Fahrraddiebstahl erwischt!", notify: true });
+        eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'bicycle-theft-progress' });
+        eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: "🚨 Beim Fahrraddiebstahl erwischt!", notify: true });
     }
 
     #registerGameControlFlows() {
-        eventBus.subscribe('TOGGLE_BICYCLE', () => {
+        eventBus.subscribe(EVENTS.TOGGLE_BICYCLE, () => {
             if (!this.#gameState.hasBicycle) return;
             this.#gameState.isBiking = !this.#gameState.isBiking;
             const msg = this.#gameState.isBiking ? "Aufgestiegen. Du bist jetzt schneller." : "Abgestiegen. Du bist wieder zu Fuß unterwegs.";
             document.getElementById('app-container')?.classList.toggle('state-biking', this.#gameState.isBiking);
             document.body.classList.toggle('state-biking', this.#gameState.isBiking);
-            eventBus.emit('SHOW_TOAST', { msg, type: 'success' });
+            eventBus.emit(EVENTS.SHOW_TOAST, { msg, type: 'success' });
             this.#notifyStateChange();
         });
 
-        eventBus.subscribe('RESUME_GAME', () => {
-            eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'goal-find-target' });
+        eventBus.subscribe(EVENTS.RESUME_GAME, () => {
+            eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-find-target' });
             this.resume();
         });
     }
 
     #registerEncounterHooks() {
-        eventBus.subscribe('ENCOUNTER_TRIGGERED', (encounter) => {
+        eventBus.subscribe(EVENTS.ENCOUNTER_TRIGGERED, (encounter) => {
             this.pause();
             this.deductBudget(encounter.cost);
-            eventBus.emit('SHOW_ENCOUNTER', encounter);
+            eventBus.emit(EVENTS.SHOW_ENCOUNTER, encounter);
             this.#notifyStateChange();
         });
 
-        eventBus.subscribe('RADAR_ACKNOWLEDGED', () => {});
+        eventBus.subscribe(EVENTS.RADAR_ACKNOWLEDGED, () => {});
     }
 
     #registerLoanFlow() {
-        eventBus.subscribe('ACCEPT_LOAN_OFFER', () => {
+        eventBus.subscribe(EVENTS.ACCEPT_LOAN_OFFER, () => {
             this.#budgetManager.handleAcceptLoan();
-            eventBus.emit('ADD_LOG_ENTRY', { shortText: "Not-Kredit erhalten: 1500 € (Zinsen laufen...)", logId: 'loan-entry', notify: true });
+            eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: "Not-Kredit erhalten: 1500 € (Zinsen laufen...)", logId: 'loan-entry', notify: true });
             this.resume();
         });
 
-        eventBus.subscribe('RELOAD_GAME', () => location.reload());
+        eventBus.subscribe(EVENTS.RELOAD_GAME, () => location.reload());
+        eventBus.subscribe(EVENTS.REJECT_LOAN, () => location.reload());
     }
 
     // ----------------------------------------------------------------
@@ -343,7 +377,7 @@ class Game {
 
     /** Informiert das System über allgemeine Statusänderungen. */
     #notifyStateChange() {
-        eventBus.emit('GAME_STATE_CHANGED', this.getState());
+        eventBus.emit(EVENTS.GAME_STATE_CHANGED, this.getState());
         this.#updateHUDInfo();
     }
 
@@ -395,7 +429,7 @@ class Game {
         // Modal SOFORT aufploppen lassen
         const cityName = this.#mapData.cityName || "der Stadt";
         
-        eventBus.emit('SHOW_INFO_CASCADE', DialogFactory.getWelcomeDialog(cityName, this.#gameState.targetPubName));
+        eventBus.emit(EVENTS.SHOW_INFO_CASCADE, DialogFactory.getWelcomeDialog(cityName, this.#gameState.targetPubName));
     }
 
     triggerIntroRender() {
@@ -403,7 +437,7 @@ class Game {
         
         setTimeout(() => {
             this.#gameState.gameActive = true;
-            eventBus.emit('INTRO_COMPLETE');
+            eventBus.emit(EVENTS.INTRO_COMPLETE);
         }, 6000); // 5s Spawn-Animation + 1s Puffer
     }
 
@@ -429,7 +463,7 @@ class Game {
     pause() {
         this.#gameState.gameActive = false;
         this.#movementEngine.stop();
-        eventBus.emit('GAME_PAUSED');
+        eventBus.emit(EVENTS.GAME_PAUSED);
         this.#notifyStateChange();
     }
 
@@ -440,7 +474,7 @@ class Game {
             this.#gameState.isInPub = false;
         }
         this.#gameState.gameActive = true;
-        eventBus.emit('GAME_RESUMED');
+        eventBus.emit(EVENTS.GAME_RESUMED);
         this.#notifyStateChange();
     }
 
@@ -516,13 +550,13 @@ class Game {
 
         this.#gameState.isInfoMenuOpen = false;
         this.#gameState.infoMenuOpenUntilMove = -1;
-        eventBus.emit('INFO_MENU_STATE', false);
+        eventBus.emit(EVENTS.INFO_MENU_STATE, false);
     }
 
     #handleFirstMoveLogic() {
         if (this.#gameState.firstMoveFired) return;
         this.#gameState.firstMoveFired = true;
-        eventBus.emit('FIRST_MOVE_COMPLETED');
+        eventBus.emit(EVENTS.FIRST_MOVE_COMPLETED);
     }
 
 
@@ -532,7 +566,7 @@ class Game {
 
         if (diff < cooldownSec) {
             const remaining = Math.ceil(cooldownSec - diff);
-            eventBus.emit('SHOW_TOAST', { 
+            eventBus.emit(EVENTS.SHOW_TOAST, { 
                 msg: `Der Kneipier ist mal kurz mit einem Gast in den Hinterraum gegangen und hat für ${remaining} Sekunden keine Zeit.`, 
                 type: 'fail' 
             });
@@ -541,7 +575,7 @@ class Game {
 
         this.#gameState.gameActive = false;
         this.#gameState.isInPub = true;
-        eventBus.emit('PUB_TARGET_REACHED', { nodeId: this.#gameState.currentPlayerNodeId });
+        eventBus.emit(EVENTS.PUB_TARGET_REACHED, { nodeId: this.#gameState.currentPlayerNodeId });
         this.#notifyTargetReached();
     }
 
@@ -656,8 +690,8 @@ class Game {
         const optionsData = {
             A: { text: STRINGS.interactions.pub.optionA(cityName), cost: CONFIG.RADAR_COST, risk: 0 },
             B: { text: STRINGS.interactions.pub.optionB(0), requiresConfirmation: false, cost: 75 },
-            C: { text: STRINGS.interactions.pub.optionC(), requiresConfirmation: false, customEvent: 'OPTION_C_CLICKED' },
-            D: { text: STRINGS.interactions.pub.optionD, requiresConfirmation: false, customEvent: 'OPTION_D_CLICKED' }
+            C: { text: STRINGS.interactions.pub.optionC(), requiresConfirmation: false, customEvent: EVENTS.OPTION_C_CLICKED },
+            D: { text: STRINGS.interactions.pub.optionD, requiresConfirmation: false, customEvent: EVENTS.OPTION_D_CLICKED }
         };
 
         const currentNode = this.#mapData.getNode(this.#gameState.currentPlayerNodeId);
@@ -669,7 +703,7 @@ class Game {
             });
         }
 
-        eventBus.emit('OPEN_INTERACTION', { 
+        eventBus.emit(EVENTS.OPEN_INTERACTION, { 
             optionsData, 
             riskData, 
             getPreviewFn: (key) => this.getInteractionPreview(key) 
@@ -715,13 +749,13 @@ class Game {
             document.getElementById('app-container')?.classList.add('state-biking');
             document.body.classList.add('state-biking');
             
-            eventBus.emit('SHOW_TOAST', { msg: "Rad geknackt! Du bist jetzt lautlos und schnell.", type: 'success' });
+            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Rad geknackt! Du bist jetzt lautlos und schnell.", type: 'success' });
             
             this.#notifyStateChange();
         } else {
             // Scheitern -> Bestehende Busted-Logik
-            eventBus.emit('SHOW_TOAST', { msg: "Verdammt! Ein Zeuge hat dich gesehen!", type: 'fail' });
-            eventBus.emit('PLAYER_BUSTED');
+            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Verdammt! Ein Zeuge hat dich gesehen!", type: 'fail' });
+            eventBus.emit(EVENTS.PLAYER_BUSTED);
         }
     }
 
@@ -735,13 +769,13 @@ class Game {
 
     toggleInfoMenu() {
         this.#gameState.isInfoMenuOpen = !this.#gameState.isInfoMenuOpen;
-        eventBus.emit('INFO_MENU_STATE', this.#gameState.isInfoMenuOpen);
+        eventBus.emit(EVENTS.INFO_MENU_STATE, this.#gameState.isInfoMenuOpen);
         this.#notifyStateChange();
     }
 
     #updateHUDInfo() {
         if (!this.#gameState.gameActive && this.#gameState.currentPlayerNodeId === null) {
-            eventBus.emit('INFO_UPDATED', []);
+            eventBus.emit(EVENTS.INFO_UPDATED, []);
             return;
         }
 
@@ -771,7 +805,7 @@ class Game {
             });
         }
 
-        eventBus.emit('INFO_UPDATED', infoCards);
+        eventBus.emit(EVENTS.INFO_UPDATED, infoCards);
     }
 
     setCrimeTargets(targets) {
@@ -823,9 +857,26 @@ class Game {
         this.#notifyStateChange();
     }
 
+    #registerBarberFlow() {
+        eventBus.subscribe(EVENTS.BARBER_TRANSFORM_START, () => {
+            this.applyBarberBuff();
+            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Tarnung aktiv! Du bist jetzt ein Geist.", type: 'success' });
+            eventBus.emit(EVENTS.CLOSE_INTERACTION);
+            eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-barber' });
+        });
+    }
+
     applyBarberBuff() {
         this.#gameState.isDisguised = true;
         this.#gameState.activeBarber = null; // POI deaktivieren (aus dem State entfernen)
+        
+        // Fix Etappe 7.2.1: Logbuch-Eintrag für den Erfolg (Persistenz via GameState)
+        this.#gameState.addLogEntry({
+            time: Date.now(),
+            text: "Beim Friseur gewesen. Neues Gesicht erhalten.",
+            type: 'success'
+        });
+
         this.#notifyStateChange();
     }
 

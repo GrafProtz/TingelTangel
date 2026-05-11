@@ -4,6 +4,7 @@
 import { eventBus } from './EventBus.js';
 import { gameState, GamePhase } from './GameState.js';
 import { overpassService } from './OverpassService.js';
+import { EVENTS } from './EventTypes.js';
 
 class GameController {
     constructor() {
@@ -29,7 +30,7 @@ class GameController {
     }
 
     #setupEventListeners() {
-        eventBus.subscribe('PLAYER_MOVE_INTENT', (data) => {
+        eventBus.subscribe(EVENTS.PLAYER_MOVE_INTENT, (data) => {
             if (gameState.phase !== GamePhase.PLAYING) return;
             if (gameState.player.budget >= data.cost) {
                 gameState.updatePlayer({
@@ -40,7 +41,7 @@ class GameController {
                 });
                 gameState.incrementMoveCount();
             } else {
-                eventBus.emit('SHOW_TOAST', { msg: "Pleite!", type: 'fail' });
+                eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Pleite!", type: 'fail' });
             }
         });
     }

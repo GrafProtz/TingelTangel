@@ -4,6 +4,7 @@
 import { eventBus } from './EventBus.js';
 import { gameState, GamePhase } from './GameState.js';
 import { OSMValidator } from './OSMValidator.js';
+import { EVENTS } from './EventTypes.js';
 
 class OverpassService {
     #inMemoryCache = new Map();
@@ -51,7 +52,7 @@ class OverpassService {
 
         // 3. API Fetch
         gameState.setPhase(GamePhase.LOADING_MAP);
-        eventBus.emit('API_FETCH_START', { coords });
+        eventBus.emit(EVENTS.API_FETCH_START, { coords });
 
         const query = this.#buildQuery(coords);
 
@@ -64,7 +65,7 @@ class OverpassService {
             return cleanData;
         } catch (error) {
             console.error("[OverpassService] API-Fehler:", error);
-            eventBus.emit('SHOW_TOAST', { msg: "Verbindung fehlgeschlagen.", type: 'fail' });
+            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Verbindung fehlgeschlagen.", type: 'fail' });
             gameState.setPhase(GamePhase.INIT);
             throw error;
         }
@@ -162,7 +163,7 @@ class OverpassService {
     }
 
     #finalize(data) {
-        eventBus.emit('DATA_LOADED', data);
+        eventBus.emit(EVENTS.DATA_LOADED, data);
         gameState.setPhase(GamePhase.READY);
     }
 }
