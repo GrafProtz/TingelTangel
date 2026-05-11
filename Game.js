@@ -84,7 +84,7 @@ class Game {
     #handleInvestmentConsultant() {
         const cost = 75; // TODO: In CONFIG verschieben
         if (!this.canAfford(cost)) {
-            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Nicht genug Geld für den Berater!", type: 'fail' });
+            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Nicht genug Geld für den Berater!", type: 'fail' });
             this.resume();
             return;
         }
@@ -112,7 +112,7 @@ class Game {
         eventBus.subscribe(EVENTS.BUY_BOLT_CUTTER, (payload) => {
             const cost = payload.cost || 75;
             if (!this.canAfford(cost)) {
-                eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Nicht genug Geld für den Bolzenschneider!", type: 'fail' });
+                eventBus.emit(EVENTS.SHOW_TOAST, { message: "Nicht genug Geld für den Bolzenschneider!", type: 'fail' });
                 this.resume();
                 return;
             }
@@ -147,7 +147,7 @@ class Game {
         eventBus.subscribe(EVENTS.BUY_BARBER_TICKET, ({ barber, barberName }) => {
             const cost = 50; 
             if (!this.canAfford(cost)) {
-                eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Nicht genug Kohle für den Friseur!", type: 'fail' });
+                eventBus.emit(EVENTS.SHOW_TOAST, { message: "Nicht genug Kohle für den Friseur!", type: 'fail' });
                 return;
             }
 
@@ -274,7 +274,7 @@ class Game {
             const msg = this.#gameState.isBiking ? "Aufgestiegen. Du bist jetzt schneller." : "Abgestiegen. Du bist wieder zu Fuß unterwegs.";
             
             eventBus.emit(EVENTS.BIKING_STATE_CHANGED, this.#gameState.isBiking);
-            eventBus.emit(EVENTS.SHOW_TOAST, { msg, type: 'success' });
+            eventBus.emit(EVENTS.SHOW_TOAST, { message: msg, type: 'success' });
             this.#notifyStateChange();
         });
 
@@ -567,7 +567,7 @@ class Game {
         if (diff < cooldownSec) {
             const remaining = Math.ceil(cooldownSec - diff);
             eventBus.emit(EVENTS.SHOW_TOAST, { 
-                msg: `Der Kneipier ist mal kurz mit einem Gast in den Hinterraum gegangen und hat für ${remaining} Sekunden keine Zeit.`, 
+                message: `Der Kneipier ist mal kurz mit einem Gast in den Hinterraum gegangen und hat für ${remaining} Sekunden keine Zeit.`, 
                 type: 'fail' 
             });
             return;
@@ -746,12 +746,12 @@ class Game {
             this.#gameState.activeBicycleTargets = [];
             
             eventBus.emit(EVENTS.BIKING_STATE_CHANGED, true);
-            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Rad geknackt! Du bist jetzt lautlos und schnell.", type: 'success' });
+            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Rad geknackt! Du bist jetzt lautlos und schnell.", type: 'success' });
             
             this.#notifyStateChange();
         } else {
             // Scheitern -> Bestehende Busted-Logik
-            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Verdammt! Ein Zeuge hat dich gesehen!", type: 'fail' });
+            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Verdammt! Ein Zeuge hat dich gesehen!", type: 'fail' });
             eventBus.emit(EVENTS.PLAYER_BUSTED);
         }
     }
@@ -856,10 +856,19 @@ class Game {
 
     #registerBarberFlow() {
         eventBus.subscribe(EVENTS.BARBER_TRANSFORM_START, () => {
+            // 1. Visuelles Feedback via Event (MapView/UIAnimator hört hierauf)
+            eventBus.emit(EVENTS.START_BARBER_ANIMATION);
+
+            // 2. Mechanik aktivieren
             this.applyBarberBuff();
-            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Tarnung aktiv! Du bist jetzt ein Geist.", type: 'success' });
+            
+            // 3. UI-Bereinigung
+            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Tarnung aktiv! Du bist jetzt ein Geist.", type: 'success' });
             eventBus.emit(EVENTS.CLOSE_INTERACTION);
             eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-barber' });
+
+            // 4. Spiel fortsetzen
+            this.resume();
         });
     }
 

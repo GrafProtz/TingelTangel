@@ -41,7 +41,7 @@ class GameController {
                 });
                 gameState.incrementMoveCount();
             } else {
-                eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Pleite!", type: 'fail' });
+                eventBus.emit(EVENTS.SHOW_TOAST, { message: "Pleite!", type: 'fail' });
             }
         });
     }

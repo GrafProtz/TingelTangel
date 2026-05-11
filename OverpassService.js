@@ -66,7 +66,7 @@ class OverpassService {
             return cleanData;
         } catch (error) {
             console.error("[OverpassService] API-Fehler:", error);
-            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Verbindung fehlgeschlagen.", type: 'fail' });
+            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Verbindung fehlgeschlagen.", type: 'fail' });
             gameState.setPhase(GamePhase.INIT);
             throw error;
         }

@@ -90,9 +90,9 @@ async function initApp() {
             // Event für MapView abfeuern
             eventBus.emit(EVENTS.CAMERA_FIT_BOUNDS_REQUESTED, coordsToFit);
             
-            eventBus.emit(EVENTS.SHOW_TOAST, { msg: `${targets.length} Ziele in der Nähe markiert!`, type: 'success' });
+            eventBus.emit(EVENTS.SHOW_TOAST, { message: `${targets.length} Ziele in der Nähe markiert!`, type: 'success' });
         } else {
-            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Keine passenden Gebäude gefunden.", type: 'fail' });
+            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Keine passenden Gebäude gefunden.", type: 'fail' });
         }
     });
 
@@ -136,7 +136,7 @@ async function initApp() {
                     accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                     onClickCallback: () => {
                         if (!game.checkProximity(target.accessNodeId)) {
-                            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Du musst exakt am Icon stehen!", type: 'fail' });
+                            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Du musst exakt am Icon stehen!", type: 'fail' });
                             return;
                         }
                         const riskData = game.calculateTargetRisk(target);
@@ -157,7 +157,7 @@ async function initApp() {
                 accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                 onClickCallback: () => {
                     if (!game.checkProximity(b.accessNodeId)) {
-                        eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Geh näher ran an den Salon!", type: 'fail' });
+                        eventBus.emit(EVENTS.SHOW_TOAST, { message: "Geh näher ran an den Salon!", type: 'fail' });
                         return;
                     }
                     game.pause();
@@ -176,7 +176,7 @@ async function initApp() {
                     accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                     onClickCallback: () => {
                         if (!game.checkProximity(target.accessNodeId)) {
-                            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Steh direkt am Rad, um es zu knacken!", type: 'fail' });
+                            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Steh direkt am Rad, um es zu knacken!", type: 'fail' });
                             return;
                         }
                         const riskData = game.calculateTargetRisk(target);
@@ -215,7 +215,7 @@ async function initApp() {
         });
     });
 
-    eventBus.subscribe(EVENTS.RELOAD_GAME, () => location.reload());
+
     
     eventBus.subscribe(EVENTS.OPTION_C_CLICKED, () => {
         const barber = game.findNearestHairdresser();
@@ -237,20 +237,7 @@ async function initApp() {
 
 
 
-    eventBus.subscribe(EVENTS.BARBER_TRANSFORM_START, () => {
-        // 1. Visuelles Feedback via Event
-        eventBus.emit(EVENTS.START_BARBER_ANIMATION);
 
-        // 2. Mechanik aktivieren
-        game.applyBarberBuff();
-        
-        // 3. Logbuch bereinigen
-        eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-barber' });
-        
-        eventBus.emit(EVENTS.SHOW_TOAST, { message: "Tarnung aktiv! Du bist jetzt ein Geist.", type: 'success' });
-        eventBus.emit(EVENTS.CLOSE_INTERACTION);
-        game.resume();
-    });
 
     eventBus.subscribe(EVENTS.OPTION_D_CLICKED, () => {
         eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBoltCutterDialog(75));
@@ -337,7 +324,7 @@ async function initApp() {
                     mapView.focusLocation([playerNode.lat, playerNode.lon]);
                 }
             } else {
-                eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Fehler beim Laden des Spielstands.", type: 'fail' });
+                eventBus.emit(EVENTS.SHOW_TOAST, { message: "Fehler beim Laden des Spielstands.", type: 'fail' });
             }
         } else {
             // Bei neuem Spiel evtl. altes Savegame löschen
@@ -345,7 +332,7 @@ async function initApp() {
             
             const scenario = missionService.spawnTutorialScenario();
             if (!scenario) {
-                eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Fehler bei der Szenario-Generierung.", type: 'fail' });
+                eventBus.emit(EVENTS.SHOW_TOAST, { message: "Fehler bei der Szenario-Generierung.", type: 'fail' });
                 return;
             }
 

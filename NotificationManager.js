@@ -25,7 +25,7 @@ export class NotificationManager {
      */
     showToast(data) {
         if (!data) return;
-        const message = data.message || data.msg;
+        const message = data.message;
         if (!message) return;
         const type = data.type;
 
