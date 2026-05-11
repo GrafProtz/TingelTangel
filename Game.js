@@ -415,22 +415,9 @@ class Game {
         if (!savedState) return;
 
         this.#budgetManager.hydrate(savedState);
-        this.#gameState.currentPlayerNodeId = savedState.currentPlayerNodeId;
-        this.#gameState.gameActive = savedState.gameActive ?? true;
-        this.#movementEngine.stop(); // Zur Sicherheit Bewegung zurücksetzen
-        this.#gameState.targetPubNodeId = savedState.targetPubNodeId;
-        this.#gameState.targetPubName = savedState.targetPubName || "Kneipe";
-        this.#gameState.radarUnlocked = savedState.radarUnlocked ?? false;
-        this.#gameState.lastRadarTime = savedState.lastRadarTime ?? 0;
-        this.#gameState.lastPubVisit = savedState.lastPubVisit ?? 0;
-        this.#gameState.showPubCooldownText = savedState.showPubCooldownText ?? false;
-        this.#gameState.moveCount = savedState.moveCount ?? 0;
-        this.#gameState.missionPhase = savedState.missionPhase ?? 1;
-        this.#gameState.infoMenuOpenUntilMove = savedState.infoMenuOpenUntilMove ?? -1;
-        this.#gameState.isInfoMenuOpen = savedState.isInfoMenuOpen ?? false;
-        this.#gameState.activeCrimeTargets = savedState.activeCrimeTargets || [];
-        this.#gameState.logbook = savedState.logbook || [];
+        this.#gameState.hydrate(savedState);
         
+        this.#movementEngine.stop(); // Zur Sicherheit Bewegung zurücksetzen
         this.#gameState.firstMoveFired = true; // Verhindert, dass das Tutorial nach dem Laden triggert
         
         console.log('💾 Spielstand erfolgreich geladen. Aktueller Knoten:', this.#gameState.currentPlayerNodeId);
@@ -510,7 +497,6 @@ class Game {
 
         this.#handleInfoMenuMoveLogic();
         this.#handleFirstMoveLogic();
-        this.#handleBankruptcyCheck();
 
         // Ziel-Prüfung
         if (String(this.#gameState.currentPlayerNodeId) === String(this.#gameState.targetPubNodeId)) {
@@ -539,24 +525,6 @@ class Game {
         eventBus.emit('FIRST_MOVE_COMPLETED');
     }
 
-    #handleBankruptcyCheck() {
-        if (this.#budgetManager.budget > 0) return;
-
-        this.#gameState.gameActive = false;
-        
-        if (!this.#budgetManager.hasActiveLoan) {
-            eventBus.emit(EVENTS.SHOW_DIALOG, {
-                title: 'Pleite!',
-                text: 'Du hast keinen Cent mehr in der Tasche. Ein alter Bekannter bietet dir einen Not-Kredit von 1.500 € an. Aber pass auf: Er will das Geld nach dem nächsten erfolgreichen Bruch mit Zinsen zurück!',
-                buttons: [
-                    { text: 'Kredit annehmen', event: 'ACCEPT_LOAN_OFFER' },
-                    { text: 'Aufgeben', event: 'RELOAD_GAME' }
-                ]
-            });
-        } else {
-            eventBus.emit(EVENTS.PLAYER_BUSTED, { reason: 'BANKRUPTCY' });
-        }
-    }
 
     #checkPubArrival() {
         const diff = (Date.now() - this.#gameState.lastPubVisit) / 1000;
@@ -599,7 +567,7 @@ class Game {
 
     handleInteractionDecision(key, opt) {
         const targetNode = this.#mapData.getNode(this.#gameState.targetPubNodeId);
-        const riskData = targetNode ? this.#mapData.getPoliceRiskModifier([targetNode.lat, targetNode.lon]) : { riskMalus: 0 };
+        const riskData = targetNode ? this.#riskCalculator.getPoliceRiskModifier([targetNode.lat, targetNode.lon]) : { riskMalus: 0 };
         
         const finalRisk = opt.risk !== undefined ? opt.risk : Math.min(100, (opt.risk || 0) + riskData.riskMalus);
         const roll = Math.random() * 100;
@@ -630,7 +598,7 @@ class Game {
         this.#gameState.radarUnlocked = true;
         
         const currentNode = this.#mapData.getNode(this.#gameState.currentPlayerNodeId);
-        const risk = this.#mapData.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
+        const risk = this.#riskCalculator.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
         const msg = `Der Barkeeper meint, dass hier ${risk.activeStations} Polizeiwache(n) in der Umgebung sind.`;
         
         this.#recordDecision(msg, 'success');
@@ -662,7 +630,7 @@ class Game {
     }
 
     #recordDecision(msg, type) {
-        this.#gameState.logbook.push({ time: Date.now(), text: msg, type });
+        this.#gameState.addLogEntry({ time: Date.now(), text: msg, type });
         this.#gameState.lastPubVisit = Date.now();
         this.resume();
 
@@ -693,7 +661,7 @@ class Game {
         };
 
         const currentNode = this.#mapData.getNode(this.#gameState.currentPlayerNodeId);
-        const riskData = this.#mapData.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
+        const riskData = this.#riskCalculator.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
         
         if (riskData.riskMalus > 0) {
             ['B', 'C'].forEach(k => {

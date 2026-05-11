@@ -82,6 +82,16 @@ export class GameState {
     set firstMoveFired(val) { this.#firstMoveFired = !!val; }
 
     /**
+     * Fügt einen neuen Eintrag zum Logbuch hinzu (Fix für H1).
+     * @param {Object} entry - { time, text, type }
+     */
+    addLogEntry(entry) {
+        if (entry && typeof entry === 'object') {
+            this.#logbook.push(entry);
+        }
+    }
+
+    /**
      * Sammelt alle Daten für den globalen State-Broadcast.
      */
     collectState(financeState, movementState) {
