@@ -248,9 +248,8 @@ class Game {
     #handleBicycleTheftSuccess() {
         this.#gameState.isBiking = true;
         this.#gameState.hasBicycle = true;
-        document.getElementById('app-container')?.classList.add('state-biking');
-        document.body.classList.add('state-biking');
-
+        
+        eventBus.emit(EVENTS.BIKING_STATE_CHANGED, true);
         eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleTheftSuccess());
 
         eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-steal-bicycle' });
@@ -272,8 +271,8 @@ class Game {
             if (!this.#gameState.hasBicycle) return;
             this.#gameState.isBiking = !this.#gameState.isBiking;
             const msg = this.#gameState.isBiking ? "Aufgestiegen. Du bist jetzt schneller." : "Abgestiegen. Du bist wieder zu Fuß unterwegs.";
-            document.getElementById('app-container')?.classList.toggle('state-biking', this.#gameState.isBiking);
-            document.body.classList.toggle('state-biking', this.#gameState.isBiking);
+            
+            eventBus.emit(EVENTS.BIKING_STATE_CHANGED, this.#gameState.isBiking);
             eventBus.emit(EVENTS.SHOW_TOAST, { msg, type: 'success' });
             this.#notifyStateChange();
         });
@@ -745,10 +744,7 @@ class Game {
             this.#gameState.isBiking = true;
             this.#gameState.activeBicycleTargets = [];
             
-            // UI Feedback (CSS Klasse für Speed-Feeling etc)
-            document.getElementById('app-container')?.classList.add('state-biking');
-            document.body.classList.add('state-biking');
-            
+            eventBus.emit(EVENTS.BIKING_STATE_CHANGED, true);
             eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Rad geknackt! Du bist jetzt lautlos und schnell.", type: 'success' });
             
             this.#notifyStateChange();

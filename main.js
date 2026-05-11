@@ -12,6 +12,7 @@ import { eventBus } from './EventBus.js';
 import { sanitizeHTML } from './Utils.js';
 import { DialogFactory } from './DialogFactory.js';
 import { EVENTS } from './EventTypes.js';
+import './UIAnimator.js';
 
 const CITIES = [
     { id: "berlin", name: "Berlin", lat: 52.5200, lng: 13.4050, zoom: 15 },
@@ -237,27 +238,16 @@ async function initApp() {
 
 
     eventBus.subscribe(EVENTS.BARBER_TRANSFORM_START, () => {
-        // 1. Visuelles Feedback: Segel-Animation zum Logbuch
-        const flyer = document.createElement('div');
-        flyer.className = 'fly-to-sidebar';
-        flyer.innerHTML = '✂️';
-        flyer.style.position = 'fixed';
-        flyer.style.top = '50%';
-        flyer.style.left = '50%';
-        flyer.style.zIndex = '100000';
-        flyer.style.fontSize = '2rem';
-        flyer.style.pointerEvents = 'none';
-        document.body.appendChild(flyer);
-
-        setTimeout(() => flyer.remove(), 800);
+        // 1. Visuelles Feedback via Event
+        eventBus.emit(EVENTS.START_BARBER_ANIMATION);
 
         // 2. Mechanik aktivieren
         game.applyBarberBuff();
         
-        // 3. Logbuch bereinigen (Eintrag entfernen statt nur markieren)
+        // 3. Logbuch bereinigen
         eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-barber' });
         
-        eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Tarnung aktiv! Du bist jetzt ein Geist.", type: 'success' });
+        eventBus.emit(EVENTS.SHOW_TOAST, { message: "Tarnung aktiv! Du bist jetzt ein Geist.", type: 'success' });
         eventBus.emit(EVENTS.CLOSE_INTERACTION);
         game.resume();
     });

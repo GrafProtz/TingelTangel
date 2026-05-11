@@ -57,6 +57,11 @@ export class UIManager {
             this.triggerCascadeAnimation();
         });
         
+        eventBus.subscribe(EVENTS.BIKING_STATE_CHANGED, (isBiking) => {
+            document.getElementById('app-container')?.classList.toggle('state-biking', isBiking);
+            document.body.classList.toggle('state-biking', isBiking);
+        });
+
         this.currentCascadeData = null;
     }
 

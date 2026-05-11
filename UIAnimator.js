@@ -51,4 +51,33 @@ export class UIAnimator {
             }
         });
     }
+
+    /**
+     * Startet die fliegende Scheren-Animation (Barber-Transform).
+     */
+    static startBarberAnimation() {
+        const flyer = document.createElement('div');
+        flyer.className = 'fly-to-sidebar';
+        flyer.innerHTML = '✂️';
+        
+        Object.assign(flyer.style, {
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            zIndex: '100000',
+            fontSize: '2rem',
+            pointerEvents: 'none'
+        });
+
+        document.body.appendChild(flyer);
+        setTimeout(() => flyer.remove(), 800);
+    }
 }
+
+// Globaler Subscriber für UI-Effekte
+import { eventBus } from './EventBus.js';
+import { EVENTS } from './EventTypes.js';
+
+eventBus.subscribe(EVENTS.START_BARBER_ANIMATION, () => {
+    UIAnimator.startBarberAnimation();
+});

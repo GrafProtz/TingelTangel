@@ -21,11 +21,13 @@ export class NotificationManager {
 
     /**
      * Zeigt eine kurze Benachrichtigung (Toast) an.
-     * @param {Object} data - { msg, type }
+     * @param {Object} data - { msg/message, type }
      */
     showToast(data) {
-        if (!data || !data.msg) return;
-        const { msg, type } = data;
+        if (!data) return;
+        const message = data.message || data.msg;
+        if (!message) return;
+        const type = data.type;
 
         let container = document.getElementById('toast-container');
         
@@ -50,7 +52,7 @@ export class NotificationManager {
         const toast = document.createElement('div');
         toast.className = 'glass-panel toast-notification';
         
-        const borderColor = type === 'success' ? 'var(--color-primary)' : 'var(--color-danger)';
+        const borderColor = (type === 'error' || type === 'fail') ? 'var(--color-danger)' : 'var(--color-primary)';
         
         Object.assign(toast.style, {
             padding: '15px 25px',
@@ -63,7 +65,7 @@ export class NotificationManager {
             pointerEvents: 'auto'
         });
 
-        toast.textContent = msg;
+        toast.textContent = message;
         container.appendChild(toast);
 
         setTimeout(() => {
