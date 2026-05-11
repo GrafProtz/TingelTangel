@@ -1,9 +1,13 @@
+const urlParams = new URLSearchParams(window.location.search);
+const isDebug = urlParams.get('debug') === 'true';
+
 /**
  * GameConfig - Zentrale Verwaltung aller Balancing-Werte und Konstanten.
  * Verhindert "Magic Numbers" im Code.
  */
 export const CONFIG = {
-    DEBUG_MODE: true, // Zentrales Flag für Logging
+    DEBUG_MODE: isDebug, // Standardmäßig false, aktivierbar via ?debug=true
+    
     // Finanzen
     INITIAL_BUDGET: 300,
     RADAR_COST: 50,

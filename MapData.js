@@ -1,6 +1,7 @@
 import { CONFIG } from './GameConfig.js';
 import { eventBus } from './EventBus.js';
 import { EVENTS } from './EventTypes.js';
+import { log } from './Utils.js';
 
 /**
  * Leichtgewichtiger Wrapper für IndexedDB, spezifisch für Map-Caching.
@@ -130,10 +131,10 @@ class MapData {
             let data = await this.#db.get(cacheKey, this.#CACHE_TTL_MS);
 
             if (data) {
-                console.log(`MapData: Lade "${this.cityName}" aus IndexedDB Cache...`);
+                log(`MapData: Lade "${this.cityName}" aus IndexedDB Cache...`);
             } else {
                 eventBus.emit(EVENTS.MAP_LOAD_PROGRESS, { stage: 'download', progress: 0, message: 'Lade Stadt-Daten von OSM...' });
-                console.log(`MapData: Starte Overpass-Abfrage für "${this.cityName}"...`);
+                log(`MapData: Starte Overpass-Abfrage für "${this.cityName}"...`);
                 
                 const query = `[out:json][timeout:60];(
                     way["highway"](${s},${w},${n},${e});
@@ -205,7 +206,7 @@ class MapData {
 
         } catch (err) {
             if (err.name === 'AbortError') {
-                console.log('MapData: Request wurde abgebrochen.');
+                log('MapData: Request wurde abgebrochen.');
                 return;
             }
             console.error('MapData: Overpass/Loading-Fehler', err);
@@ -298,7 +299,7 @@ class MapData {
         }
 
 
-        console.log(`MapData: ${this.#policeStations.length} Polizeistationen erfasst.`);
+        log(`MapData: ${this.#policeStations.length} Polizeistationen erfasst.`);
     }
 
     // ----------------------------------------------------------------
@@ -584,7 +585,7 @@ class MapData {
                     }
                 });
             });
-            console.log("TRACE BIKING: Gefundene Nachbarn Tiefe 1 & 2 gesamt:", results.size);
+            log("TRACE BIKING: Gefundene Nachbarn Tiefe 1 & 2 gesamt:", results.size);
         }
 
         return Array.from(results.values());

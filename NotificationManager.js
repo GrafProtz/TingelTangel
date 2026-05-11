@@ -1,5 +1,5 @@
 import { eventBus } from './EventBus.js';
-import { sanitizeHTML } from './Utils.js';
+import { sanitizeHTML, log } from './Utils.js';
 import { EVENTS } from './EventTypes.js';
 
 /**
@@ -12,7 +12,7 @@ export class NotificationManager {
 
     setupListeners() {
         eventBus.subscribe(EVENTS.SHOW_TOAST, (data) => {
-            console.log('TRACE 4: NotificationManager hat Event empfangen:', data);
+            log('TRACE 4: NotificationManager hat Event empfangen:', data);
             this.showToast(data);
         });
         eventBus.subscribe(EVENTS.FLYING_REWARD, (data) => this.animateRewardToMenu(data));

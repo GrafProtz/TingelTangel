@@ -5,6 +5,7 @@ import { eventBus } from './EventBus.js';
 import { gameState, GamePhase } from './GameState.js';
 import { OSMValidator } from './OSMValidator.js';
 import { EVENTS } from './EventTypes.js';
+import { log } from './Utils.js';
 
 class OverpassService {
     #inMemoryCache = new Map();
@@ -28,7 +29,7 @@ class OverpassService {
 
         // 1. Request-Locking: Falls derselbe Bereich gerade geladen wird, hänge dich an das Promise
         if (this.#pendingRequests.has(cacheKey)) {
-            console.log(`[OverpassService] Request-Lock aktiv für: ${cacheKey}`);
+            log(`[OverpassService] Request-Lock aktiv für: ${cacheKey}`);
             return this.#pendingRequests.get(cacheKey);
         }
 
@@ -104,7 +105,7 @@ class OverpassService {
                             resolve(req.result.data);
                             return;
                         }
-                        console.log(`[OverpassService] Cache abgelaufen für: ${cacheKey}`);
+                        log(`[OverpassService] Cache abgelaufen für: ${cacheKey}`);
                     }
                     resolve(null);
                 };

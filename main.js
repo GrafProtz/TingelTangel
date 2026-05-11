@@ -283,7 +283,7 @@ async function initApp() {
             await mapView.playPoliceRevealSequence(result.stations, result.playerCoords);
             
             // Erst jetzt das Spiel wieder freigeben
-            console.log('[MAIN] Radar-Sequenz beendet, Spiel wird fortgesetzt.');
+            log('[MAIN] Radar-Sequenz beendet, Spiel wird fortgesetzt.');
             game.resume();
         }
     });
@@ -354,7 +354,7 @@ async function initApp() {
 
             // Wenn das Modal weggeklickt wird, erwacht die Karte zum Leben
             eventBus.subscribe(EVENTS.START_MAP_INTRO, () => {
-                console.log("DEBUG 1: Event START_MAP_INTRO ist in main.js angekommen!");
+                log("DEBUG 1: Event START_MAP_INTRO ist in main.js angekommen!");
                 mapView.renderPlayer(scenario.startCoords);
                 
                 // Nachbarn für die Bounding Box ermitteln

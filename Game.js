@@ -1,4 +1,5 @@
 import { MapData } from './MapData.js';
+import { log } from './Utils.js';
 import { CONFIG } from './GameConfig.js';
 import { STRINGS } from './GameStrings.js';
 import { eventBus } from './EventBus.js';
@@ -423,7 +424,7 @@ class Game {
         
         this.#gameState.firstMoveFired = false;
         
-        console.log('🎯 MISSION GESTARTET! Ziel-ID:', this.#gameState.targetPubNodeId);
+        log('🎯 MISSION GESTARTET! Ziel-ID:', this.#gameState.targetPubNodeId);
 
         // Modal SOFORT aufploppen lassen
         const cityName = this.#mapData.cityName || "der Stadt";
@@ -453,7 +454,7 @@ class Game {
         this.#movementEngine.stop(); // Zur Sicherheit Bewegung zurücksetzen
         this.#gameState.firstMoveFired = true; // Verhindert, dass das Tutorial nach dem Laden triggert
         
-        console.log('💾 Spielstand erfolgreich geladen. Aktueller Knoten:', this.#gameState.currentPlayerNodeId);
+        log('💾 Spielstand erfolgreich geladen. Aktueller Knoten:', this.#gameState.currentPlayerNodeId);
         
         this.#notifyStateChange();
         this.#emitMissionUpdate();
@@ -469,7 +470,7 @@ class Game {
     resume() {
         if (this.#gameState.isInPub) {
             this.#gameState.lastPubVisit = Date.now();
-            console.log("DEBUG 4: Neuer Zeitstempel gesetzt auf:", this.#gameState.lastPubVisit);
+            log("DEBUG 4: Neuer Zeitstempel gesetzt auf:", this.#gameState.lastPubVisit);
             this.#gameState.isInPub = false;
         }
         this.#gameState.gameActive = true;

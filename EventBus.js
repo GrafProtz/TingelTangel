@@ -5,6 +5,8 @@
  * Sie implementiert robuste Fehlerbehandlung, Memory-Leak-Prävention 
  * und ein striktes Singleton-Pattern via ES6 Module Caching.
  */
+import { log } from './Utils.js';
+
 class EventBus {
     /** @type {Map<string, Set<Function>>} */
     #listeners = new Map();
@@ -96,8 +98,8 @@ class EventBus {
         
         if (this.#debug) {
             console.groupCollapsed(`[EventBus] Emit: "${event}"`);
-            console.log('Payload:', payload);
-            console.log('Abonnenten:', eventSet ? eventSet.size : 0);
+            log('Payload:', payload);
+            log('Abonnenten:', eventSet ? eventSet.size : 0);
             console.groupEnd();
         }
 
