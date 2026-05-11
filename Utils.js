@@ -18,7 +18,7 @@ export const sanitizeHTML = (html) => {
     if (typeof html !== 'string') return html;
     
     const allowedTags = ['br', 'b', 'i', 'strong', 'em', 'p', 'div', 'span', 'small', 'svg', 'path', 'h3'];
-    const allowedAttrs = ['style', 'class', 'viewbox', 'width', 'height', 'd', 'fill', 'margin-bottom', 'font-size', 'line-height'];
+    const allowedAttrs = ['class', 'viewbox', 'width', 'height', 'd', 'fill'];
     
     const doc = new DOMParser().parseFromString(html, 'text/html');
     
@@ -27,6 +27,24 @@ export const sanitizeHTML = (html) => {
         if (node.attributes) {
             for (let i = node.attributes.length - 1; i >= 0; i--) {
                 const attrName = node.attributes[i].name.toLowerCase();
+                const attrValue = node.attributes[i].value.toLowerCase();
+                
+                // Event-Handler (on...) rigoros blockieren
+                if (attrName.startsWith('on')) {
+                    node.removeAttribute(attrName);
+                    continue;
+                }
+
+                // Style-Härtung: Nur Injections blockieren (wie vom USER gefordert)
+                if (attrName === 'style') {
+                    const dangerous = /position|fixed|absolute|url|javascript|expression|behavior|-moz-binding/i;
+                    if (dangerous.test(attrValue)) {
+                        node.removeAttribute(attrName);
+                    }
+                    continue;
+                }
+
+                // Whitelist-Check für restliche Attribute
                 if (!allowedAttrs.includes(attrName) && !attrName.startsWith('data-')) {
                     node.removeAttribute(attrName);
                 }
@@ -39,7 +57,7 @@ export const sanitizeHTML = (html) => {
             if (child.nodeType === 1) { // Element
                 const tag = child.tagName.toLowerCase();
                 if (!allowedTags.includes(tag)) {
-                    // Tag nicht erlaubt -> In Text umwandeln
+                    // Tag nicht erlaubt -> In Text umwandeln (Escape)
                     const textNode = document.createTextNode(child.outerHTML);
                     node.replaceChild(textNode, child);
                 } else {

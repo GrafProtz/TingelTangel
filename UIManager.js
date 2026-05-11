@@ -174,7 +174,7 @@ export class UIManager {
         };
         
         this.infoModalTitle.innerText = this.currentCascadeData.title;
-        this.infoModalText.innerHTML = this.currentCascadeData.fullText;
+        this.infoModalText.innerHTML = sanitizeHTML(this.currentCascadeData.fullText);
         this.infoModalBtn.innerText = "Verstanden";
         
         this.infoModal.classList.remove('hidden');
