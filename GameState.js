@@ -116,29 +116,42 @@ export class GameState {
     /**
      * Lädt den Zustand aus einem gespeicherten Objekt.
      */
-    hydrate(savedState) {
-        if (!savedState) return;
-        this.currentPlayerNodeId = savedState.currentPlayerNodeId;
-        this.gameActive = savedState.gameActive ?? true;
-        this.targetPubNodeId = savedState.targetPubNodeId;
-        this.targetPubName = savedState.targetPubName || "Kneipe";
-        this.radarUnlocked = savedState.radarUnlocked ?? false;
-        this.lastRadarTime = savedState.lastRadarTime ?? 0;
-        this.lastPubVisit = savedState.lastPubVisit ?? 0;
-        this.showPubCooldownText = savedState.showPubCooldownText ?? false;
-        this.moveCount = savedState.moveCount ?? 0;
-        this.missionPhase = savedState.missionPhase ?? 1;
-        this.infoMenuOpenUntilMove = savedState.infoMenuOpenUntilMove ?? -1;
-        this.isInfoMenuOpen = savedState.isInfoMenuOpen ?? false;
-        this.activeCrimeTargets = savedState.activeCrimeTargets || [];
-        this.logbook = savedState.logbook || [];
-        this.firstMoveFired = savedState.firstMoveFired ?? false;
-        this.isInPub = savedState.isInPub ?? false;
-        this.activeBarber = savedState.activeBarber || null;
-        this.isDisguised = savedState.isDisguised ?? false;
-        this.hasBoltCutter = savedState.hasBoltCutter ?? false;
-        this.isBiking = savedState.isBiking ?? false;
-        this.hasBicycle = savedState.hasBicycle ?? false;
-        this.activeBicycleTargets = savedState.activeBicycleTargets || [];
+    hydrate(data) {
+        if (!data || typeof data !== 'object') return;
+
+        const isStr = (v) => typeof v === 'string';
+        const isNum = (v) => typeof v === 'number' && !isNaN(v);
+        const isBool = (v) => typeof v === 'boolean';
+        const isArr = (v) => Array.isArray(v);
+
+        // Player & Position
+        this.currentPlayerNodeId = isStr(data.currentPlayerNodeId) ? data.currentPlayerNodeId : null;
+        this.isBiking = isBool(data.isBiking) ? data.isBiking : false;
+        this.isDisguised = isBool(data.isDisguised) ? data.isDisguised : false;
+        this.hasBoltCutter = isBool(data.hasBoltCutter) ? data.hasBoltCutter : false;
+        this.hasBicycle = isBool(data.hasBicycle) ? data.hasBicycle : false;
+        this.isInPub = isBool(data.isInPub) ? data.isInPub : false;
+
+        // Game Logic State
+        this.gameActive = isBool(data.gameActive) ? data.gameActive : true;
+        this.moveCount = isNum(data.moveCount) && data.moveCount >= 0 ? data.moveCount : 0;
+        this.missionPhase = isNum(data.missionPhase) && [1, 2, 3].includes(data.missionPhase) ? data.missionPhase : 1;
+        this.firstMoveFired = isBool(data.firstMoveFired) ? data.firstMoveFired : false;
+
+        // Mission / Targets
+        this.targetPubNodeId = isStr(data.targetPubNodeId) ? data.targetPubNodeId : null;
+        this.targetPubName = isStr(data.targetPubName) ? data.targetPubName : "Kneipe";
+        this.activeCrimeTargets = isArr(data.activeCrimeTargets) ? data.activeCrimeTargets : [];
+        this.activeBicycleTargets = isArr(data.activeBicycleTargets) ? data.activeBicycleTargets : [];
+        this.activeBarber = (data.activeBarber && typeof data.activeBarber === 'object') ? data.activeBarber : null;
+        this.lastPubVisit = isNum(data.lastPubVisit) && data.lastPubVisit >= 0 ? data.lastPubVisit : 0;
+
+        // UI / Utility
+        this.radarUnlocked = isBool(data.radarUnlocked) ? data.radarUnlocked : false;
+        this.lastRadarTime = isNum(data.lastRadarTime) && data.lastRadarTime >= 0 ? data.lastRadarTime : 0;
+        this.showPubCooldownText = isBool(data.showPubCooldownText) ? data.showPubCooldownText : false;
+        this.infoMenuOpenUntilMove = isNum(data.infoMenuOpenUntilMove) ? data.infoMenuOpenUntilMove : -1;
+        this.isInfoMenuOpen = isBool(data.isInfoMenuOpen) ? data.isInfoMenuOpen : false;
+        this.logbook = isArr(data.logbook) ? data.logbook : [];
     }
 }
