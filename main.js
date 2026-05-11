@@ -11,6 +11,7 @@ import { log } from './Utils.js';
 import { eventBus } from './EventBus.js';
 import { sanitizeHTML } from './Utils.js';
 import { DialogFactory } from './DialogFactory.js';
+import { EVENTS } from './EventTypes.js';
 
 const CITIES = [
     { id: "berlin", name: "Berlin", lat: 52.5200, lng: 13.4050, zoom: 15 },
@@ -95,7 +96,10 @@ async function initApp() {
     });
 
     // ----- State Handling -----
-    eventBus.subscribe('GAME_STATE_CHANGED', (state) => {
+    // ----- Granulare UI-Updates -----
+    
+    // 1. Bewegung & Navigation: Rendert Spieler und die grünen Wege-Punkte
+    eventBus.subscribe(EVENTS.PLAYER_MOVED, (state) => {
         if (state.currentPlayerNodeId === null) return;
         
         if (state.isMoving) {
@@ -106,12 +110,23 @@ async function initApp() {
         const node = mapData.getNode(state.currentPlayerNodeId);
         if (node) mapView.renderPlayer([node.lat, node.lon]);
 
+        const neighbors = mapData.getNeighbors(state.currentPlayerNodeId, state.isBiking);
+        mapView.renderNeighbors(neighbors, state.targetPubNodeId, state.isBiking, state.lastPubVisit, (clickedId) => {
+            game.moveToNode(clickedId);
+        });
+    });
+
+    // 2. POI-Management: Rendert Icons für Ziele, Barber und Fahrräder
+    eventBus.subscribe(EVENTS.TARGETS_UPDATED, (state) => {
         const poiList = [];
+        
+        // Primäres Ziel (Kneipe)
         const targetNode = mapData.getNode(state.targetPubNodeId);
         if (targetNode) {
             poiList.push({ ...targetNode, type: 'pub', isPrimary: true });
         }
 
+        // Einbruchs-Ziele
         if (state.activeCrimeTargets) {
             state.activeCrimeTargets.forEach(target => {
                 const accessNode = mapData.getNode(target.accessNodeId);
@@ -120,19 +135,18 @@ async function initApp() {
                     accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                     onClickCallback: () => {
                         if (!game.checkProximity(target.accessNodeId)) {
-                            eventBus.emit('SHOW_TOAST', { msg: "Du musst exakt am Icon stehen!", type: 'fail' });
+                            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Du musst exakt am Icon stehen!", type: 'fail' });
                             return;
                         }
-
                         const riskData = game.calculateTargetRisk(target);
                         game.pause();
-                        
-                        eventBus.emit('OPEN_SCOUTING_REPORT', { target, riskData });
+                        eventBus.emit(EVENTS.OPEN_SCOUTING_REPORT, { target, riskData });
                     }
                 });
             });
         }
 
+        // Friseur (Tarnung)
         if (state.activeBarber) {
             const b = state.activeBarber;
             const accessNode = mapData.getNode(b.accessNodeId);
@@ -142,16 +156,15 @@ async function initApp() {
                 accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                 onClickCallback: () => {
                     if (!game.checkProximity(b.accessNodeId)) {
-                        eventBus.emit('SHOW_TOAST', { msg: "Geh näher ran an den Salon!", type: 'fail' });
+                        eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Geh näher ran an den Salon!", type: 'fail' });
                         return;
                     }
-
                     game.pause();
-                    eventBus.emit('SHOW_DIALOG', {
+                    eventBus.emit(EVENTS.SHOW_DIALOG, {
                         title: 'Ein neues Gesicht?',
                         text: `"Brauchst du ein neues Gesicht, Kumpel? Die Schmiere ist dir dicht auf den Fersen. Setz dich auf den Stuhl, lass mich die Konturen nachziehen und die Matte färben. Wenn du hier rausgehst, erkennt dich nicht mal deine eigene Mutter wieder. Dein Entdeckungsrisiko für den nächsten Bruch schmilzt auf die Hälfte zusammen, und deine Nerven bleiben wie Drahtseile – die Abbruchquote halbiert sich gleich mit. Was sagst du? Ein paar Kröten für ein Ticket in die Unsichtbarkeit?"`,
                         buttons: [
-                            { text: 'Umstyling starten (50 €)', event: 'BARBER_TRANSFORM_START' },
+                            { text: 'Umstyling starten (50 €)', event: EVENTS.BARBER_TRANSFORM_START },
                             { text: 'Später vielleicht', event: 'RESUME_GAME' }
                         ]
                     });
@@ -159,6 +172,7 @@ async function initApp() {
             });
         }
 
+        // Fahrräder (Diebstahl)
         if (state.activeBicycleTargets) {
             state.activeBicycleTargets.forEach(target => {
                 const accessNode = mapData.getNode(target.accessNodeId);
@@ -168,14 +182,10 @@ async function initApp() {
                     accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                     onClickCallback: () => {
                         if (!game.checkProximity(target.accessNodeId)) {
-                            eventBus.emit('SHOW_TOAST', { msg: "Steh direkt am Rad, um es zu knacken!", type: 'fail' });
+                            eventBus.emit(EVENTS.SHOW_TOAST, { msg: "Steh direkt am Rad, um es zu knacken!", type: 'fail' });
                             return;
                         }
-
-                        // Risiko berechnen
                         const riskData = game.calculateTargetRisk(target);
-
-                        // Risiko-Breakdown (Gauner-Jargon)
                         const policeMalus = riskData.proximityRisk + riskData.interferenceRisk;
                         const dialogText = `
                                 <p style="color: var(--color-warning); font-size: 0.9rem; margin-bottom: 12px; border-left: 3px solid var(--color-warning); padding-left: 8px;">
@@ -183,36 +193,21 @@ async function initApp() {
                                 </p>
                                 <div class="scouting-report" style="line-height: 1.6;">
                                     <p style="margin-bottom: 16px;">"Die Rechnung ist einfach, Kumpel. Schau dir die Zahlen an, bevor du den Schneider ansetzt..."</p>
-                                    
                                     <div style="background: rgba(0,0,0,0.05); padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 0.95rem;">
-                                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;">
-                                            <span>Grund-Chance (Statistik):</span>
-                                            <span>9,7%</span>
-                                        </div>
-                                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px; color: ${policeMalus > 0 ? 'var(--color-danger)' : 'inherit'};">
-                                            <span>Bullen-Präsenz vor Ort:</span>
-                                            <span>+${policeMalus}%</span>
-                                        </div>
-                                        ${riskData.isDisguised ? `
-                                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px; color: var(--color-secondary);">
-                                            <span>Friseur-Tarnung:</span>
-                                            <span>-50%</span>
-                                        </div>` : ''}
+                                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Grund-Chance (Statistik):</span><span>9,7%</span></div>
+                                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px; color: ${policeMalus > 0 ? 'var(--color-danger)' : 'inherit'};"><span>Bullen-Präsenz vor Ort:</span><span>+${policeMalus}%</span></div>
+                                        ${riskData.isDisguised ? `<div style="display:flex; justify-content:space-between; margin-bottom: 4px; color: var(--color-secondary);"><span>Friseur-Tarnung:</span><span>-50%</span></div>` : ''}
                                     </div>
-
                                     <div style="border-top: 2px solid var(--color-text); padding-top: 12px; display:flex; justify-content:space-between; font-weight:bold; font-size:1.2rem; color:var(--color-danger);">
-                                        <span>GESAMTRISIKO:</span>
-                                        <span>${riskData.totalRisk}%</span>
+                                        <span>GESAMTRISIKO:</span><span>${riskData.totalRisk}%</span>
                                     </div>
                                 </div>
                             `;
-
-                        // Diebstahl-Dialog (Blueprint Immobilien)
-                        eventBus.emit('SHOW_DIALOG', {
+                        eventBus.emit(EVENTS.SHOW_DIALOG, {
                             title: 'Drahtesel im Visier',
                             text: dialogText,
                             buttons: [
-                                { text: 'Einverstanden (Knacken)', event: 'START_BICYCLE_THEFT_RNG', payload: { target, riskData }, className: 'btn-danger' },
+                                { text: 'Einverstanden (Knacken)', event: EVENTS.START_BICYCLE_THEFT_RNG, payload: { target, riskData }, className: 'btn-danger' },
                                 { text: 'Lieber nicht', event: 'RESUME_GAME', className: 'btn-secondary' }
                             ]
                         });
@@ -222,11 +217,16 @@ async function initApp() {
         }
 
         mapView.renderPOIs(poiList);
+    });
 
-        const neighbors = mapData.getNeighbors(state.currentPlayerNodeId, state.isBiking);
-        mapView.renderNeighbors(neighbors, state.targetPubNodeId, state.isBiking, state.lastPubVisit, (clickedId) => {
-            game.moveToNode(clickedId);
-        });
+    // 3. Fallback / Globaler Sync (z.B. für Load/Save)
+    eventBus.subscribe(EVENTS.GAME_STATE_CHANGED, (state) => {
+        // Initiale Events triggern, falls nötig
+        if (state.currentPlayerNodeId && !state.isMoving) {
+            // Wir nutzen die granularen Events, um den Initial-Zustand zu zeichnen
+            eventBus.emit(EVENTS.PLAYER_MOVED, state);
+            eventBus.emit(EVENTS.TARGETS_UPDATED, state);
+        }
     });
 
     // Globaler Key-Listener für Fahrrad-Toggle (Taste F)

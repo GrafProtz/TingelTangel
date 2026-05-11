@@ -1,49 +1,40 @@
 /**
  * EventTypes.js - Zentrale Registry für alle Event-Namen im Spiel.
- * Ersetzt den monolithischen GAME_STATE_CHANGED Broadcast durch granulare Events.
+ * Konsolidiert auf SCREAMING_SNAKE_CASE für maximale Konsistenz.
  */
 export const EVENTS = {
-    // --- GAME DOMAIN ---
-    GAME: {
-        /** Payload: { isWin, reason, budget } */
-        OVER: 'GAME:OVER',
-        /** Payload: { isPaused } */
-        PAUSED_STATE_CHANGED: 'GAME:PAUSED_STATE_CHANGED',
-        /** Payload: { phase, moveCount } */
-        MISSION_PHASE_CHANGED: 'GAME:MISSION_PHASE_CHANGED',
-        /** Keine Payload */
-        SAVE_COMPLETED: 'GAME:SAVE_COMPLETED'
-    },
+    // --- CORE & STATE ---
+    GAME_STATE_CHANGED: 'GAME_STATE_CHANGED',
+    MISSION_STATE_CHANGED: 'MISSION_STATE_CHANGED',
+    SAVE_COMPLETED: 'SAVE_COMPLETED',
 
-    // --- PLAYER DOMAIN ---
-    PLAYER: {
-        /** Payload: { nodeId, lat, lon, isBiking } */
-        MOVED: 'PLAYER:MOVED',
-        /** Payload: { lat, lon, budget } */
-        POSITION_UPDATED: 'PLAYER:POSITION_UPDATED',
-        /** Payload: { total, diff } */
-        BUDGET_CHANGED: 'PLAYER:BUDGET_CHANGED',
-        /** Payload: { hasBicycle, isBiking, isDisguised, hasBoltCutter } */
-        ITEMS_CHANGED: 'PLAYER:ITEMS_CHANGED'
-    },
+    // --- PLAYER ---
+    PLAYER_MOVED: 'PLAYER_MOVED',
+    PLAYER_POSITION_UPDATED: 'PLAYER_POSITION_UPDATED',
+    PLAYER_BUSTED: 'PLAYER_BUSTED',
+    BUDGET_UPDATED: 'BUDGET_UPDATED',
+    BUDGET_TICK: 'BUDGET_TICK',
+    ITEMS_CHANGED: 'ITEMS_CHANGED',
 
-    // --- MAP DOMAIN ---
-    MAP: {
-        /** Payload: { pub, crimeTargets, bicycleTargets, barber } */
-        TARGETS_UPDATED: 'MAP:TARGETS_UPDATED',
-        /** Payload: { coords } */
-        CAMERA_FIT_BOUNDS: 'MAP:CAMERA_FIT_BOUNDS_REQUESTED'
-    },
+    // --- MAP & POIs ---
+    TARGETS_UPDATED: 'TARGETS_UPDATED',
+    CAMERA_FIT_BOUNDS_REQUESTED: 'CAMERA_FIT_BOUNDS_REQUESTED',
+    PUB_TARGET_REACHED: 'PUB_TARGET_REACHED',
 
-    // --- UI DOMAIN ---
-    UI: {
-        /** Payload: { isOpen } */
-        INFO_MENU_TOGGLED: 'UI:INFO_MENU_TOGGLED',
-        /** Payload: { cards } */
-        HUD_INFO_UPDATED: 'UI:HUD_INFO_UPDATED',
-        /** Payload: { msg, type } */
-        SHOW_TOAST: 'UI:SHOW_TOAST',
-        /** Payload: { title, body, buttons } */
-        SHOW_DIALOG: 'UI:SHOW_DIALOG'
-    }
+    // --- UI & DIALOGS ---
+    SHOW_TOAST: 'SHOW_TOAST',
+    SHOW_DIALOG: 'SHOW_DIALOG',
+    SHOW_INFO_CASCADE: 'SHOW_INFO_CASCADE',
+    CLOSE_INTERACTION: 'CLOSE_INTERACTION',
+    OPEN_INTERACTION: 'OPEN_INTERACTION',
+    OPEN_SCOUTING_REPORT: 'OPEN_SCOUTING_REPORT',
+    INFO_UPDATED: 'INFO_UPDATED',
+    INFO_MENU_STATE: 'INFO_MENU_STATE',
+    
+    // --- ACTIONS ---
+    START_MAP_INTRO: 'START_MAP_INTRO',
+    START_POLICE_REVEAL: 'START_POLICE_REVEAL',
+    RADAR_SEQUENCE_START: 'RADAR_SEQUENCE_START',
+    BARBER_TRANSFORM_START: 'BARBER_TRANSFORM_START',
+    START_BICYCLE_THEFT_RNG: 'START_BICYCLE_THEFT_RNG'
 };

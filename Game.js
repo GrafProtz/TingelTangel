@@ -4,6 +4,7 @@ import { STRINGS } from './GameStrings.js';
 import { eventBus } from './EventBus.js';
 import { EncounterManager } from './EncounterManager.js';
 import { DialogFactory } from './DialogFactory.js';
+import { EVENTS } from './EventTypes.js';
 
 /**
  * Game - Die Logik-Schicht.
@@ -383,10 +384,20 @@ class Game {
 
     /** Informiert über Fortschritt in der Mission. */
     #emitMissionUpdate() {
-        eventBus.emit('MISSION_STATE_CHANGED', {
+        eventBus.emit(EVENTS.MISSION_STATE_CHANGED, {
             phase: this.#missionPhase,
             moveCount: this.#moveCount
         });
+    }
+
+    /** Spezielles Event nach Abschluss einer Bewegung. */
+    #emitPlayerMoved() {
+        eventBus.emit(EVENTS.PLAYER_MOVED, this.getState());
+    }
+
+    /** Wird gefeuert, wenn sich die Liste der aktiven POIs (Ziele, Barber, Bikes) ändert. */
+    #emitTargetsUpdated() {
+        eventBus.emit(EVENTS.TARGETS_UPDATED, this.getState());
     }
 
     // ----------------------------------------------------------------
@@ -611,6 +622,7 @@ class Game {
         EncounterManager.checkAndTriggerEvent(this.getState());
 
         this.#notifyStateChange();
+        this.#emitPlayerMoved();
     }
 
     #handleInfoMenuMoveLogic() {
@@ -965,6 +977,7 @@ class Game {
         this.#activeCrimeTargets = targets;
         this.#missionPhase = 3;
         this.#emitMissionUpdate();
+        this.#emitTargetsUpdated();
         this.#notifyStateChange();
     }
 
@@ -1005,6 +1018,7 @@ class Game {
 
     setActiveBarber(barber) {
         this.#activeBarber = barber;
+        this.#emitTargetsUpdated();
         this.#notifyStateChange();
     }
 
