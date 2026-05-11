@@ -5,6 +5,7 @@ import { eventBus } from './EventBus.js';
 import { EncounterManager } from './EncounterManager.js';
 import { DialogFactory } from './DialogFactory.js';
 import { EVENTS } from './EventTypes.js';
+import { BudgetManager } from './BudgetManager.js';
 
 /**
  * Game - Die Logik-Schicht.
@@ -19,7 +20,7 @@ class Game {
     // Private Fields (Encapsulation)
     #mapData;
     #missionService;
-    #budget = CONFIG.INITIAL_BUDGET;
+    #budgetManager;
     #currentPlayerNodeId = null;
     #gameActive = false;
     #isMoving = false;
@@ -45,8 +46,6 @@ class Game {
     #isBiking = false;
     #hasBicycle = false;
     #activeBicycleTargets = [];
-    #hasActiveLoan = false;
-    #loanInterestSteps = 0;
 
     /**
      * @param {MapData} mapData
@@ -55,6 +54,7 @@ class Game {
     constructor(mapData, missionService) {
         this.#mapData = mapData;
         this.#missionService = missionService;
+        this.#budgetManager = new BudgetManager();
         this.#setupInteractionListeners();
     }
 
@@ -186,7 +186,7 @@ class Game {
 
                 // 2. Risiko-Check
                 if (Math.random() * 100 <= riskData.totalRisk) {
-                    const fine = Math.ceil(this.#budget * 0.2);
+                    const fine = Math.ceil(this.#budgetManager.budget * 0.2);
                     this.deductBudget(fine);
                     eventBus.emit('SHOW_DIALOG', DialogFactory.getBurglaryCaught(fine));
                 } else {
@@ -202,18 +202,15 @@ class Game {
         let amount = this.calculateLoot(riskData);
         let loanInfo = "";
         
-        if (this.#hasActiveLoan) {
-            const debt = 300 + this.#loanInterestSteps;
+        if (this.#budgetManager.hasActiveLoan) {
+            const debt = this.#budgetManager.processLoanRepayment();
             amount = Math.max(0, amount - debt);
             loanInfo = `<br><br><span style="color:var(--color-danger); font-size:0.9rem;">Rückzahlung an die Verbrecher*innen-Innung: ${debt} € wurden von deiner Beute einbehalten. Deine Weste bei der Verbrecher*innen-Innung ist vorerst wieder sauber.</span>`;
-            this.#hasActiveLoan = false;
-            this.#loanInterestSteps = 0;
             eventBus.emit('REMOVE_LOG_ENTRY', { logId: 'loan-entry' });
         }
 
         this.addReward(amount);
-        const debt = this.#hasActiveLoan ? (300 + this.#loanInterestSteps) : 0;
-        eventBus.emit('SHOW_DIALOG', DialogFactory.getBurglarySuccess(amount, debt));
+        eventBus.emit('SHOW_DIALOG', DialogFactory.getBurglarySuccess(amount, loanInfo));
     }
 
     #registerBicycleTheftFlow() {
@@ -245,7 +242,7 @@ class Game {
     }
 
     #handleBicycleTheftFailure() {
-        const fine = Math.ceil(this.#budget * 0.1);
+        const fine = Math.ceil(this.#budgetManager.budget * 0.1);
         this.deductBudget(fine);
         eventBus.emit('SHOW_DIALOG', DialogFactory.getBicycleTheftFailure(fine));
 
@@ -282,19 +279,13 @@ class Game {
     }
 
     #registerLoanFlow() {
-        eventBus.subscribe('ACCEPT_LOAN', () => {
-            this.#budget = 300;
-            this.#hasActiveLoan = true;
-            this.#loanInterestSteps = 0;
-            this.#gameActive = true;
-            eventBus.emit('ADD_LOG_ENTRY', { shortText: "Kredit bei der Verbrecher*innen-Innung: 300 € (Zinsen laufen...)", logId: 'loan-entry', notify: true });
+        eventBus.subscribe('ACCEPT_LOAN_OFFER', () => {
+            this.#budgetManager.handleAcceptLoan();
+            eventBus.emit('ADD_LOG_ENTRY', { shortText: "Not-Kredit erhalten: 1500 € (Zinsen laufen...)", logId: 'loan-entry', notify: true });
             this.resume();
-            this.#notifyStateChange();
         });
 
-        eventBus.subscribe('REJECT_LOAN', () => {
-            eventBus.emit('GAME_OVER', { reason: 'OUT_OF_MONEY' });
-        });
+        eventBus.subscribe('RELOAD_GAME', () => location.reload());
     }
 
     // ----------------------------------------------------------------
@@ -327,7 +318,7 @@ class Game {
      */
     getState() {
         return structuredClone({
-            budget: this.#budget,
+            ...this.#budgetManager.getFinanceState(),
             currentPlayerNodeId: this.#currentPlayerNodeId,
             gameActive: this.#gameActive,
             isMoving: this.#isMoving,
@@ -358,8 +349,6 @@ class Game {
             isBiking: this.#isBiking,
             hasBicycle: this.#hasBicycle,
             isInPub: this.#isInPub,
-            hasActiveLoan: this.#hasActiveLoan,
-            loanInterestSteps: this.#loanInterestSteps,
             logbook: this.#logbook
         });
     }
@@ -372,14 +361,6 @@ class Game {
     #notifyStateChange() {
         eventBus.emit('GAME_STATE_CHANGED', this.getState());
         this.#updateHUDInfo();
-    }
-
-    /** Spezielles Event für Budget-Änderungen inkl. Delta für Animationen. */
-    #emitBudgetUpdate(diff = 0) {
-        eventBus.emit('BUDGET_UPDATED', {
-            total: this.#budget,
-            diff: diff
-        });
     }
 
     /** Informiert über Fortschritt in der Mission. */
@@ -405,7 +386,7 @@ class Game {
     // ----------------------------------------------------------------
 
     startMission(startNodeId, targetNodeId, pubName = "Kneipe") {
-        this.#budget = CONFIG.INITIAL_BUDGET;
+        this.#budgetManager.init();
         this.#currentPlayerNodeId = String(startNodeId);
         this.#gameActive = false; // Spiel ist pausiert bis INTRO_COMPLETE!
         this.#isMoving = false;
@@ -426,7 +407,6 @@ class Game {
         this.#firstMoveFired = false;
         
         console.log('🎯 MISSION GESTARTET! Ziel-ID:', this.#targetPubNodeId);
-        this.#emitBudgetUpdate();
 
         // Modal SOFORT aufploppen lassen
         const cityName = this.#mapData.cityName || "der Stadt";
@@ -450,7 +430,7 @@ class Game {
     hydrateState(savedState) {
         if (!savedState) return;
 
-        this.#budget = savedState.budget ?? CONFIG.INITIAL_BUDGET;
+        this.#budgetManager.hydrate(savedState);
         this.#currentPlayerNodeId = savedState.currentPlayerNodeId;
         this.#gameActive = savedState.gameActive ?? true;
         this.#isMoving = false; // Zur Sicherheit Bewegung zurücksetzen
@@ -472,7 +452,6 @@ class Game {
         console.log('💾 Spielstand erfolgreich geladen. Aktueller Knoten:', this.#currentPlayerNodeId);
         
         this.#notifyStateChange();
-        this.#emitBudgetUpdate();
         this.#emitMissionUpdate();
     }
 
@@ -498,20 +477,16 @@ class Game {
     }
 
     canAfford(amount) {
-        return this.#budget >= amount;
+        return this.#budgetManager.canAfford(amount);
     }
 
     deductBudget(amount) {
-        const oldBudget = this.#budget;
-        this.#budget = Math.max(0, this.#budget - amount);
-        this.#emitBudgetUpdate(this.#budget - oldBudget);
+        this.#budgetManager.deductBudget(amount);
         this.#notifyStateChange();
     }
 
     addReward(amount) {
-        const oldBudget = this.#budget;
-        this.#budget += amount;
-        this.#emitBudgetUpdate(this.#budget - oldBudget);
+        this.#budgetManager.addReward(amount);
         this.#notifyStateChange();
     }
 
@@ -531,9 +506,7 @@ class Game {
         if (!this.#gameActive || this.#isMoving) return;
 
         // Kredit-Zinsen: Jeder Schritt kostet 1 € Zinsen, wenn man Schulden hat
-        if (this.#hasActiveLoan) {
-            this.#loanInterestSteps += 1;
-        }
+        this.#budgetManager.applyStepInterest();
 
         // Validierung über getNeighbors (berücksichtigt Tiefe 2 bei Biking)
         const neighbors = this.#mapData.getNeighbors(this.#currentPlayerNodeId, this.#isBiking);
@@ -558,7 +531,7 @@ class Game {
 
         const costMultiplier = this.#isBiking ? 1.5 : 1.0;
         const totalCost = Math.max(1, Math.ceil(edge.distance * CONFIG.COST_PER_METER * costMultiplier));
-        const budgetAtStart = this.#budget;
+        const budgetAtStart = this.#budgetManager.budget;
 
         const speed = this.#isBiking ? 240 : 120; // Doppelt so schnell auf dem Rad
         const durationMs = (edge.distance / speed) * 1000;
@@ -586,16 +559,15 @@ class Game {
         const costSoFar = Math.ceil(ctx.totalCost * t);
         const newBudget = Math.max(0, ctx.budgetAtStart - costSoFar);
         
-        if (newBudget !== this.#budget) {
-            const diff = newBudget - this.#budget;
-            this.#budget = newBudget;
+        if (newBudget !== this.#budgetManager.budget) {
+            const diff = newBudget - this.#budgetManager.budget;
             
             // Während der Animation feuern wir nur ein leichtgewichtiges Event für die UI,
             // um den teuren structuredClone in #notifyStateChange zu vermeiden.
-            eventBus.emit('BUDGET_TICK', { total: this.#budget, diff });
+            this.#budgetManager.applyBudgetTick(newBudget, diff);
         }
 
-        eventBus.emit('PLAYER_POSITION_UPDATED', { lat: pos[0], lon: pos[1], budget: this.#budget });
+        eventBus.emit(EVENTS.PLAYER_POSITION_UPDATED, { lat: pos[0], lon: pos[1], budget: this.#budgetManager.budget });
 
         if (t < 1) {
             this.#animFrameId = requestAnimationFrame((nextNow) => this.#animateMovement(nextNow, ctx));
@@ -641,15 +613,21 @@ class Game {
     }
 
     #handleBankruptcyCheck() {
-        if (this.#budget > 0) return;
+        if (this.#budgetManager.budget > 0) return;
 
-        this.#budget = 0;
         this.#gameActive = false;
         
-        if (!this.#hasActiveLoan) {
-            eventBus.emit('SHOW_LOAN_MODAL');
+        if (!this.#budgetManager.hasActiveLoan) {
+            eventBus.emit(EVENTS.SHOW_DIALOG, {
+                title: 'Pleite!',
+                text: 'Du hast keinen Cent mehr in der Tasche. Ein alter Bekannter bietet dir einen Not-Kredit von 1.500 € an. Aber pass auf: Er will das Geld nach dem nächsten erfolgreichen Bruch mit Zinsen zurück!',
+                buttons: [
+                    { text: 'Kredit annehmen', event: 'ACCEPT_LOAN_OFFER' },
+                    { text: 'Aufgeben', event: 'RELOAD_GAME' }
+                ]
+            });
         } else {
-            eventBus.emit('GAME_OVER', { reason: 'OUT_OF_MONEY' });
+            eventBus.emit(EVENTS.PLAYER_BUSTED, { reason: 'BANKRUPTCY' });
         }
     }
 
@@ -924,8 +902,7 @@ class Game {
     }
 
     calculateLoot(riskData) {
-        const { minLoot, maxLoot } = riskData;
-        return Math.floor(minLoot + Math.random() * (maxLoot - minLoot));
+        return this.#budgetManager.calculateLoot(riskData);
     }
 
     // ----------------------------------------------------------------

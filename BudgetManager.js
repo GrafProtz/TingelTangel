@@ -1,4 +1,5 @@
-import { CONFIG, EVENTS } from './GameConfig.js';
+import { CONFIG } from './GameConfig.js';
+import { EVENTS } from './EventTypes.js';
 import { eventBus } from './EventBus.js';
 
 /**
@@ -11,19 +12,14 @@ export class BudgetManager {
     #loanInterestSteps = 0;
 
     constructor() {
-        this.#setupEventListeners();
-    }
-
-    #setupEventListeners() {
-        // Horcht auf globale Finanz-Events
-        eventBus.subscribe(EVENTS.GAME.ACCEPT_LOAN, () => this.handleAcceptLoan());
+        this.#budget = CONFIG.INITIAL_BUDGET;
     }
 
     /**
      * Initialisiert das Budget für eine neue Mission.
      */
     init() {
-        this.#budget = CONFIG.FINANCE.INITIAL_BUDGET;
+        this.#budget = CONFIG.INITIAL_BUDGET;
         this.#hasActiveLoan = false;
         this.#loanInterestSteps = 0;
         this.#notifyChange();
@@ -34,7 +30,8 @@ export class BudgetManager {
      * @param {Object} savedState 
      */
     hydrate(savedState) {
-        this.#budget = savedState.budget ?? CONFIG.FINANCE.INITIAL_BUDGET;
+        if (!savedState) return;
+        this.#budget = savedState.budget ?? CONFIG.INITIAL_BUDGET;
         this.#hasActiveLoan = savedState.hasActiveLoan ?? false;
         this.#loanInterestSteps = savedState.loanInterestSteps ?? 0;
         this.#notifyChange();
@@ -49,7 +46,7 @@ export class BudgetManager {
     /**
      * Gibt den finanzspezifischen Teil des States zurück.
      */
-    getState() {
+    getFinanceState() {
         return {
             budget: this.#budget,
             hasActiveLoan: this.#hasActiveLoan,
@@ -80,12 +77,26 @@ export class BudgetManager {
     }
 
     /**
+     * Spezielles Budget-Update für Animationen (Tick).
+     * Verhindert schwere Full-State Broadcasts.
+     */
+    applyBudgetTick(newBudget, diff) {
+        this.#budget = newBudget;
+        eventBus.emit(EVENTS.BUDGET_TICK, { total: this.#budget, diff });
+    }
+
+    /**
      * Verarbeitet Zinsen für den laufenden Kredit bei jedem Schritt.
      */
     applyStepInterest() {
         if (this.#hasActiveLoan) {
-            this.#loanInterestSteps += CONFIG.FINANCE.LOAN_INTEREST_PER_STEP;
+            this.#loanInterestSteps += 1; // 1 € pro Schritt (Fixer Wert laut Game.js Legacy)
         }
+    }
+
+    calculateLoot(riskData) {
+        const { minLoot, maxLoot } = riskData;
+        return Math.floor(minLoot + Math.random() * (maxLoot - minLoot));
     }
 
     /**
@@ -95,7 +106,8 @@ export class BudgetManager {
     processLoanRepayment() {
         if (!this.#hasActiveLoan) return 0;
 
-        const debt = CONFIG.FINANCE.LOAN_DEBT_BASE + this.#loanInterestSteps;
+        // In der aktuellen Version: Rückzahlung = Basis (2000) + aufgelaufene Zinsen
+        const debt = 2000 + this.#loanInterestSteps; 
         this.#hasActiveLoan = false;
         this.#loanInterestSteps = 0;
         
@@ -103,7 +115,7 @@ export class BudgetManager {
     }
 
     handleAcceptLoan() {
-        this.#budget = CONFIG.FINANCE.LOAN_AMOUNT;
+        this.#budget = 1500; // Fixbetrag laut Legacy-Logik
         this.#hasActiveLoan = true;
         this.#loanInterestSteps = 0;
         this.#notifyChange();
@@ -111,21 +123,25 @@ export class BudgetManager {
 
     #handleInsolvency() {
         if (!this.#hasActiveLoan) {
-            eventBus.emit(EVENTS.UI.SHOW_LOAN_MODAL);
+            // Wenn pleite, aber noch kein Kredit: Angebot machen
+            eventBus.emit(EVENTS.SHOW_DIALOG, {
+                title: 'Pleite!',
+                text: 'Du hast keinen Cent mehr in der Tasche. Ein alter Bekannter bietet dir einen Not-Kredit von 1.500 € an. Aber pass auf: Er will das Geld nach dem nächsten erfolgreichen Bruch mit Zinsen zurück!',
+                buttons: [
+                    { text: 'Kredit annehmen', event: 'ACCEPT_LOAN_OFFER' },
+                    { text: 'Aufgeben', event: 'RELOAD_GAME' }
+                ]
+            });
         } else {
-            eventBus.emit(EVENTS.GAME.OVER, { reason: 'OUT_OF_MONEY' });
+            // Wenn bereits verschuldet und pleite: Game Over
+            eventBus.emit(EVENTS.PLAYER_BUSTED, { reason: 'BANKRUPTCY' });
         }
     }
 
-    /**
-     * Informiert das System über Budgetänderungen.
-     * @param {number} diff - Die Differenz zum vorherigen Stand (für Animationen).
-     */
     #notifyChange(diff = 0) {
-        eventBus.emit(EVENTS.PLAYER.BUDGET_UPDATED, {
+        eventBus.emit(EVENTS.BUDGET_UPDATED, {
             total: this.#budget,
-            diff: diff,
-            hasActiveLoan: this.#hasActiveLoan
+            diff: diff
         });
     }
 }
