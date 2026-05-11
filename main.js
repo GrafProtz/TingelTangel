@@ -160,14 +160,7 @@ async function initApp() {
                         return;
                     }
                     game.pause();
-                    eventBus.emit(EVENTS.SHOW_DIALOG, {
-                        title: 'Ein neues Gesicht?',
-                        text: `"Brauchst du ein neues Gesicht, Kumpel? Die Schmiere ist dir dicht auf den Fersen. Setz dich auf den Stuhl, lass mich die Konturen nachziehen und die Matte färben. Wenn du hier rausgehst, erkennt dich nicht mal deine eigene Mutter wieder. Dein Entdeckungsrisiko für den nächsten Bruch schmilzt auf die Hälfte zusammen, und deine Nerven bleiben wie Drahtseile – die Abbruchquote halbiert sich gleich mit. Was sagst du? Ein paar Kröten für ein Ticket in die Unsichtbarkeit?"`,
-                        buttons: [
-                            { text: 'Umstyling starten (50 €)', event: EVENTS.BARBER_TRANSFORM_START },
-                            { text: 'Später vielleicht', event: 'RESUME_GAME' }
-                        ]
-                    });
+                    eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBarberDialog());
                 }
             });
         }
@@ -186,31 +179,7 @@ async function initApp() {
                             return;
                         }
                         const riskData = game.calculateTargetRisk(target);
-                        const policeMalus = riskData.proximityRisk + riskData.interferenceRisk;
-                        const dialogText = `
-                                <p style="color: var(--color-warning); font-size: 0.9rem; margin-bottom: 12px; border-left: 3px solid var(--color-warning); padding-left: 8px;">
-                                    Achtung: Auf dem Rad bist du schneller, aber auffälliger. Deine Informanten verlangen einen Risikoaufschlag. Die Fortbewegung kostet dich auf dem Bike 15 Cent pro Meter statt der üblichen 10 Cent.
-                                </p>
-                                <div class="scouting-report" style="line-height: 1.6;">
-                                    <p style="margin-bottom: 16px;">"Die Rechnung ist einfach, Kumpel. Schau dir die Zahlen an, bevor du den Schneider ansetzt..."</p>
-                                    <div style="background: rgba(0,0,0,0.05); padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 0.95rem;">
-                                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Grund-Chance (Statistik):</span><span>9,7%</span></div>
-                                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px; color: ${policeMalus > 0 ? 'var(--color-danger)' : 'inherit'};"><span>Bullen-Präsenz vor Ort:</span><span>+${policeMalus}%</span></div>
-                                        ${riskData.isDisguised ? `<div style="display:flex; justify-content:space-between; margin-bottom: 4px; color: var(--color-secondary);"><span>Friseur-Tarnung:</span><span>-50%</span></div>` : ''}
-                                    </div>
-                                    <div style="border-top: 2px solid var(--color-text); padding-top: 12px; display:flex; justify-content:space-between; font-weight:bold; font-size:1.2rem; color:var(--color-danger);">
-                                        <span>GESAMTRISIKO:</span><span>${riskData.totalRisk}%</span>
-                                    </div>
-                                </div>
-                            `;
-                        eventBus.emit(EVENTS.SHOW_DIALOG, {
-                            title: 'Drahtesel im Visier',
-                            text: dialogText,
-                            buttons: [
-                                { text: 'Einverstanden (Knacken)', event: EVENTS.START_BICYCLE_THEFT_RNG, payload: { target, riskData }, className: 'btn-danger' },
-                                { text: 'Lieber nicht', event: 'RESUME_GAME', className: 'btn-secondary' }
-                            ]
-                        });
+                        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleInteractionDialog(riskData, target));
                     }
                 });
             });

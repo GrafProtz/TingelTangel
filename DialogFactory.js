@@ -3,59 +3,42 @@
  * Trennt UI-Template-Logik von der Geschäftslogik.
  */
 export class DialogFactory {
-    static getBicycleDialogConfig(bike) {
-        const dialogText = `
-            <div style="line-height: 1.6;">
-                <p>Du stehst vor einem abgestellten Fahrrad. Ein echtes "Erbstück" der Straße.</p>
-                <div class="warning-box" style="margin: 15px 0; border: 1px solid var(--color-primary); padding: 10px; background: rgba(56, 189, 248, 0.1);">
-                    <strong>Vorteil:</strong> Deine Reichweite erhöht sich massiv (Tiefe 2).<br>
-                    <strong>Risiko:</strong> Jeder Tritt in die Pedale kostet dich 1 € Wartung.
+    static getBicycleInteractionDialog(riskData, target) {
+        const policeMalus = riskData.proximityRisk + riskData.interferenceRisk;
+        const dialogBody = `
+            <p style="color: var(--color-warning); font-size: 0.9rem; margin-bottom: 12px; border-left: 3px solid var(--color-warning); padding-left: 8px;">
+                Achtung: Auf dem Rad bist du schneller, aber auffälliger. Deine Informanten verlangen einen Risikoaufschlag. Die Fortbewegung kostet dich auf dem Bike 15 Cent pro Meter statt der üblichen 10 Cent.
+            </p>
+            <div class="scouting-report" style="line-height: 1.6;">
+                <p style="margin-bottom: 16px;">"Die Rechnung ist einfach, Kumpel. Schau dir die Zahlen an, bevor du den Schneider ansetzt..."</p>
+                <div style="background: rgba(0,0,0,0.05); padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 0.95rem;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Grund-Chance (Statistik):</span><span>9,7%</span></div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 4px; color: ${policeMalus > 0 ? 'var(--color-danger)' : 'inherit'};"><span>Bullen-Präsenz vor Ort:</span><span>+${policeMalus}%</span></div>
+                    ${riskData.isDisguised ? `<div style="display:flex; justify-content:space-between; margin-bottom: 4px; color: var(--color-secondary);"><span>Friseur-Tarnung:</span><span>-50%</span></div>` : ''}
                 </div>
-                <p>Willst du das Rad "ausleihen"?</p>
+                <div style="border-top: 2px solid var(--color-text); padding-top: 12px; display:flex; justify-content:space-between; font-weight:bold; font-size:1.2rem; color:var(--color-danger);">
+                    <span>GESAMTRISIKO:</span><span>${riskData.totalRisk}%</span>
+                </div>
             </div>
         `;
 
         return {
-            title: 'Fahrrad gefunden',
-            body: dialogText,
+            title: 'Drahtesel im Visier',
+            text: dialogBody,
             buttons: [
-                { 
-                    text: 'Ja, in die Pedale!', 
-                    className: 'btn-primary', 
-                    event: 'START_BICYCLE_THEFT_RNG', 
-                    payload: { targetId: bike.id } 
-                },
-                { 
-                    text: 'Nein, ich gehe lieber zu Fuß', 
-                    className: 'btn-secondary', 
-                    event: 'RESUME_GAME' 
-                }
+                { text: 'Einverstanden (Knacken)', event: 'START_BICYCLE_THEFT_RNG', payload: { target, riskData }, className: 'btn-danger' },
+                { text: 'Lieber nicht', event: 'RESUME_GAME', className: 'btn-secondary' }
             ]
         };
     }
 
-    static getBarberDialogConfig(barberName, price) {
+    static getBarberDialog() {
         return {
-            title: 'Friseursalon: ' + barberName,
-            body: `
-                <div style="line-height: 1.6;">
-                    <p><i>"Setz dich, mein Freund. Ein neuer Haarschnitt, ein neues Gesicht. Die Bullen werden dich für einen ganz anderen halten..."</i></p>
-                    <p style="margin-top: 10px; color: var(--color-primary); font-weight: bold;">Kosten: ${price} €</p>
-                    <p style="font-size: 0.9rem; opacity: 0.8;">Effekt: Deine nächste kriminelle Handlung hat ein deutlich reduziertes Entdeckungsrisiko.</p>
-                </div>
-            `,
+            title: 'Ein neues Gesicht?',
+            text: `"Brauchst du ein neues Gesicht, Kumpel? Die Schmiere ist dir dicht auf den Fersen. Setz dich auf den Stuhl, lass mich die Konturen nachziehen und die Matte färben. Wenn du hier rausgehst, erkennt dich nicht mal deine eigene Mutter wieder. Dein Entdeckungsrisiko für den nächsten Bruch schmilzt auf die Hälfte zusammen, und deine Nerven bleiben wie Drahtseile – die Abbruchquote halbiert sich gleich mit. Was sagst du? Ein paar Kröten für ein Ticket in die Unsichtbarkeit?"`,
             buttons: [
-                { 
-                    text: `Umstyling kaufen (${price} €)`, 
-                    className: 'btn-primary', 
-                    event: 'BARBER_TRANSFORM_START', 
-                    payload: { price } 
-                },
-                { 
-                    text: 'Vielleicht später', 
-                    className: 'btn-secondary', 
-                    event: 'RESUME_GAME' 
-                }
+                { text: 'Umstyling starten (50 €)', event: 'BARBER_TRANSFORM_START' },
+                { text: 'Später vielleicht', event: 'RESUME_GAME' }
             ]
         };
     }

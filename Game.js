@@ -6,6 +6,7 @@ import { EncounterManager } from './EncounterManager.js';
 import { DialogFactory } from './DialogFactory.js';
 import { EVENTS } from './EventTypes.js';
 import { BudgetManager } from './BudgetManager.js';
+import { MovementEngine } from './MovementEngine.js';
 
 /**
  * Game - Die Logik-Schicht.
@@ -23,7 +24,7 @@ class Game {
     #budgetManager;
     #currentPlayerNodeId = null;
     #gameActive = false;
-    #isMoving = false;
+    #movementEngine;
     #targetPubNodeId = null;
     #targetPubName = "Kneipe";
     #radarUnlocked = false;
@@ -38,7 +39,6 @@ class Game {
     #logbook = [];
     
     #firstMoveFired = false;
-    #animFrameId = null;
     #isInPub = false;
     #activeBarber = null;
     #isDisguised = false;
@@ -55,6 +55,7 @@ class Game {
         this.#mapData = mapData;
         this.#missionService = missionService;
         this.#budgetManager = new BudgetManager();
+        this.#movementEngine = new MovementEngine(this.#mapData);
         this.#setupInteractionListeners();
     }
 
@@ -321,7 +322,7 @@ class Game {
             ...this.#budgetManager.getFinanceState(),
             currentPlayerNodeId: this.#currentPlayerNodeId,
             gameActive: this.#gameActive,
-            isMoving: this.#isMoving,
+            isMoving: this.#movementEngine.isMoving,
             targetPubNodeId: this.#targetPubNodeId,
             targetPubName: this.#targetPubName,
             radarUnlocked: this.#radarUnlocked,
@@ -389,7 +390,7 @@ class Game {
         this.#budgetManager.init();
         this.#currentPlayerNodeId = String(startNodeId);
         this.#gameActive = false; // Spiel ist pausiert bis INTRO_COMPLETE!
-        this.#isMoving = false;
+        this.#movementEngine.stop();
         this.#targetPubNodeId = String(targetNodeId);
         this.#targetPubName = pubName;
         this.#radarUnlocked = false;
@@ -433,7 +434,7 @@ class Game {
         this.#budgetManager.hydrate(savedState);
         this.#currentPlayerNodeId = savedState.currentPlayerNodeId;
         this.#gameActive = savedState.gameActive ?? true;
-        this.#isMoving = false; // Zur Sicherheit Bewegung zurücksetzen
+        this.#movementEngine.stop(); // Zur Sicherheit Bewegung zurücksetzen
         this.#targetPubNodeId = savedState.targetPubNodeId;
         this.#targetPubName = savedState.targetPubName || "Kneipe";
         this.#radarUnlocked = savedState.radarUnlocked ?? false;
@@ -457,6 +458,7 @@ class Game {
 
     pause() {
         this.#gameActive = false;
+        this.#movementEngine.stop();
         eventBus.emit('GAME_PAUSED');
         this.#notifyStateChange();
     }
@@ -503,82 +505,24 @@ class Game {
     // ----------------------------------------------------------------
 
     moveToNode(targetId) {
-        if (!this.#gameActive || this.#isMoving) return;
+        if (!this.#gameActive || this.#movementEngine.isMoving) return;
 
         // Kredit-Zinsen: Jeder Schritt kostet 1 € Zinsen, wenn man Schulden hat
         this.#budgetManager.applyStepInterest();
 
-        // Validierung über getNeighbors (berücksichtigt Tiefe 2 bei Biking)
-        const neighbors = this.#mapData.getNeighbors(this.#currentPlayerNodeId, this.#isBiking);
-        const neighbor = neighbors.find(nb => String(nb.id) === String(targetId));
-        
-        if (!neighbor) return;
-
-        this.#isMoving = true;
-        this.#notifyStateChange();
-
-        const ctx = this.#prepareMovement(neighbor, targetId);
-        this.#animFrameId = requestAnimationFrame((now) => this.#animateMovement(now, ctx));
-    }
-
-    /**
-     * Berechnet alle für die Animation benötigten Initialwerte.
-     */
-    #prepareMovement(neighbor, targetId) {
-        const edge = neighbor.edgeData;
-        const startNode = this.#mapData.getNode(this.#currentPlayerNodeId);
-        const fullPath = [[startNode.lat, startNode.lon], ...edge.path];
-
-        const costMultiplier = this.#isBiking ? 1.5 : 1.0;
-        const totalCost = Math.max(1, Math.ceil(edge.distance * CONFIG.COST_PER_METER * costMultiplier));
-        const budgetAtStart = this.#budgetManager.budget;
-
-        const speed = this.#isBiking ? 240 : 120; // Doppelt so schnell auf dem Rad
-        const durationMs = (edge.distance / speed) * 1000;
-        const startTime = performance.now();
-
-        return {
-            fullPath,
-            totalCost,
-            budgetAtStart,
-            durationMs,
-            startTime,
-            targetId
-        };
-    }
-
-    /**
-     * Der eigentliche rAF-Loop für die flüssige Bewegung.
-     */
-    #animateMovement(now, ctx) {
-        const elapsed = now - ctx.startTime;
-        const t = Math.min(elapsed / ctx.durationMs, 1);
-
-        const pos = this.#interpolatePath(ctx.fullPath, t);
-        
-        const costSoFar = Math.ceil(ctx.totalCost * t);
-        const newBudget = Math.max(0, ctx.budgetAtStart - costSoFar);
-        
-        if (newBudget !== this.#budgetManager.budget) {
-            const diff = newBudget - this.#budgetManager.budget;
-            
-            // Während der Animation feuern wir nur ein leichtgewichtiges Event für die UI,
-            // um den teuren structuredClone in #notifyStateChange zu vermeiden.
-            this.#budgetManager.applyBudgetTick(newBudget, diff);
-        }
-
-        eventBus.emit(EVENTS.PLAYER_POSITION_UPDATED, { lat: pos[0], lon: pos[1], budget: this.#budgetManager.budget });
-
-        if (t < 1) {
-            this.#animFrameId = requestAnimationFrame((nextNow) => this.#animateMovement(nextNow, ctx));
-        } else {
-            this.#finishMovement(ctx.targetId);
-        }
+        this.#movementEngine.moveTo(targetId, this.#currentPlayerNodeId, this.#isBiking, {
+            currentBudget: this.#budgetManager.budget,
+            onStart: () => this.#notifyStateChange(),
+            onBudgetTick: (newBudget) => {
+                const diff = newBudget - this.#budgetManager.budget;
+                this.#budgetManager.applyBudgetTick(newBudget, diff);
+            },
+            onComplete: (reachedId) => this.#finishMovement(reachedId)
+        });
     }
 
     #finishMovement(targetId) {
         this.#currentPlayerNodeId = String(targetId);
-        this.#isMoving = false;
         this.#moveCount++;
 
         this.#handleInfoMenuMoveLogic();
@@ -648,25 +592,6 @@ class Game {
         this.#isInPub = true;
         eventBus.emit('PUB_TARGET_REACHED', { nodeId: this.#currentPlayerNodeId });
         this.#notifyTargetReached();
-    }
-
-    #interpolatePath(path, t) {
-        if (path.length < 2) return path[0] || [0, 0];
-        if (t <= 0) return path[0];
-        if (t >= 1) return path[path.length - 1];
-
-        const totalSegments = path.length - 1;
-        const exactIndex = t * totalSegments;
-        const segIndex = Math.floor(exactIndex);
-        const segT = exactIndex - segIndex;
-
-        const a = path[segIndex];
-        const b = path[Math.min(segIndex + 1, path.length - 1)];
-
-        return [
-            a[0] + (b[0] - a[0]) * segT,
-            a[1] + (b[1] - a[1]) * segT
-        ];
     }
 
     // ----------------------------------------------------------------
