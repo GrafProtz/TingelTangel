@@ -85,6 +85,11 @@ async function initApp() {
         }
     });
 
+    // ----- UI-Bridge: Economy-Events (Etappe 4) -----
+    eventBus.subscribe(EVENTS.RADAR_TUTORIAL_TRIGGERED, (payload) => {
+        eventBus.emit(EVENTS.SHOW_INFO_CASCADE, DialogFactory.getRadarTutorial(payload.stationCount));
+    });
+
     // ----- Mission & Target Spawning -----
     eventBus.subscribe(EVENTS.SPAWN_TARGETS, ({ targetType, centerNodeId }) => {
         const targets = missionService.spawnTargets(targetType, centerNodeId);
