@@ -107,10 +107,6 @@ class Game {
         );
     }
 
-    checkProximity(targetNodeId) {
-        return this.#movementController.checkProximity(targetNodeId);
-    }
-
     // ================================================================
     //  Notifications (Internal)
     // ================================================================
@@ -206,26 +202,6 @@ class Game {
     //  Legacy-Bridges (werden schrittweise entfernt)
     // ================================================================
 
-    /** @deprecated Nutze eventBus.emit(EVENTS.PLAYER_MOVE_INTENT, { targetId }) */
-    moveToNode(targetId) {
-        eventBus.emit(EVENTS.PLAYER_MOVE_INTENT, { targetId });
-    }
-
-    /** Delegiert an CrimeController */
-    calculateTargetRisk(targetNode) {
-        return this.#crimeController.calculateTargetRisk(targetNode);
-    }
-
-    /** Delegiert an CrimeController */
-    calculateLoot(riskData) {
-        return this.#crimeController.calculateLoot(riskData);
-    }
-
-    /** Delegiert an CrimeController */
-    setCrimeTargets(targets) {
-        this.#crimeController.setCrimeTargets(targets);
-    }
-
     /** Delegiert an EconomyController */
     canAfford(amount) {
         return this.#economyController.canAfford(amount);
@@ -239,11 +215,6 @@ class Game {
     /** Delegiert an EconomyController */
     addReward(amount) {
         this.#economyController.addReward(amount);
-    }
-
-    /** Delegiert an EconomyController */
-    triggerRadar(force) {
-        return this.#economyController.triggerRadar(force);
     }
 
     /** Delegiert an EconomyController */
@@ -310,55 +281,7 @@ class Game {
      * Wird in Etappe 5 in den CrimeController/DialogFactory verschoben.
      */
     getBurglaryData(targetId) {
-        const target = this.#gameState.activeCrimeTargets
-            ? this.#gameState.activeCrimeTargets.find(t => t.id === targetId)
-            : null;
-        if (!target) return null;
-
-        const riskData = this.#riskCalculator.getPoliceRiskModifier([target.lat, target.lon]);
-
-        let mult = 1.0;
-        if (target.type === 'commercial') mult = 1.2;
-        if (target.type === 'public') mult = 1.5;
-        if (target.type === 'allotments') mult = 0.6;
-
-        const disguiseBonus = this.#gameState.isDisguised ? 0.5 : 1.0;
-        const disguiseText = this.#gameState.isDisguised
-            ? '<div style="color: #4ade80; font-weight: bold; margin-bottom: 4px;">Tarnung aktiv (-50% Risiko)</div>'
-            : '';
-
-        const warning = riskData.riskMalus > 0 ? 'WARNUNG ' : '';
-        const warningSuffix = riskData.riskMalus > 0 ? ' (Hohe Polizeipraesenz!)' : '';
-
-        return {
-            title: STRINGS.interactions.burglary.title(target.type),
-            options: {
-                A: {
-                    text: warning + STRINGS.interactions.burglary.optionA + warningSuffix,
-                    risk: Math.min(95, Math.round((CONFIG.RISK_BURGLARY_EASY + riskData.riskMalus) * mult * disguiseBonus)),
-                    reward: 180,
-                    preview: disguiseText + (warning ? '<div style="color: #ef4444; font-weight: bold;">WARNUNG: Hohes Risiko durch Polizei!</div>' : '') + STRINGS.interactions.burglary.previewA,
-                    successMsg: STRINGS.interactions.burglary.success,
-                    caughtMsg: STRINGS.interactions.burglary.caught
-                },
-                B: {
-                    text: warning + STRINGS.interactions.burglary.optionB + warningSuffix,
-                    risk: Math.min(95, Math.round((CONFIG.RISK_BURGLARY_MEDIUM + riskData.riskMalus) * mult * disguiseBonus)),
-                    reward: 450,
-                    preview: disguiseText + (warning ? '<div style="color: #ef4444; font-weight: bold;">WARNUNG: Hohes Risiko durch Polizei!</div>' : '') + STRINGS.interactions.burglary.previewB,
-                    successMsg: STRINGS.interactions.burglary.success,
-                    caughtMsg: STRINGS.interactions.burglary.caught
-                },
-                C: {
-                    text: warning + STRINGS.interactions.burglary.optionC + warningSuffix,
-                    risk: Math.min(98, Math.round((CONFIG.RISK_BURGLARY_HARD + riskData.riskMalus) * mult * disguiseBonus)),
-                    reward: 1350,
-                    preview: disguiseText + (warning ? '<div style="color: #ef4444; font-weight: bold;">WARNUNG: Hohes Risiko durch Polizei!</div>' : '') + STRINGS.interactions.burglary.previewC,
-                    successMsg: STRINGS.interactions.burglary.success,
-                    caughtMsg: STRINGS.interactions.burglary.caught
-                }
-            }
-        };
+        return this.#crimeController.getBurglaryData(targetId);
     }
 }
 

@@ -50,6 +50,12 @@ export class MovementController {
             })
         );
 
+        this.#subscriptions.push(
+            eventBus.subscribe(EVENTS.INTENT_MOVE_PLAYER, ({ targetId }) => {
+                this.#handleMoveIntent(targetId);
+            })
+        );
+
         // Fahrrad Auf-/Absteigen
         this.#subscriptions.push(
             eventBus.subscribe(EVENTS.TOGGLE_BICYCLE, () => {

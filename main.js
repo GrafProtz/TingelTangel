@@ -94,7 +94,7 @@ async function initApp() {
     eventBus.subscribe(EVENTS.SPAWN_TARGETS, ({ targetType, centerNodeId }) => {
         const targets = missionService.spawnTargets(targetType, centerNodeId);
         if (targets.length > 0) {
-            game.setCrimeTargets(targets);
+            eventBus.emit(EVENTS.INTENT_SET_CRIME_TARGETS, { targets });
             
             // Kamera-Totale (Übersicht) anfordern
             const coordsToFit = [];
@@ -139,7 +139,7 @@ async function initApp() {
 
         const neighbors = mapData.getNeighbors(state.currentPlayerNodeId, state.isBiking);
         mapView.renderNeighbors(neighbors, state.targetPubNodeId, state.isBiking, state.lastPubVisit, (clickedId) => {
-            game.moveToNode(clickedId);
+            eventBus.emit(EVENTS.INTENT_MOVE_PLAYER, { targetId: clickedId });
         });
     });
 
@@ -161,13 +161,7 @@ async function initApp() {
                     ...target,
                     accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                     onClickCallback: () => {
-                        if (!game.checkProximity(target.accessNodeId)) {
-                            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Du musst exakt am Icon stehen!", type: 'fail' });
-                            return;
-                        }
-                        const riskData = game.calculateTargetRisk(target);
-                        game.pause();
-                        eventBus.emit(EVENTS.OPEN_SCOUTING_REPORT, { target, riskData });
+                        eventBus.emit(EVENTS.INTENT_SCOUT_TARGET, { target });
                     }
                 });
             });
@@ -182,12 +176,7 @@ async function initApp() {
                 type: 'barber',
                 accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                 onClickCallback: () => {
-                    if (!game.checkProximity(b.accessNodeId)) {
-                        eventBus.emit(EVENTS.SHOW_TOAST, { message: "Geh näher ran an den Salon!", type: 'fail' });
-                        return;
-                    }
-                    game.pause();
-                    eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBarberDialog());
+                    eventBus.emit(EVENTS.INTENT_BARBER_TARGET, { barber: b });
                 }
             });
         }
@@ -201,12 +190,7 @@ async function initApp() {
                     type: 'bicycle',
                     accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
                     onClickCallback: () => {
-                        if (!game.checkProximity(target.accessNodeId)) {
-                            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Steh direkt am Rad, um es zu knacken!", type: 'fail' });
-                            return;
-                        }
-                        const riskData = game.calculateTargetRisk(target);
-                        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleInteractionDialog(riskData, target));
+                        eventBus.emit(EVENTS.INTENT_BICYCLE_TARGET, { target });
                     }
                 });
             });
@@ -290,23 +274,26 @@ async function initApp() {
 
     // ----- Radar Sequence (Kamerafahrt nach Kauf durch Hotkey P) -----
     eventBus.subscribe(EVENTS.RADAR_SEQUENCE_START, async () => {
-        const result = game.triggerRadar(true); // force=true um Cooldown zu ignorieren
-        if (result && result !== 'cooldown') {
-            // Warten bis die gesamte Choreografie (Zoom raus -> 5s Display -> Zoom rein) fertig ist
-            await mapView.playPoliceRevealSequence(result.stations, result.playerCoords);
-            
-            // Erst jetzt das Spiel wieder freigeben
-            log('[MAIN] Radar-Sequenz beendet, Spiel wird fortgesetzt.');
-            game.resume();
-        }
+        eventBus.emit(EVENTS.INTENT_TRIGGER_RADAR, { force: true });
+    });
+
+    eventBus.subscribe(EVENTS.RADAR_RESULT_READY, async (result) => {
+        // Warten bis die gesamte Choreografie (Zoom raus -> 5s Display -> Zoom rein) fertig ist
+        await mapView.playPoliceRevealSequence(result.stations, result.playerCoords);
+        
+        // Erst jetzt das Spiel wieder freigeben
+        log('[MAIN] Radar-Sequenz beendet, Spiel wird fortgesetzt.');
+        game.resume();
+    });
+
+    eventBus.subscribe(EVENTS.BICYCLE_INTERACTION_READY, ({ target, riskData }) => {
+        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleInteractionDialog(riskData, target));
     });
 
     // ----- UI Handlers -----
     document.addEventListener('keydown', (e) => {
         if (e.key.toLowerCase() !== 'p') return;
-        const result = game.triggerRadar();
-        if (result === null || result === 'cooldown') return;
-        mapView.playPoliceRevealSequence(result.stations, result.playerCoords);
+        eventBus.emit(EVENTS.INTENT_TRIGGER_RADAR, { force: false });
     });
 
     // Dropdown-Logik: Prüfe auf Savegame

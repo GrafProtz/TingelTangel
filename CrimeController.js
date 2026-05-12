@@ -74,6 +74,54 @@ export class CrimeController {
                 })
             );
         });
+
+        // --- Intent Events (Etappe 5) ---
+        this.#subscriptions.push(
+            eventBus.subscribe(EVENTS.INTENT_SET_CRIME_TARGETS, ({ targets }) => {
+                this.setCrimeTargets(targets);
+            })
+        );
+
+        this.#subscriptions.push(
+            eventBus.subscribe(EVENTS.INTENT_SCOUT_TARGET, ({ target }) => {
+                const playerIdStr = String(this.#gameState.currentPlayerNodeId);
+                const targetIdStr = String(target.accessNodeId || target.id);
+                
+                // Hole Nachbarn des Spielers für Umkreisprüfung (Etappe 5.3.2)
+                const neighbors = this.#mapData.getNeighbors(playerIdStr);
+                const isNear = (playerIdStr === targetIdStr) || 
+                               neighbors.some(n => String(n.id) === targetIdStr);
+                
+                if (!isNear) {
+                    eventBus.emit(EVENTS.SHOW_TOAST, { message: "Du musst exakt am Icon stehen!", type: 'fail' });
+                    return;
+                }
+                
+                this.#gameState.gameActive = false;
+                eventBus.emit(EVENTS.GAME_PAUSED);
+                
+                const riskData = this.calculateTargetRisk(target);
+                eventBus.emit(EVENTS.OPEN_SCOUTING_REPORT, { target, riskData });
+            })
+        );
+
+        this.#subscriptions.push(
+            eventBus.subscribe(EVENTS.INTENT_BICYCLE_TARGET, ({ target }) => {
+                const playerIdStr = String(this.#gameState.currentPlayerNodeId);
+                const targetIdStr = String(target.accessNodeId || target.id);
+                
+                const neighbors = this.#mapData.getNeighbors(playerIdStr);
+                const isNear = (playerIdStr === targetIdStr) || 
+                               neighbors.some(n => String(n.id) === targetIdStr);
+                
+                if (!isNear) {
+                    eventBus.emit(EVENTS.SHOW_TOAST, { message: "Steh direkt am Rad, um es zu knacken!", type: 'fail' });
+                    return;
+                }
+                const riskData = this.calculateTargetRisk(target);
+                eventBus.emit(EVENTS.BICYCLE_INTERACTION_READY, { target, riskData });
+            })
+        );
     }
 
     // ================================================================
@@ -245,6 +293,32 @@ export class CrimeController {
         });
         eventBus.emit(EVENTS.TARGETS_UPDATED, this.#gameState.getState());
         this.#broadcastState();
+    }
+
+    /**
+     * Liefert die reinen Daten für einen Einbruch (ohne HTML) zurück.
+     * @param {string} targetId
+     * @returns {Object|null}
+     */
+    getBurglaryData(targetId) {
+        const target = this.#gameState.activeCrimeTargets
+            ? this.#gameState.activeCrimeTargets.find(t => t.id === targetId)
+            : null;
+        if (!target) return null;
+
+        const riskData = this.#riskCalculator.getPoliceRiskModifier([target.lat, target.lon]);
+
+        let mult = 1.0;
+        if (target.type === 'commercial') mult = 1.2;
+        if (target.type === 'public') mult = 1.5;
+        if (target.type === 'allotments') mult = 0.6;
+
+        return {
+            target,
+            riskData,
+            mult,
+            isDisguised: this.#gameState.isDisguised
+        };
     }
 
     // ================================================================

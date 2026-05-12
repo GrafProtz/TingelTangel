@@ -1,4 +1,6 @@
 import { EVENTS } from './EventTypes.js';
+import { CONFIG } from './GameConfig.js';
+import { STRINGS } from './GameStrings.js';
 
 /**
  * DialogFactory - Erzeugt standardisierte Konfigurationsobjekte für den InteractionManager.
@@ -106,6 +108,48 @@ export class DialogFactory {
             title: 'Erfolg!',
             text: '<div style="text-align:center;"><div style="font-size: 3rem; margin-bottom: 1rem;">🚲</div><p>Rad geknackt! Du bist jetzt lautlos und schnell unterwegs.</p><p style="font-size: 0.9rem; opacity: 0.7; margin-top: 1rem;">(Drücke \'F\' zum Auf/Absteigen)</p></div>',
             buttons: [{ text: 'Hervorragend', event: EVENTS.BICYCLE_THEFT_SUCCESS_DONE }]
+        };
+    }
+
+    static getBurglaryDialog(data) {
+        const { target, riskData, mult, isDisguised } = data;
+        
+        const disguiseBonus = isDisguised ? 0.5 : 1.0;
+        const disguiseText = isDisguised
+            ? '<div style="color: #4ade80; font-weight: bold; margin-bottom: 4px;">Tarnung aktiv (-50% Risiko)</div>'
+            : '';
+
+        const warning = riskData.riskMalus > 0 ? 'WARNUNG ' : '';
+        const warningSuffix = riskData.riskMalus > 0 ? ' (Hohe Polizeipraesenz!)' : '';
+
+        return {
+            title: STRINGS.interactions.burglary.title(target.type),
+            options: {
+                A: {
+                    text: warning + STRINGS.interactions.burglary.optionA + warningSuffix,
+                    risk: Math.min(95, Math.round((CONFIG.RISK_BURGLARY_EASY + riskData.riskMalus) * mult * disguiseBonus)),
+                    reward: 180,
+                    preview: disguiseText + (warning ? '<div style="color: #ef4444; font-weight: bold;">WARNUNG: Hohes Risiko durch Polizei!</div>' : '') + STRINGS.interactions.burglary.previewA,
+                    successMsg: STRINGS.interactions.burglary.success,
+                    caughtMsg: STRINGS.interactions.burglary.caught
+                },
+                B: {
+                    text: warning + STRINGS.interactions.burglary.optionB + warningSuffix,
+                    risk: Math.min(95, Math.round((CONFIG.RISK_BURGLARY_MEDIUM + riskData.riskMalus) * mult * disguiseBonus)),
+                    reward: 450,
+                    preview: disguiseText + (warning ? '<div style="color: #ef4444; font-weight: bold;">WARNUNG: Hohes Risiko durch Polizei!</div>' : '') + STRINGS.interactions.burglary.previewB,
+                    successMsg: STRINGS.interactions.burglary.success,
+                    caughtMsg: STRINGS.interactions.burglary.caught
+                },
+                C: {
+                    text: warning + STRINGS.interactions.burglary.optionC + warningSuffix,
+                    risk: Math.min(98, Math.round((CONFIG.RISK_BURGLARY_HARD + riskData.riskMalus) * mult * disguiseBonus)),
+                    reward: 1350,
+                    preview: disguiseText + (warning ? '<div style="color: #ef4444; font-weight: bold;">WARNUNG: Hohes Risiko durch Polizei!</div>' : '') + STRINGS.interactions.burglary.previewC,
+                    successMsg: STRINGS.interactions.burglary.success,
+                    caughtMsg: STRINGS.interactions.burglary.caught
+                }
+            }
         };
     }
 

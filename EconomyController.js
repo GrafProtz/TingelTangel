@@ -457,6 +457,14 @@ export class EconomyController {
         });
 
         this.#sub(EVENTS.RADAR_ACKNOWLEDGED, () => {});
+
+        // --- Intent Event (Etappe 5) ---
+        this.#sub(EVENTS.INTENT_TRIGGER_RADAR, ({ force }) => {
+            const result = this.triggerRadar(force);
+            if (result !== null && result !== 'cooldown') {
+                eventBus.emit(EVENTS.RADAR_RESULT_READY, result);
+            }
+        });
     }
 
     // ================================================================
