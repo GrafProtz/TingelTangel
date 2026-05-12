@@ -5,6 +5,8 @@
  * - Enthält keine Geschäftslogik (Pure Data).
  * - Bietet tiefe Kopien via collectState() für die View-Schicht.
  */
+import { eventBus } from './EventBus.js';
+import { EVENTS } from './EventTypes.js';
 export class GameState {
     // --- Player Position & Equipment ---
     #currentPlayerNodeId = null;
@@ -110,12 +112,16 @@ export class GameState {
         }
     }
 
+    // ----------------------------------------------------------------
+    //  State Access & Diff Helpers
+    // ----------------------------------------------------------------
     /**
-     * Erzeugt eine tiefe Kopie des gesamten Zustands für die UI.
-     * Dies verhindert, dass View-Komponenten versehentlich den internen State mutieren.
+     * Returns a **shallow** copy of the public state. Only primitive fields
+     * and shallow array copies are returned – this is sufficient for the UI
+     * layer because it never mutates the returned objects.
      */
-    collectState() {
-        return structuredClone({
+    getState() {
+        return {
             currentPlayerNodeId: this.#currentPlayerNodeId,
             isBiking: this.#isBiking,
             isDisguised: this.#isDisguised,
@@ -130,8 +136,8 @@ export class GameState {
             missionPhase: this.#missionPhase,
             targetPubNodeId: this.#targetPubNodeId,
             targetPubName: this.#targetPubName,
-            activeCrimeTargets: this.#activeCrimeTargets,
-            activeBicycleTargets: this.#activeBicycleTargets,
+            activeCrimeTargets: [...this.#activeCrimeTargets],
+            activeBicycleTargets: [...this.#activeBicycleTargets],
             activeBarber: this.#activeBarber,
             radarUnlocked: this.#radarUnlocked,
             lastRadarTime: this.#lastRadarTime,
@@ -139,11 +145,79 @@ export class GameState {
             showPubCooldownText: this.#showPubCooldownText,
             isInfoMenuOpen: this.#isInfoMenuOpen,
             infoMenuOpenUntilMove: this.#infoMenuOpenUntilMove,
-            logbook: this.#logbook,
+            logbook: [...this.#logbook],
             firstMoveFired: this.#firstMoveFired,
             isInPub: this.#isInPub,
             devEncountersDisabled: this.#devEncountersDisabled
-        });
+        };
+    }
+
+    /**
+     * Helper that emits a STATE_UPDATED event containing only the changed
+     * fragment. Consumers can merge this payload into their cached state.
+     */
+    #emitStateUpdate(changedFragment) {
+        if (typeof eventBus !== 'undefined' && typeof EVENTS !== 'undefined') {
+            eventBus.emit(EVENTS.STATE_UPDATED, changedFragment);
+        }
+    }
+
+    // ----------------------------------------------------------------
+    //  Mutation (Reducer‑Style) API
+    // ----------------------------------------------------------------
+    /** Update player position (node id) */
+    updatePlayerPosition(nodeId) {
+        const old = this.#currentPlayerNodeId;
+        this.#currentPlayerNodeId = nodeId !== null ? String(nodeId) : null;
+        if (old !== this.#currentPlayerNodeId) {
+            this.#emitStateUpdate({ currentPlayerNodeId: this.#currentPlayerNodeId });
+        }
+    }
+
+    /** Add loot (increase budget) */
+    addLoot(amount) {
+        const old = this.#budget;
+        this.#budget = Number(this.#budget) + Number(amount);
+        if (old !== this.#budget) {
+            this.#emitStateUpdate({ budget: this.#budget });
+        }
+    }
+
+    /** Toggle biking state */
+    setBiking(flag) {
+        const newVal = !!flag;
+        if (this.#isBiking !== newVal) {
+            this.#isBiking = newVal;
+            this.#emitStateUpdate({ isBiking: this.#isBiking });
+        }
+    }
+
+    /** Generic dispatcher – can be extended later */
+    dispatch(action) {
+        const { type, payload } = action;
+        switch (type) {
+            case 'UPDATE_PLAYER_POSITION':
+                this.updatePlayerPosition(payload.nodeId);
+                break;
+            case 'ADD_LOOT':
+                this.addLoot(payload.amount);
+                break;
+            case 'SET_BIKING':
+                this.setBiking(payload.enabled);
+                break;
+            default:
+                console.warn('[GameState] Unhandled action type:', type);
+        }
+    }
+
+    // ----------------------------------------------------------------
+    //  Legacy API – retained for backward compatibility
+    // ----------------------------------------------------------------
+    /**
+     * Legacy wrapper – returns shallow copy; new code should use `getState()`.
+     */
+    collectState() {
+        return this.getState();
     }
 
     /**
