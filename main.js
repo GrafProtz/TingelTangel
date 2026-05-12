@@ -64,6 +64,27 @@ async function initApp() {
         eventBus.emit(EVENTS.TOGGLE_INFO, false);
     });
 
+    // ----- UI-Bridge: Crime-Events (Etappe 3) -----
+    // Der CrimeController feuert reine Daten-Events.
+    // Hier wird die Verbindung zur DialogFactory hergestellt.
+    eventBus.subscribe(EVENTS.BURGLARY_RESOLVED, (payload) => {
+        if (payload.outcome === 'aborted') {
+            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglaryAbort());
+        } else if (payload.outcome === 'caught') {
+            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglaryCaught(payload.fine));
+        } else if (payload.outcome === 'success') {
+            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglarySuccess(payload.loot, payload.debtAmount));
+        }
+    });
+
+    eventBus.subscribe(EVENTS.BICYCLE_THEFT_RESOLVED, (payload) => {
+        if (payload.outcome === 'success') {
+            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleTheftSuccess());
+        } else {
+            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleTheftFailure(payload.fine));
+        }
+    });
+
     // ----- Mission & Target Spawning -----
     eventBus.subscribe(EVENTS.SPAWN_TARGETS, ({ targetType, centerNodeId }) => {
         const targets = missionService.spawnTargets(targetType, centerNodeId);

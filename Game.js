@@ -11,6 +11,7 @@ import { MovementEngine } from './MovementEngine.js';
 import { RiskCalculator } from './RiskCalculator.js';
 import { GameState } from './GameState.js';
 import { MovementController } from './MovementController.js';
+import { CrimeController } from './CrimeController.js';
 
 /**
  * Game - Die Logik-Schicht.
@@ -28,6 +29,7 @@ class Game {
     #budgetManager;
     #movementEngine;
     #movementController;
+    #crimeController;
     #riskCalculator;
     #gameState;
 
@@ -51,6 +53,14 @@ class Game {
             budgetManager:  this.#budgetManager
         });
 
+        // Etappe 3: Crime-Logik an den CrimeController delegiert
+        this.#crimeController = new CrimeController({
+            gameState:      this.#gameState,
+            riskCalculator: this.#riskCalculator,
+            budgetManager:  this.#budgetManager,
+            mapData:        this.#mapData
+        });
+
         this.#setupInteractionListeners();
     }
 
@@ -60,13 +70,12 @@ class Game {
     #setupInteractionListeners() {
         this.#registerInteractionSelection();
         this.#registerPurchaseFlows();
-        this.#registerCategorySelection();
-        this.#registerBurglaryFlow();
-        this.#registerBicycleTheftFlow();
+        // Etappe 3: #registerCategorySelection, #registerBurglaryFlow, #registerBicycleTheftFlow
+        // sind jetzt im CrimeController registriert.
         this.#registerGameControlFlows();
         this.#registerEncounterHooks();
         this.#registerLoanFlow();
-        this.#registerBarberFlow(); // Neu: Friseur-Logik konsolidiert
+        this.#registerBarberFlow();
     }
 
     #registerInteractionSelection() {
@@ -185,98 +194,7 @@ class Game {
         eventBus.subscribe(EVENTS.INVESTMENT_CANCELLED, () => this.resume());
     }
 
-    #registerCategorySelection() {
-        // Mapping von deutschen UI-Konzepten auf interne Typen & Event-Konstanten.
-        // Dies behebt den Bug, dass EVENTS[`SELECT_CATEGORY_${key}`] undefined war.
-        const categoryMap = {
-            'WOHNUNG':      { type: 'residential', event: EVENTS.SELECT_CATEGORY_RESIDENTIAL },
-            'GEWERBE':      { type: 'commercial',  event: EVENTS.SELECT_CATEGORY_COMMERCIAL },
-            'OEFFENTLICH':  { type: 'public',      event: EVENTS.SELECT_CATEGORY_PUBLIC },
-            'KLEINGARTEN':  { type: 'allotments',  event: EVENTS.SELECT_CATEGORY_ALLOTMENTS }
-        };
 
-        Object.values(categoryMap).forEach(({ type, event }) => {
-            eventBus.subscribe(event, () => {
-                eventBus.emit(EVENTS.SPAWN_TARGETS, { targetType: type, centerNodeId: this.#gameState.currentPlayerNodeId });
-                this.resume();
-            });
-        });
-    }
-
-    #registerBurglaryFlow() {
-        eventBus.subscribe(EVENTS.START_BURGLARY, ({ target, riskData }) => {
-            setTimeout(() => {
-                // 1. Abbruch-Check
-                if (Math.random() * 100 <= riskData.abortRate) {
-                    eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglaryAbort());
-                    this.#resetBurglaryState();
-                    return;
-                }
-
-                // 2. Risiko-Check
-                if (Math.random() * 100 <= riskData.totalRisk) {
-                    const fine = Math.ceil(this.#budgetManager.budget * 0.2);
-                    this.deductBudget(fine);
-                    eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglaryCaught(fine));
-                } else {
-                    // 3. Erfolg
-                    this.#handleBurglarySuccess(riskData);
-                }
-                this.#resetBurglaryState();
-            }, 500);
-        });
-    }
-
-    #handleBurglarySuccess(riskData) {
-        let amount = this.calculateLoot(riskData);
-        let loanInfo = "";
-        
-        if (this.#budgetManager.hasActiveLoan) {
-            const debt = this.#budgetManager.processLoanRepayment();
-            amount = Math.max(0, amount - debt);
-            loanInfo = `<br><br><span style="color:var(--color-danger); font-size:0.9rem;">Rückzahlung an die Verbrecher*innen-Innung: ${debt} € wurden von deiner Beute einbehalten. Deine Weste bei der Verbrecher*innen-Innung ist vorerst wieder sauber.</span>`;
-            eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'loan-entry' });
-        }
-
-        this.addReward(amount);
-        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglarySuccess(amount, loanInfo));
-    }
-
-    #registerBicycleTheftFlow() {
-        eventBus.subscribe(EVENTS.START_BICYCLE_THEFT_RNG, ({ target, riskData }) => {
-            eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: "Knackversuch läuft...", logId: 'bicycle-theft-progress', notify: false });
-
-            if (Math.random() * 100 > riskData.totalRisk) {
-                this.#handleBicycleTheftSuccess();
-            } else {
-                this.#handleBicycleTheftFailure();
-            }
-
-            this.#gameState.activeBicycleTargets = [];
-            this.#notifyStateChange();
-        });
-    }
-
-    #handleBicycleTheftSuccess() {
-        this.#gameState.isBiking = true;
-        this.#gameState.hasBicycle = true;
-        
-        eventBus.emit(EVENTS.BIKING_STATE_CHANGED, true);
-        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleTheftSuccess());
-
-        eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-steal-bicycle' });
-        eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'bicycle-theft-progress' });
-        eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: "✅ Fahrrad erfolgreich geklaut.", notify: true });
-    }
-
-    #handleBicycleTheftFailure() {
-        const fine = Math.ceil(this.#budgetManager.budget * 0.1);
-        this.deductBudget(fine);
-        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleTheftFailure(fine));
-
-        eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'bicycle-theft-progress' });
-        eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: "🚨 Beim Fahrraddiebstahl erwischt!", notify: true });
-    }
 
     #registerGameControlFlows() {
         // TOGGLE_BICYCLE ist jetzt im MovementController registriert (Etappe 2).
@@ -476,13 +394,7 @@ class Game {
         this.#notifyStateChange();
     }
 
-    #resetBurglaryState() {
-        this.#gameState.activeCrimeTargets = [];
-        this.#gameState.isDisguised = false;
-        this.#gameState.missionPhase = 1;
-        this.#emitMissionUpdate();
-        this.resume();
-    }
+
 
     // ----------------------------------------------------------------
     //  Bewegung (Delegiert an MovementController – Etappe 2)
@@ -679,34 +591,18 @@ class Game {
     }
 
     calculateTargetRisk(targetNode) {
-        return this.#riskCalculator.calculateTargetRisk(targetNode, this.#gameState.isDisguised);
+        // Delegiert an CrimeController (Etappe 3)
+        return this.#crimeController.calculateTargetRisk(targetNode);
     }
 
     startBicycleTheft(targetId) {
-        const target = this.#gameState.activeBicycleTargets.find(t => t.id === targetId);
-        if (!target) return;
-
-        const riskData = this.calculateTargetRisk(target);
-        const roll = Math.random() * 100;
-
-        if (roll > riskData.totalRisk) {
-            // Erfolg
-            this.#gameState.isBiking = true;
-            this.#gameState.activeBicycleTargets = [];
-            
-            eventBus.emit(EVENTS.BIKING_STATE_CHANGED, true);
-            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Rad geknackt! Du bist jetzt lautlos und schnell.", type: 'success' });
-            
-            this.#notifyStateChange();
-        } else {
-            // Scheitern -> Bestehende Busted-Logik
-            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Verdammt! Ein Zeuge hat dich gesehen!", type: 'fail' });
-            eventBus.emit(EVENTS.PLAYER_BUSTED);
-        }
+        // Legacy: Wird von main.js nicht direkt genutzt.
+        // Fahrraddiebstahl läuft jetzt über EVENTS.START_BICYCLE_THEFT_RNG → CrimeController.
+        log('[Game] startBicycleTheft ist deprecated – nutze EVENTS.START_BICYCLE_THEFT_RNG');
     }
 
     calculateLoot(riskData) {
-        return this.#budgetManager.calculateLoot(riskData);
+        return this.#crimeController.calculateLoot(riskData);
     }
 
     // ----------------------------------------------------------------
@@ -755,11 +651,8 @@ class Game {
     }
 
     setCrimeTargets(targets) {
-        this.#gameState.activeCrimeTargets = targets;
-        this.#gameState.missionPhase = 3;
-        this.#emitMissionUpdate();
-        this.#emitTargetsUpdated();
-        this.#notifyStateChange();
+        // Delegiert an CrimeController (Etappe 3)
+        this.#crimeController.setCrimeTargets(targets);
     }
 
     findNearestHairdresser() {
