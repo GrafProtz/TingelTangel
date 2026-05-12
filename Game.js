@@ -10,6 +10,7 @@ import { BudgetManager } from './BudgetManager.js';
 import { MovementEngine } from './MovementEngine.js';
 import { RiskCalculator } from './RiskCalculator.js';
 import { GameState } from './GameState.js';
+import { MovementController } from './MovementController.js';
 
 /**
  * Game - Die Logik-Schicht.
@@ -26,6 +27,7 @@ class Game {
     #missionService;
     #budgetManager;
     #movementEngine;
+    #movementController;
     #riskCalculator;
     #gameState;
 
@@ -40,6 +42,15 @@ class Game {
         this.#budgetManager = new BudgetManager();
         this.#movementEngine = new MovementEngine(this.#mapData);
         this.#riskCalculator = new RiskCalculator(this.#mapData);
+
+        // Etappe 2: Bewegungslogik an den MovementController delegiert
+        this.#movementController = new MovementController({
+            gameState:      this.#gameState,
+            movementEngine: this.#movementEngine,
+            mapData:        this.#mapData,
+            budgetManager:  this.#budgetManager
+        });
+
         this.#setupInteractionListeners();
     }
 
@@ -268,15 +279,7 @@ class Game {
     }
 
     #registerGameControlFlows() {
-        eventBus.subscribe(EVENTS.TOGGLE_BICYCLE, () => {
-            if (!this.#gameState.hasBicycle) return;
-            this.#gameState.isBiking = !this.#gameState.isBiking;
-            const msg = this.#gameState.isBiking ? "Aufgestiegen. Du bist jetzt schneller." : "Abgestiegen. Du bist wieder zu Fuß unterwegs.";
-            
-            eventBus.emit(EVENTS.BIKING_STATE_CHANGED, this.#gameState.isBiking);
-            eventBus.emit(EVENTS.SHOW_TOAST, { message: msg, type: 'success' });
-            this.#notifyStateChange();
-        });
+        // TOGGLE_BICYCLE ist jetzt im MovementController registriert (Etappe 2).
 
         eventBus.subscribe(EVENTS.RESUME_GAME, () => {
             eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-find-target' });
@@ -332,17 +335,8 @@ class Game {
      * @returns {boolean}
      */
     checkProximity(targetNodeId) {
-        return this.#checkProximity(targetNodeId);
-    }
-
-    #checkProximity(targetNodeId) {
-        const currentId = String(this.#gameState.currentPlayerNodeId);
-        const sid = String(targetNodeId);
-        
-        if (currentId === sid) return true;
-
-        const neighbors = this.#mapData.getNeighbors(currentId, this.#gameState.isBiking);
-        return neighbors.some(nb => String(nb.id) === sid);
+        // Delegiert an MovementController (Etappe 2)
+        return this.#movementController.checkProximity(targetNodeId);
     }
 
     /**
@@ -491,58 +485,16 @@ class Game {
     }
 
     // ----------------------------------------------------------------
-    //  Bewegung
+    //  Bewegung (Delegiert an MovementController – Etappe 2)
     // ----------------------------------------------------------------
 
+    /**
+     * Legacy-Brücke: Leitet moveToNode-Aufrufe an den EventBus weiter.
+     * Wird in Etappe 3 entfernt, sobald main.js direkt PLAYER_MOVE_INTENT feuert.
+     * @deprecated Nutze stattdessen eventBus.emit(EVENTS.PLAYER_MOVE_INTENT, { targetId })
+     */
     moveToNode(targetId) {
-        if (!this.#gameState.gameActive || this.#movementEngine.isMoving) return;
-
-        // Kredit-Zinsen: Jeder Schritt kostet 1 € Zinsen, wenn man Schulden hat
-        this.#budgetManager.applyStepInterest();
-
-        this.#movementEngine.moveTo(targetId, this.#gameState.currentPlayerNodeId, this.#gameState.isBiking, {
-            currentBudget: this.#budgetManager.budget,
-            onStart: () => this.#notifyStateChange(),
-            onBudgetTick: (newBudget) => {
-                const diff = newBudget - this.#budgetManager.budget;
-                this.#budgetManager.applyBudgetTick(newBudget, diff);
-            },
-            onComplete: (reachedId) => this.#finishMovement(reachedId)
-        });
-    }
-
-    #finishMovement(targetId) {
-        this.#gameState.currentPlayerNodeId = String(targetId);
-        this.#gameState.moveCount++;
-
-        this.#handleInfoMenuMoveLogic();
-        this.#handleFirstMoveLogic();
-
-        // Ziel-Prüfung
-        if (String(this.#gameState.currentPlayerNodeId) === String(this.#gameState.targetPubNodeId)) {
-            this.#checkPubArrival();
-        }
-
-        // Zufalls-Begegnung (Encounter Hook)
-        EncounterManager.checkAndTriggerEvent(this.getState());
-
-        this.#notifyStateChange();
-        this.#emitPlayerMoved();
-    }
-
-    #handleInfoMenuMoveLogic() {
-        if (!this.#gameState.isInfoMenuOpen || this.#gameState.infoMenuOpenUntilMove === -1) return;
-        if (this.#gameState.moveCount < this.#gameState.infoMenuOpenUntilMove) return;
-
-        this.#gameState.isInfoMenuOpen = false;
-        this.#gameState.infoMenuOpenUntilMove = -1;
-        eventBus.emit(EVENTS.INFO_MENU_STATE, false);
-    }
-
-    #handleFirstMoveLogic() {
-        if (this.#gameState.firstMoveFired) return;
-        this.#gameState.firstMoveFired = true;
-        eventBus.emit(EVENTS.FIRST_MOVE_COMPLETED);
+        eventBus.emit(EVENTS.PLAYER_MOVE_INTENT, { targetId });
     }
 
 
