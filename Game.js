@@ -282,6 +282,21 @@ class Game {
             eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-find-target' });
             this.resume();
         });
+
+        eventBus.subscribe(EVENTS.TOGGLE_DEV_ENCOUNTERS, () => {
+            this.#gameState.devEncountersDisabled = !this.#gameState.devEncountersDisabled;
+            const msg = this.#gameState.devEncountersDisabled ? "Dev-Mode: Zufallsereignisse deaktiviert." : "Dev-Mode: Zufallsereignisse wieder aktiv.";
+            eventBus.emit(EVENTS.SHOW_TOAST, { message: msg, type: 'info' });
+            this.#notifyStateChange();
+        });
+
+        eventBus.subscribe(EVENTS.PUB_CLICKED, () => {
+            if (this.checkProximity(this.#gameState.targetPubNodeId)) {
+                this.#checkPubArrival();
+            } else {
+                eventBus.emit(EVENTS.SHOW_TOAST, { message: "Du musst direkt an der Kneipe stehen!", type: 'fail' });
+            }
+        });
     }
 
     #registerEncounterHooks() {
@@ -556,9 +571,28 @@ class Game {
 
     triggerRadar(force = false) {
         if (!this.#gameState.radarUnlocked) return null;
-        if (!force && (Date.now() - this.#gameState.lastRadarTime < CONFIG.RADAR_COOLDOWN)) return 'cooldown';
+        if (!force && (Date.now() - this.#gameState.lastRadarTime < CONFIG.RADAR_COOLDOWN)) {
+            const remaining = Math.ceil((CONFIG.RADAR_COOLDOWN - (Date.now() - this.#gameState.lastRadarTime)) / 60000);
+            const entry = {
+                time: Date.now(),
+                shortText: `Radar im Cooldown (noch ${remaining} Min).`,
+                type: 'info'
+            };
+            this.#gameState.addLogEntry(entry);
+            eventBus.emit(EVENTS.ADD_LOG_ENTRY, entry);
+            return 'cooldown';
+        }
         
-        if (!force) this.#gameState.lastRadarTime = Date.now();
+        if (!force) {
+            this.#gameState.lastRadarTime = Date.now();
+            const entry = {
+                time: Date.now(),
+                shortText: "Polizeiradar aktiviert. Scan läuft...",
+                type: 'info'
+            };
+            this.#gameState.addLogEntry(entry);
+            eventBus.emit(EVENTS.ADD_LOG_ENTRY, { ...entry, notify: true });
+        }
         this.#notifyStateChange();
 
         const playerNode = this.#mapData.getNode(this.#gameState.currentPlayerNodeId);
@@ -839,12 +873,14 @@ class Game {
         this.#gameState.isDisguised = true;
         this.#gameState.activeBarber = null; // POI deaktivieren (aus dem State entfernen)
         
-        // Fix Etappe 7.2.1: Logbuch-Eintrag für den Erfolg (Persistenz via GameState)
-        this.#gameState.addLogEntry({
+        // Logbuch-Eintrag für den Erfolg
+        const entry = {
             time: Date.now(),
-            text: "Beim Friseur gewesen. Neues Gesicht erhalten.",
+            shortText: "Neues Gesicht erhalten. Risiko um 50% gesenkt.",
             type: 'success'
-        });
+        };
+        this.#gameState.addLogEntry(entry);
+        eventBus.emit(EVENTS.ADD_LOG_ENTRY, { ...entry, notify: true });
 
         this.#notifyStateChange();
     }
@@ -864,6 +900,9 @@ class Game {
         if (target.type === 'public') mult = 1.5;
         if (target.type === 'allotments') mult = 0.6;
 
+        const disguiseBonus = this.#gameState.isDisguised ? 0.5 : 1.0;
+        const disguiseText = this.#gameState.isDisguised ? '<div style="color: #4ade80; font-weight: bold; margin-bottom: 4px;">🎭 Tarnung aktiv (-50% Risiko)</div>' : '';
+
         const warning = riskData.riskMalus > 0 ? '🚨 ' : '';
         const warningSuffix = riskData.riskMalus > 0 ? ' (Hohe Polizeipräsenz!)' : '';
 
@@ -872,25 +911,25 @@ class Game {
             options: {
                 A: { 
                     text: `${warning}${STRINGS.interactions.burglary.optionA}${warningSuffix}`, 
-                    risk: Math.min(95, Math.round((CONFIG.RISK_BURGLARY_EASY + riskData.riskMalus) * mult)), 
+                    risk: Math.min(95, Math.round((CONFIG.RISK_BURGLARY_EASY + riskData.riskMalus) * mult * disguiseBonus)), 
                     reward: 180, 
-                    preview: (warning ? `<div style="color: #ef4444; font-weight: bold;">🚨 WARNUNG: Hohes Risiko durch Polizei!</div>` : '') + STRINGS.interactions.burglary.previewA,
+                    preview: disguiseText + (warning ? `<div style="color: #ef4444; font-weight: bold;">🚨 WARNUNG: Hohes Risiko durch Polizei!</div>` : '') + STRINGS.interactions.burglary.previewA,
                     successMsg: STRINGS.interactions.burglary.success,
                     caughtMsg: STRINGS.interactions.burglary.caught
                 },
                 B: { 
                     text: `${warning}${STRINGS.interactions.burglary.optionB}${warningSuffix}`, 
-                    risk: Math.min(95, Math.round((CONFIG.RISK_BURGLARY_MEDIUM + riskData.riskMalus) * mult)), 
+                    risk: Math.min(95, Math.round((CONFIG.RISK_BURGLARY_MEDIUM + riskData.riskMalus) * mult * disguiseBonus)), 
                     reward: 450, 
-                    preview: (warning ? `<div style="color: #ef4444; font-weight: bold;">🚨 WARNUNG: Hohes Risiko durch Polizei!</div>` : '') + STRINGS.interactions.burglary.previewB,
+                    preview: disguiseText + (warning ? `<div style="color: #ef4444; font-weight: bold;">🚨 WARNUNG: Hohes Risiko durch Polizei!</div>` : '') + STRINGS.interactions.burglary.previewB,
                     successMsg: STRINGS.interactions.burglary.success,
                     caughtMsg: STRINGS.interactions.burglary.caught
                 },
                 C: { 
                     text: `${warning}${STRINGS.interactions.burglary.optionC}${warningSuffix}`, 
-                    risk: Math.min(98, Math.round((CONFIG.RISK_BURGLARY_HARD + riskData.riskMalus) * mult)), 
+                    risk: Math.min(98, Math.round((CONFIG.RISK_BURGLARY_HARD + riskData.riskMalus) * mult * disguiseBonus)), 
                     reward: 1350, 
-                    preview: (warning ? `<div style="color: #ef4444; font-weight: bold;">🚨 WARNUNG: Hohes Risiko durch Polizei!</div>` : '') + STRINGS.interactions.burglary.previewC,
+                    preview: disguiseText + (warning ? `<div style="color: #ef4444; font-weight: bold;">🚨 WARNUNG: Hohes Risiko durch Polizei!</div>` : '') + STRINGS.interactions.burglary.previewC,
                     successMsg: STRINGS.interactions.burglary.success,
                     caughtMsg: STRINGS.interactions.burglary.caught
                 }

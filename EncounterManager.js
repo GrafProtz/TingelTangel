@@ -15,6 +15,12 @@ export class EncounterManager {
     static checkAndTriggerEvent(state) {
         log("TRACE ENCOUNTER: Prüfung gestartet. In Kneipe:", state.isInPub);
         
+        // 0. Dev-Check
+        if (state.devEncountersDisabled) {
+            log("TRACE ENCOUNTER: Deaktiviert via Dev-Tool.");
+            return;
+        }
+        
         // 1. Gatekeeper: Zurück auf 5% Standard
         const gateRoll = Math.random();
         const encounterChance = 0.05; 

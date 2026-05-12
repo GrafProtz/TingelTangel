@@ -370,6 +370,19 @@ async function initApp() {
     });
 
     document.getElementById('back-to-menu')?.addEventListener('click', () => location.reload());
+
+    // --- Dev Tools ---
+    const devBtn = document.getElementById('dev-toggle-encounters');
+    devBtn?.addEventListener('click', () => {
+        eventBus.emit(EVENTS.TOGGLE_DEV_ENCOUNTERS);
+    });
+
+    eventBus.subscribe(EVENTS.GAME_STATE_CHANGED, (state) => {
+        if (devBtn) {
+            devBtn.classList.toggle('active', state.devEncountersDisabled);
+            devBtn.title = state.devEncountersDisabled ? "Ereignisse: DEAKTIVIERT" : "Ereignisse: AKTIV";
+        }
+    });
 }
 
 document.addEventListener('DOMContentLoaded', initApp);

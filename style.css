@@ -511,6 +511,38 @@ html, body {
 #map { flex-grow: 1; background: #e5e7eb; }
 .leaflet-control-zoom { z-index: 8000 !important; }
 .leaflet-bottom.leaflet-left { margin-bottom: 20px; margin-left: 20px; }
+
+#dev-toggle-encounters {
+    position: fixed;
+    bottom: 20px;
+    left: 85px;
+    z-index: 8500;
+    width: 34px;
+    height: 34px;
+    background: var(--color-surface);
+    border: 2px solid rgba(0,0,0,0.1);
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    box-shadow: var(--shadow-sm);
+    transition: var(--transition);
+}
+
+#dev-toggle-encounters:hover {
+    background: var(--color-bg-alt);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+#dev-toggle-encounters.active {
+    background: #fee2e2;
+    border-color: var(--color-danger);
+    color: var(--color-danger);
+}
+
 #app-container { display: flex; width: 100%; height: 100vh; }
 
 #cinema-overlay {
@@ -566,12 +598,11 @@ html, body {
     right: 0;
     width: 320px;
     height: 100%;
-    background: var(--color-surface);
-    border-left: 1px solid var(--color-border);
+    background: transparent;
     z-index: 9000;
     padding: 1.5rem;
-    padding-bottom: 30px; /* Platz für die absolut positionierte Signatur */
-    box-shadow: -5px 0 15px rgba(0,0,0,0.1);
+    padding-bottom: 30px; 
+    box-shadow: none;
     transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
     flex-direction: column;
@@ -630,12 +661,17 @@ html, body {
 }
 
 .log-entry {
-    background: var(--color-bg);
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(15px) saturate(180%);
+    -webkit-backdrop-filter: blur(15px) saturate(180%);
     padding: 1rem;
-    border-radius: 6px;
+    border-radius: 12px;
     margin-bottom: 1rem;
     font-size: 0.95rem;
     border-left: 4px solid var(--color-primary);
+    border-top: 1px solid rgba(255, 255, 255, 0.4);
+    border-right: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
     line-height: 1.5;
 }
 

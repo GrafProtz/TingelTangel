@@ -41,6 +41,7 @@ export class GameState {
     #infoMenuOpenUntilMove = -1;
     #isInfoMenuOpen = false;
     #logbook = [];
+    #devEncountersDisabled = false;
 
     // --- Getter (Liefern einfache Werte oder flache Kopien für internen Gebrauch) ---
     get currentPlayerNodeId() { return this.#currentPlayerNodeId; }
@@ -69,6 +70,7 @@ export class GameState {
     get infoMenuOpenUntilMove() { return this.#infoMenuOpenUntilMove; }
     get isInPub() { return this.#isInPub; }
     get firstMoveFired() { return this.#firstMoveFired; }
+    get devEncountersDisabled() { return this.#devEncountersDisabled; }
 
     // --- Setter ---
     set currentPlayerNodeId(val) { this.#currentPlayerNodeId = val !== null ? String(val) : null; }
@@ -97,6 +99,7 @@ export class GameState {
     set isInPub(val) { this.#isInPub = !!val; }
     set logbook(val) { this.#logbook = Array.isArray(val) ? val : []; }
     set firstMoveFired(val) { this.#firstMoveFired = !!val; }
+    set devEncountersDisabled(val) { this.#devEncountersDisabled = !!val; }
 
     /**
      * Fügt einen neuen Eintrag zum Logbuch hinzu.
@@ -138,7 +141,8 @@ export class GameState {
             infoMenuOpenUntilMove: this.#infoMenuOpenUntilMove,
             logbook: this.#logbook,
             firstMoveFired: this.#firstMoveFired,
-            isInPub: this.#isInPub
+            isInPub: this.#isInPub,
+            devEncountersDisabled: this.#devEncountersDisabled
         });
     }
 
@@ -188,5 +192,6 @@ export class GameState {
         this.infoMenuOpenUntilMove = isNum(data.infoMenuOpenUntilMove) ? data.infoMenuOpenUntilMove : -1;
         this.isInfoMenuOpen = isBool(data.isInfoMenuOpen) ? data.isInfoMenuOpen : false;
         this.logbook = isArr(data.logbook) ? data.logbook : [];
+        this.devEncountersDisabled = isBool(data.devEncountersDisabled) ? data.devEncountersDisabled : false;
     }
 }

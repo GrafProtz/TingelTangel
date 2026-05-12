@@ -238,6 +238,12 @@ export class InteractionManager {
                             <span>Interferenz-Warnung:</span>
                             <span style="color: var(--color-danger);">+ ${riskData.interferenceRisk}%</span>
                         </div>
+                        ${riskData.isDisguised ? `
+                        <div style="display:flex; justify-content:space-between; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(0,0,0,0.2); color: var(--color-success); font-weight: bold;">
+                            <span>🎭 Tarnung-Bonus:</span>
+                            <span>- 50%</span>
+                        </div>
+                        ` : ''}
                     </div>
                     <div style="border-top: 2px solid var(--color-text); padding-top: 12px; display:flex; justify-content:space-between; font-weight:bold; font-size:1.2rem; color:var(--color-danger);">
                         <span>GESAMTRISIKO:</span>
