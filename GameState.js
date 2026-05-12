@@ -1,23 +1,32 @@
 /**
  * GameState - Die "Single Source of Truth" für GridCrime.
  * Kapselt alle reinen Daten-Felder und stellt Getter/Setter bereit.
+ * ARCHITEKTUR:
+ * - Enthält keine Geschäftslogik (Pure Data).
+ * - Bietet tiefe Kopien via collectState() für die View-Schicht.
  */
 export class GameState {
-    // Player State
+    // --- Player Position & Equipment ---
     #currentPlayerNodeId = null;
     #isBiking = false;
     #isDisguised = false;
     #hasBoltCutter = false;
     #hasBicycle = false;
-    #isInPub = false;
+    
+    // --- Financial State (Zentralisiert aus BudgetManager) ---
+    #budget = 0;
+    #hasActiveLoan = false;
+    #loanInterestSteps = 0;
 
-    // Game Logic State
+    // --- Game Engine State ---
     #gameActive = false;
+    #isMoving = false;
     #moveCount = 0;
     #missionPhase = 1;
     #firstMoveFired = false;
+    #isInPub = false;
     
-    // Mission / Targets
+    // --- Mission & Targets ---
     #targetPubNodeId = null;
     #targetPubName = "Kneipe";
     #activeCrimeTargets = [];
@@ -25,7 +34,7 @@ export class GameState {
     #activeBarber = null;
     #lastPubVisit = 0;
     
-    // UI / Utility
+    // --- UI & Utility State ---
     #radarUnlocked = false;
     #lastRadarTime = 0;
     #showPubCooldownText = false;
@@ -33,14 +42,17 @@ export class GameState {
     #isInfoMenuOpen = false;
     #logbook = [];
 
-    // --- Getter ---
+    // --- Getter (Liefern einfache Werte oder flache Kopien für internen Gebrauch) ---
     get currentPlayerNodeId() { return this.#currentPlayerNodeId; }
     get isBiking() { return this.#isBiking; }
     get isDisguised() { return this.#isDisguised; }
     get hasBoltCutter() { return this.#hasBoltCutter; }
     get hasBicycle() { return this.#hasBicycle; }
-    get isInPub() { return this.#isInPub; }
+    get budget() { return this.#budget; }
+    get hasActiveLoan() { return this.#hasActiveLoan; }
+    get loanInterestSteps() { return this.#loanInterestSteps; }
     get gameActive() { return this.#gameActive; }
+    get isMoving() { return this.#isMoving; }
     get moveCount() { return this.#moveCount; }
     get missionPhase() { return this.#missionPhase; }
     get targetPubNodeId() { return this.#targetPubNodeId; }
@@ -48,13 +60,14 @@ export class GameState {
     get activeCrimeTargets() { return [...this.#activeCrimeTargets]; }
     get activeBicycleTargets() { return [...this.#activeBicycleTargets]; }
     get activeBarber() { return this.#activeBarber; }
+    get logbook() { return [...this.#logbook]; }
     get lastRadarTime() { return this.#lastRadarTime; }
     get radarUnlocked() { return this.#radarUnlocked; }
     get lastPubVisit() { return this.#lastPubVisit; }
     get showPubCooldownText() { return this.#showPubCooldownText; }
     get isInfoMenuOpen() { return this.#isInfoMenuOpen; }
     get infoMenuOpenUntilMove() { return this.#infoMenuOpenUntilMove; }
-    get logbook() { return [...this.#logbook]; }
+    get isInPub() { return this.#isInPub; }
     get firstMoveFired() { return this.#firstMoveFired; }
 
     // --- Setter ---
@@ -63,27 +76,30 @@ export class GameState {
     set isDisguised(val) { this.#isDisguised = !!val; }
     set hasBoltCutter(val) { this.#hasBoltCutter = !!val; }
     set hasBicycle(val) { this.#hasBicycle = !!val; }
-    set isInPub(val) { this.#isInPub = !!val; }
+    set budget(val) { this.#budget = Number(val) || 0; }
+    set hasActiveLoan(val) { this.#hasActiveLoan = !!val; }
+    set loanInterestSteps(val) { this.#loanInterestSteps = Number(val) || 0; }
     set gameActive(val) { this.#gameActive = !!val; }
-    set moveCount(val) { this.#moveCount = val; }
-    set missionPhase(val) { this.#missionPhase = val; }
+    set isMoving(val) { this.#isMoving = !!val; }
+    set moveCount(val) { this.#moveCount = Number(val) || 0; }
+    set missionPhase(val) { this.#missionPhase = Number(val) || 1; }
     set targetPubNodeId(val) { this.#targetPubNodeId = val !== null ? String(val) : null; }
     set targetPubName(val) { this.#targetPubName = val; }
     set activeCrimeTargets(val) { this.#activeCrimeTargets = Array.isArray(val) ? val : []; }
     set activeBicycleTargets(val) { this.#activeBicycleTargets = Array.isArray(val) ? val : []; }
     set activeBarber(val) { this.#activeBarber = val; }
-    set lastRadarTime(val) { this.#lastRadarTime = val; }
+    set lastRadarTime(val) { this.#lastRadarTime = Number(val) || 0; }
     set radarUnlocked(val) { this.#radarUnlocked = !!val; }
-    set lastPubVisit(val) { this.#lastPubVisit = val; }
+    set lastPubVisit(val) { this.#lastPubVisit = Number(val) || 0; }
     set showPubCooldownText(val) { this.#showPubCooldownText = !!val; }
     set isInfoMenuOpen(val) { this.#isInfoMenuOpen = !!val; }
-    set infoMenuOpenUntilMove(val) { this.#infoMenuOpenUntilMove = val; }
+    set infoMenuOpenUntilMove(val) { this.#infoMenuOpenUntilMove = Number(val) || -1; }
+    set isInPub(val) { this.#isInPub = !!val; }
     set logbook(val) { this.#logbook = Array.isArray(val) ? val : []; }
     set firstMoveFired(val) { this.#firstMoveFired = !!val; }
 
     /**
-     * Fügt einen neuen Eintrag zum Logbuch hinzu (Fix für H1).
-     * @param {Object} entry - { time, text, type }
+     * Fügt einen neuen Eintrag zum Logbuch hinzu.
      */
     addLogEntry(entry) {
         if (entry && typeof entry === 'object') {
@@ -92,19 +108,21 @@ export class GameState {
     }
 
     /**
-     * Sammelt alle Daten für den globalen State-Broadcast.
+     * Erzeugt eine tiefe Kopie des gesamten Zustands für die UI.
+     * Dies verhindert, dass View-Komponenten versehentlich den internen State mutieren.
      */
-    collectState(financeState, movementState) {
+    collectState() {
         return structuredClone({
-            ...financeState,
-            ...movementState,
             currentPlayerNodeId: this.#currentPlayerNodeId,
             isBiking: this.#isBiking,
             isDisguised: this.#isDisguised,
             hasBoltCutter: this.#hasBoltCutter,
             hasBicycle: this.#hasBicycle,
-            isInPub: this.#isInPub,
+            budget: this.#budget,
+            hasActiveLoan: this.#hasActiveLoan,
+            loanInterestSteps: this.#loanInterestSteps,
             gameActive: this.#gameActive,
+            isMoving: this.#isMoving,
             moveCount: this.#moveCount,
             missionPhase: this.#missionPhase,
             targetPubNodeId: this.#targetPubNodeId,
@@ -119,12 +137,13 @@ export class GameState {
             isInfoMenuOpen: this.#isInfoMenuOpen,
             infoMenuOpenUntilMove: this.#infoMenuOpenUntilMove,
             logbook: this.#logbook,
-            firstMoveFired: this.#firstMoveFired
+            firstMoveFired: this.#firstMoveFired,
+            isInPub: this.#isInPub
         });
     }
 
     /**
-     * Lädt den Zustand aus einem gespeicherten Objekt.
+     * Lädt den Zustand aus einem gespeicherten Objekt mit Basis-Validierung.
      */
     hydrate(data) {
         if (!data || typeof data !== 'object') return;
@@ -140,25 +159,31 @@ export class GameState {
         this.isDisguised = isBool(data.isDisguised) ? data.isDisguised : false;
         this.hasBoltCutter = isBool(data.hasBoltCutter) ? data.hasBoltCutter : false;
         this.hasBicycle = isBool(data.hasBicycle) ? data.hasBicycle : false;
+        
+        // Finances
+        this.budget = isNum(data.budget) ? data.budget : 0;
+        this.hasActiveLoan = isBool(data.hasActiveLoan) ? data.hasActiveLoan : false;
+        this.loanInterestSteps = isNum(data.loanInterestSteps) ? data.loanInterestSteps : 0;
+
+        // Game State
+        this.gameActive = isBool(data.gameActive) ? data.gameActive : true;
+        this.isMoving = false; // Nach dem Laden niemals in Bewegung
+        this.moveCount = isNum(data.moveCount) && data.moveCount >= 0 ? data.moveCount : 0;
+        this.missionPhase = isNum(data.missionPhase) ? data.missionPhase : 1;
+        this.firstMoveFired = isBool(data.firstMoveFired) ? data.firstMoveFired : false;
         this.isInPub = isBool(data.isInPub) ? data.isInPub : false;
 
-        // Game Logic State
-        this.gameActive = isBool(data.gameActive) ? data.gameActive : true;
-        this.moveCount = isNum(data.moveCount) && data.moveCount >= 0 ? data.moveCount : 0;
-        this.missionPhase = isNum(data.missionPhase) && [1, 2, 3].includes(data.missionPhase) ? data.missionPhase : 1;
-        this.firstMoveFired = isBool(data.firstMoveFired) ? data.firstMoveFired : false;
-
-        // Mission / Targets
+        // Targets
         this.targetPubNodeId = isStr(data.targetPubNodeId) ? data.targetPubNodeId : null;
         this.targetPubName = isStr(data.targetPubName) ? data.targetPubName : "Kneipe";
         this.activeCrimeTargets = isArr(data.activeCrimeTargets) ? data.activeCrimeTargets : [];
         this.activeBicycleTargets = isArr(data.activeBicycleTargets) ? data.activeBicycleTargets : [];
         this.activeBarber = (data.activeBarber && typeof data.activeBarber === 'object') ? data.activeBarber : null;
-        this.lastPubVisit = isNum(data.lastPubVisit) && data.lastPubVisit >= 0 ? data.lastPubVisit : 0;
+        this.lastPubVisit = isNum(data.lastPubVisit) ? data.lastPubVisit : 0;
 
-        // UI / Utility
+        // UI
         this.radarUnlocked = isBool(data.radarUnlocked) ? data.radarUnlocked : false;
-        this.lastRadarTime = isNum(data.lastRadarTime) && data.lastRadarTime >= 0 ? data.lastRadarTime : 0;
+        this.lastRadarTime = isNum(data.lastRadarTime) ? data.lastRadarTime : 0;
         this.showPubCooldownText = isBool(data.showPubCooldownText) ? data.showPubCooldownText : false;
         this.infoMenuOpenUntilMove = isNum(data.infoMenuOpenUntilMove) ? data.infoMenuOpenUntilMove : -1;
         this.isInfoMenuOpen = isBool(data.isInfoMenuOpen) ? data.isInfoMenuOpen : false;

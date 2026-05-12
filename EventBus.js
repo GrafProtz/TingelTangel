@@ -1,12 +1,7 @@
 /**
  * EventBus - Zentraler Pub/Sub-Mechanismus für GridCrime.
- * 
- * Diese Klasse ermöglicht eine lose Kopplung zwischen den Spiel-Modulen.
- * Sie implementiert robuste Fehlerbehandlung, Memory-Leak-Prävention 
- * und ein striktes Singleton-Pattern via ES6 Module Caching.
+ * Ermöglicht die lose Kopplung zwischen Logic-Engines und View-Komponenten.
  */
-import { log } from './Utils.js';
-
 class EventBus {
     /** @type {Map<string, Set<Function>>} */
     #listeners = new Map();
@@ -14,17 +9,8 @@ class EventBus {
     /** @type {boolean} */
     #debug = false;
 
-    constructor() {
-        // Sicherstellung des Singletons bei direktem Aufruf (Defensive Programming)
-        if (EventBus.instance) {
-            return EventBus.instance;
-        }
-        EventBus.instance = this;
-    }
-
     /**
      * Aktiviert das Logging für alle Events.
-     * @param {boolean} value 
      */
     set debug(value) {
         this.#debug = !!value;
@@ -32,10 +18,9 @@ class EventBus {
 
     /**
      * Abonniert ein Event.
-     * 
      * @param {string} event - Der Name des Events.
      * @param {Function} callback - Die Funktion, die bei Auslösung gerufen wird.
-     * @returns {Function} Eine Unsubscribe-Funktion (Closure), um den Listener sauber zu entfernen.
+     * @returns {Function} Eine Unsubscribe-Funktion, um den Listener sauber zu entfernen.
      */
     subscribe(event, callback) {
         if (typeof callback !== 'function') {
@@ -53,26 +38,17 @@ class EventBus {
             console.debug(`[EventBus] + Subscriber für "${event}". Gesamt: ${this.#listeners.get(event).size}`);
         }
 
-        // Closure-Pattern zur Memory-Leak-Prävention
-        let isSubscribed = true;
-        return () => {
-            if (!isSubscribed) return;
-            isSubscribed = false;
-            this.#unsubscribe(event, callback);
-        };
+        // Unsubscribe-Funktion zurückgeben
+        return () => this.#unsubscribe(event, callback);
     }
 
-    /**
-     * Alias für subscribe (Common Pattern).
-     */
+    /** Alias für subscribe */
     on(event, callback) {
         return this.subscribe(event, callback);
     }
 
     /**
-     * Entfernt einen Listener intern.
-     * @param {string} event 
-     * @param {Function} callback 
+     * Entfernt einen Listener.
      */
     #unsubscribe(event, callback) {
         const eventSet = this.#listeners.get(event);
@@ -89,7 +65,6 @@ class EventBus {
 
     /**
      * Sendet ein Event an alle Abonnenten.
-     * 
      * @param {string} event - Der Name des Events.
      * @param {any} [payload] - Optionale Daten für die Subscriber.
      */
@@ -98,40 +73,35 @@ class EventBus {
         
         if (this.#debug) {
             console.groupCollapsed(`[EventBus] Emit: "${event}"`);
-            log('Payload:', payload);
-            log('Abonnenten:', eventSet ? eventSet.size : 0);
+            console.log('Payload:', payload);
             console.groupEnd();
         }
 
         if (!eventSet || eventSet.size === 0) return;
 
-        // Kopie des Sets erstellen, um Probleme bei Unsubscribes während des Iterierens zu vermeiden
+        // Kopie erstellen, um Concurrent Modification zu vermeiden
         const currentListeners = [...eventSet];
 
         currentListeners.forEach(callback => {
             try {
                 callback(payload);
             } catch (error) {
-                // Robustheit: Fehler in einem Subscriber dürfen die Kette nicht unterbrechen
                 console.error(
                     `[EventBus] KRITISCHER FEHLER in Subscriber für Event "${event}":`,
-                    "\nFehler:", error.message,
-                    "\nStack:", error.stack,
-                    "\nPayload:", payload
+                    error.message,
+                    payload
                 );
             }
         });
     }
 
-    /**
-     * Alias für emit (Common Pattern).
-     */
+    /** Alias für emit */
     publish(event, payload) {
         this.emit(event, payload);
     }
 
     /**
-     * Entfernt alle Listener (Nützlich für harten Reset).
+     * Entfernt alle Listener (Harter Reset).
      */
     clearAll() {
         this.#listeners.clear();
@@ -139,11 +109,7 @@ class EventBus {
     }
 }
 
-// Erzeuge die Singleton-Instanz
-const instance = new EventBus();
-
-// Friere die Instanz ein, um Manipulationen an der API zu verhindern
-Object.freeze(instance);
-
-// Exportiere die Instanz (ES6 Module Caching sorgt für Singleton-Verhalten)
-export { instance as eventBus };
+// Singleton-Instanz exportieren
+const eventBus = new EventBus();
+Object.freeze(eventBus);
+export { eventBus };

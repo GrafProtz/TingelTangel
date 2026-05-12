@@ -335,40 +335,11 @@ class Game {
      * Nutzt structuredClone, um Referenz-Leaks zu verhindern.
      */
     getState() {
-        return structuredClone({
-            ...this.#budgetManager.getFinanceState(),
-            currentPlayerNodeId: this.#gameState.currentPlayerNodeId,
-            gameActive: this.#gameState.gameActive,
-            isMoving: this.#movementEngine.isMoving,
-            targetPubNodeId: this.#gameState.targetPubNodeId,
-            targetPubName: this.#gameState.targetPubName,
-            radarUnlocked: this.#gameState.radarUnlocked,
-            lastRadarTime: this.#gameState.lastRadarTime,
-            lastPubVisit: this.#gameState.lastPubVisit,
-            showPubCooldownText: this.#gameState.showPubCooldownText,
-            moveCount: this.#gameState.moveCount,
-            missionPhase: this.#gameState.missionPhase,
-            infoMenuOpenUntilMove: this.#gameState.infoMenuOpenUntilMove,
-            isInfoMenuOpen: this.#gameState.isInfoMenuOpen,
-            activeCrimeTargets: this.#gameState.activeCrimeTargets.map(t => ({
-                ...t,
-                isPlayerAtTarget: this.#checkProximity(t.accessNodeId)
-            })),
-            activeBarber: this.#gameState.activeBarber ? {
-                ...this.#gameState.activeBarber,
-                isPlayerAtBarber: this.#checkProximity(this.#gameState.activeBarber.accessNodeId)
-            } : null,
-            activeBicycleTargets: this.#gameState.activeBicycleTargets.map(t => ({
-                ...t,
-                isPlayerAtBicycle: this.#checkProximity(t.accessNodeId)
-            })),
-            isDisguised: this.#gameState.isDisguised,
-            hasBoltCutter: this.#gameState.hasBoltCutter,
-            isBiking: this.#gameState.isBiking,
-            hasBicycle: this.#gameState.hasBicycle,
-            isInPub: this.#gameState.isInPub,
-            logbook: this.#gameState.logbook
-        });
+        // Refactored in Phase 4.1: Delegate to GameState
+        return this.#gameState.collectState(
+            this.#budgetManager.getFinanceState(), 
+            { isMoving: this.#movementEngine.isMoving }
+        );
     }
 
     // ----------------------------------------------------------------
@@ -667,17 +638,9 @@ class Game {
         this.#gameState.addLogEntry({ time: Date.now(), text: msg, type });
         this.#gameState.lastPubVisit = Date.now();
         this.resume();
-
-        // UI-Timeouts für Cooldown-Text
-        setTimeout(() => {
-            this.#gameState.showPubCooldownText = true;
-            this.#notifyStateChange();
-        }, 5000);
-
-        setTimeout(() => {
-            this.#gameState.showPubCooldownText = false;
-            this.#notifyStateChange();
-        }, CONFIG.PUB_COOLDOWN);
+        
+        // UI-Timeouts für Cooldown-Text (In Phase 4.1 entfernt)
+        // Logik wird in Phase 4.4 in den NotificationManager/UIManager verschoben.
     }
 
     // ----------------------------------------------------------------
