@@ -228,7 +228,10 @@ async function initApp() {
 
     
     eventBus.subscribe(EVENTS.OPTION_C_CLICKED, () => {
-        const barber = game.findNearestHairdresser();
+        eventBus.emit(EVENTS.INTENT_REQUEST_BARBER_INFO);
+    });
+
+    eventBus.subscribe(EVENTS.BARBER_INFO_READY, ({ barber }) => {
         const barberName = sanitizeHTML(barber?.tags?.name) || "Schnittwunde";
         
         eventBus.emit(EVENTS.SHOW_DIALOG, {

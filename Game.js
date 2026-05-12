@@ -199,45 +199,6 @@ class Game {
     }
 
     // ================================================================
-    //  Legacy-Bridges (werden schrittweise entfernt)
-    // ================================================================
-
-    /** Delegiert an EconomyController */
-    canAfford(amount) {
-        return this.#economyController.canAfford(amount);
-    }
-
-    /** Delegiert an EconomyController */
-    deductBudget(amount) {
-        this.#economyController.deductBudget(amount);
-    }
-
-    /** Delegiert an EconomyController */
-    addReward(amount) {
-        this.#economyController.addReward(amount);
-    }
-
-    /** Delegiert an EconomyController */
-    findNearestHairdresser() {
-        return this.#economyController.findNearestHairdresser();
-    }
-
-    /** Delegiert an EconomyController */
-    setActiveBarber(barber) {
-        this.#economyController.setActiveBarber(barber);
-    }
-
-    getActiveBicycleTargets() {
-        return this.#gameState.activeBicycleTargets;
-    }
-
-    toggleInfoMenu() {
-        this.#gameState.isInfoMenuOpen = !this.#gameState.isInfoMenuOpen;
-        eventBus.emit(EVENTS.INFO_MENU_STATE, this.#gameState.isInfoMenuOpen);
-        this.#notifyStateChange();
-    }
-
-    // ================================================================
     //  HUD
     // ================================================================
 
@@ -274,14 +235,6 @@ class Game {
         }
 
         eventBus.emit(EVENTS.INFO_UPDATED, infoCards);
-    }
-
-    /**
-     * getBurglaryData bleibt vorerst hier als Legacy-Bridge.
-     * Wird in Etappe 5 in den CrimeController/DialogFactory verschoben.
-     */
-    getBurglaryData(targetId) {
-        return this.#crimeController.getBurglaryData(targetId);
     }
 }
 

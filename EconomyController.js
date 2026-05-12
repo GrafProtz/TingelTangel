@@ -56,9 +56,35 @@ export class EconomyController {
     // ================================================================
 
     #registerPubInteraction() {
-        // Pub-Ankunft (vom MovementController via PUB_CLICKED)
-        this.#sub(EVENTS.PUB_CLICKED, () => {
+        // Pub-Ankunft
+        this.#sub(EVENTS.INTENT_PUB_INTERACTION, () => {
             this.#checkPubArrival();
+        });
+
+        // Barber-Interaktion (Etappe 5)
+        this.#sub(EVENTS.INTENT_BARBER_TARGET, ({ barber }) => {
+            const playerIdStr = String(this.#gameState.currentPlayerNodeId);
+            const targetIdStr = String(barber.accessNodeId || barber.id);
+            
+            // Umkreisprüfung inkl. Nachbarn (analog CrimeController)
+            const neighbors = this.#mapData.getNeighbors(playerIdStr);
+            const isNear = (playerIdStr === targetIdStr) || 
+                           neighbors.some(n => String(n.id) === targetIdStr);
+            
+            if (!isNear) {
+                eventBus.emit(EVENTS.SHOW_TOAST, { message: "Geh naeher ran an den Salon!", type: 'fail' });
+                return;
+            }
+            
+            this.#gameState.gameActive = false;
+            eventBus.emit(EVENTS.GAME_PAUSED);
+            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBarberDialog());
+        });
+
+        // Barber-Info (Tipp vom Kneipier)
+        this.#sub(EVENTS.INTENT_REQUEST_BARBER_INFO, () => {
+            const barber = this.findNearestHairdresser();
+            eventBus.emit(EVENTS.BARBER_INFO_READY, { barber });
         });
 
         // Spieler waehlt eine Pub-Option (A/B/C/D)

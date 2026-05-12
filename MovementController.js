@@ -117,7 +117,7 @@ export class MovementController {
 
         // 4. Pub-Ankunfts-Check (delegiert an Game.js via Event)
         if (String(this.#gameState.currentPlayerNodeId) === String(this.#gameState.targetPubNodeId)) {
-            eventBus.emit(EVENTS.PUB_CLICKED); // Game.js hört hierauf und prüft Cooldown
+            eventBus.emit(EVENTS.INTENT_PUB_INTERACTION);
         }
 
         // 5. Zufalls-Begegnung
