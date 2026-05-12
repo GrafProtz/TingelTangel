@@ -221,18 +221,7 @@ async function initApp() {
         const barber = game.findNearestHairdresser();
         const barberName = sanitizeHTML(barber?.tags?.name) || "Schnittwunde";
         
-        eventBus.emit(EVENTS.SHOW_DIALOG, {
-            title: 'Ein zwielichtiger Tipp',
-            text: `Ich kenne da jemanden. Geh zu '<strong>${barberName}</strong>'. Lass dir die Haare färben, setz eine Brille auf. Wenn du nicht aussiehst wie ein typischer Einbrecher, fällst du weniger auf. Das halbiert dein Risiko und die Hausbesitzer schöpfen nicht so schnell Verdacht, was deine Abbruchquote drastisch senkt.`,
-            buttons: [
-                { 
-                    text: 'Einverstanden (50 €)', 
-                    event: EVENTS.BUY_BARBER_TICKET, 
-                    payload: { barber, barberName } 
-                },
-                { text: 'Ablehnen', event: EVENTS.RESUME_GAME }
-            ]
-        });
+        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBarberTipDialog({ barber, barberName }));
     });
 
 
@@ -240,7 +229,7 @@ async function initApp() {
 
 
     eventBus.subscribe(EVENTS.OPTION_D_CLICKED, () => {
-        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBoltCutterDialog(75));
+        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBoltCutterDialog());
     });
 
     eventBus.subscribe(EVENTS.PUB_TARGET_REACHED, () => {

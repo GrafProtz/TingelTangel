@@ -2,7 +2,7 @@ import { CONFIG } from './GameConfig.js';
 
 /**
  * RiskCalculator - Domain-Experte für Wahrscheinlichkeiten und Risiken.
- * Isoliert die Mathematik von der Spielsteuerung und behebt Fehler in der Risiko-Metrik.
+ * Isoliert die Mathematik von der Spielsteuerung.
  */
 export class RiskCalculator {
     #mapData;
@@ -13,38 +13,31 @@ export class RiskCalculator {
 
     /**
      * Berechnet das detaillierte Risiko für einen Einbruch oder eine Mission.
-     * @param {Object} targetNode - Das Zielobjekt
-     * @param {boolean} isDisguised - Ob der Spieler aktuell getarnt ist
-     * @returns {Object} Detaillierte Risiko-Daten
      */
     calculateTargetRisk(targetNode, isDisguised) {
         const statsMap = {
-            'residential': { baseRisk: 15, abortRate: 15, minLoot: 150,  maxLoot: 5000,  label: 'Wohnhaus' },
-            'commercial':  { baseRisk: 30, abortRate: 28, minLoot: 500,  maxLoot: 15000, label: 'Gewerbeobjekt' },
-            'public':      { baseRisk: 30, abortRate: 25, minLoot: 100,  maxLoot: 8000,  label: 'Öffentliche Einrichtung' },
-            'allotments':  { baseRisk: 15, abortRate: 15, minLoot: 50,   maxLoot: 1950,  label: 'Kleingarten/Schuppen' },
-            'bicycle':     { baseRisk: 9.7, abortRate: 0, minLoot: 0,    maxLoot: 0,     label: 'Fahrradständer' }
+            'residential': { baseRisk: CONFIG.RISK_FACTORS.BURGLARY_EASY,   abortRate: CONFIG.RISK_FACTORS.ABORT_RESIDENTIAL, minLoot: CONFIG.REWARDS.BURGLARY_EASY,   maxLoot: 5000,  label: 'Wohnhaus' },
+            'commercial':  { baseRisk: CONFIG.RISK_FACTORS.BURGLARY_MEDIUM, abortRate: CONFIG.RISK_FACTORS.ABORT_COMMERCIAL,  minLoot: CONFIG.REWARDS.BURGLARY_MEDIUM, maxLoot: 15000, label: 'Gewerbeobjekt' },
+            'public':      { baseRisk: CONFIG.RISK_FACTORS.BURGLARY_MEDIUM, abortRate: CONFIG.RISK_FACTORS.ABORT_PUBLIC,      minLoot: 100,                           maxLoot: 8000,  label: 'Öffentliche Einrichtung' },
+            'allotments':  { baseRisk: CONFIG.RISK_FACTORS.BURGLARY_EASY,   abortRate: CONFIG.RISK_FACTORS.ABORT_ALLOTMENTS,  minLoot: 50,                            maxLoot: 1950,  label: 'Kleingarten/Schuppen' },
+            'bicycle':     { baseRisk: CONFIG.RISK_FACTORS.BICYCLE_BASE,    abortRate: 0,  minLoot: 0,                             maxLoot: 0,     label: 'Fahrradständer' }
         };
 
         const category = targetNode.type || 'residential';
         const config = statsMap[category] || statsMap.residential;
 
-        // Polizei-Risiko berechnen (ersetzt fehlerhaften mapData-Aufruf)
         const { proximityRisk, nearbyCount } = this.getPoliceRiskModifier([targetNode.lat, targetNode.lon]);
         
-        // Interferenz-Malus (wenn mehrere Wachen in der Nähe sind)
-        const interferenceRisk = nearbyCount > 1 ? (nearbyCount - 1) * 15 : 0;
+        const interferenceRisk = nearbyCount > 1 ? (nearbyCount - 1) * CONFIG.RISK_FACTORS.INTERFERENCE_MALUS : 0;
         
         let totalRisk = config.baseRisk + proximityRisk + interferenceRisk;
         let abortRate = config.abortRate;
 
-        // Tarnung-Buff anwenden (Halbierung)
         if (isDisguised) {
-            totalRisk *= 0.5;
-            abortRate *= 0.5;
+            totalRisk *= CONFIG.RISK_FACTORS.DISGUISE_BUFF;
+            abortRate *= CONFIG.RISK_FACTORS.DISGUISE_BUFF;
         }
 
-        // Deckelung bei 95%
         totalRisk = Math.min(95, totalRisk);
         const successProbability = 100 - totalRisk;
 
@@ -65,9 +58,6 @@ export class RiskCalculator {
 
     /**
      * Berechnet den Risiko-Malus basierend auf Polizei-Nähe.
-     * Ersetzt die in MapData fehlende Methode getPoliceProximityRisk.
-     * @param {Array} coords - [lat, lon]
-     * @returns {Object} { riskMalus, nearbyCount }
      */
     getPoliceRiskModifier(coords) {
         if (!coords || coords.length < 2) return { riskMalus: 0, proximityRisk: 0, nearbyCount: 0 };
@@ -82,17 +72,16 @@ export class RiskCalculator {
                 { lat: station.lat, lon: station.lon }
             );
 
-            // Innerhalb von 500m steigt das Risiko linear an
-            if (dist < 500) {
+            if (dist < CONFIG.RISK_FACTORS.POLICE_MAX_RADIUS) {
                 nearbyCount++;
-                riskMalus += (500 - dist) / 500 * 25;
+                riskMalus += (CONFIG.RISK_FACTORS.POLICE_MAX_RADIUS - dist) / CONFIG.RISK_FACTORS.POLICE_MAX_RADIUS * CONFIG.RISK_FACTORS.POLICE_MAX_MALUS;
             }
         });
 
-        const result = Number(riskMalus.toFixed(1));
+        const result = Math.min(CONFIG.RISK_FACTORS.POLICE_HARD_CAP, Number(riskMalus.toFixed(1)));
         return { 
             riskMalus: result, 
-            proximityRisk: result, // Alias für Kompatibilität
+            proximityRisk: result,
             nearbyCount 
         };
     }
@@ -102,11 +91,56 @@ export class RiskCalculator {
      */
     getInteractionPreview(key, riskMalus = 0) {
         const previews = {
-            'A': { text: "Ein schneller Job. Geringes Risiko.", risk: 10 + riskMalus },
-            'B': { text: "Anspruchsvoll, aber lukrativ.", risk: 30 + riskMalus },
-            'C': { text: "Extremer Hochrisiko-Einsatz!", risk: 60 + riskMalus },
-            'D': { text: "Nur für Profis.", risk: 80 + riskMalus }
+            'A': { text: "Ein schneller Job. Geringes Risiko.", risk: CONFIG.RISK_FACTORS.PUB_EASY + riskMalus },
+            'B': { text: "Anspruchsvoll, aber lukrativ.", risk: CONFIG.RISK_FACTORS.BURGLARY_MEDIUM + riskMalus },
+            'C': { text: "Extremer Hochrisiko-Einsatz!", risk: CONFIG.RISK_FACTORS.BURGLARY_HARD + riskMalus },
+            'D': { text: "Nur für Profis.", risk: CONFIG.RISK_FACTORS.BURGLARY_HARD + 10 + riskMalus }
         };
         return previews[key] || { text: "Unbekanntes Risiko", risk: 50 };
     }
+
+    /**
+     * Liefert die Einbruchs-Optionen für ein Gebäude (migriert aus Game.js).
+     */
+    getBurglaryOptions(target) {
+        const riskData = this.getPoliceRiskModifier([target.lat, target.lon]);
+        
+        const typeMultMap = {
+            'residential': CONFIG.MULTIPLIERS.TYPE_RESIDENTIAL,
+            'commercial': CONFIG.MULTIPLIERS.TYPE_COMMERCIAL,
+            'public': CONFIG.MULTIPLIERS.TYPE_PUBLIC,
+            'allotments': CONFIG.MULTIPLIERS.TYPE_ALLOTMENTS
+        };
+        const mult = typeMultMap[target.type] || 1.0;
+
+        const warning = riskData.riskMalus > 0 ? '🚨 ' : '';
+        const warningSuffix = riskData.riskMalus > 0 ? ' (Hohe Polizeipräsenz!)' : '';
+
+        return {
+            A: { 
+                risk: Math.min(95, Math.round((CONFIG.RISK_FACTORS.BURGLARY_EASY + riskData.riskMalus) * mult)), 
+                reward: CONFIG.REWARDS.BURGLARY_EASY 
+            },
+            B: { 
+                risk: Math.min(95, Math.round((CONFIG.RISK_FACTORS.BURGLARY_MEDIUM + riskData.riskMalus) * mult)), 
+                reward: CONFIG.REWARDS.BURGLARY_MEDIUM 
+            },
+            C: { 
+                risk: Math.min(98, Math.round((CONFIG.RISK_FACTORS.BURGLARY_HARD + riskData.riskMalus) * mult)), 
+                reward: CONFIG.REWARDS.BURGLARY_HARD 
+            },
+            warning: warning,
+            warningSuffix: warningSuffix
+        };
+    }
+
+    /**
+     * Führt eine Wahrscheinlichkeitsprüfung durch.
+     */
+    checkSuccess(totalRisk) {
+        const roll = Math.random() * 100;
+        return roll > totalRisk;
+    }
 }
+
+

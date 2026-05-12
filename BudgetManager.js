@@ -7,21 +7,20 @@ import { eventBus } from './EventBus.js';
  * Kapselt Budget, Strafen, Belohnungen und das Kredit-System.
  */
 export class BudgetManager {
-    #budget = 0;
-    #hasActiveLoan = false;
-    #loanInterestSteps = 0;
-
-    constructor() {
-        this.#budget = CONFIG.INITIAL_BUDGET;
+    #gameState;
+    
+    constructor(gameState) {
+        this.#gameState = gameState;
+        // Initialisierung erfolgt nun via GameState Defaults oder init()
     }
 
     /**
      * Initialisiert das Budget für eine neue Mission.
      */
     init() {
-        this.#budget = CONFIG.INITIAL_BUDGET;
-        this.#hasActiveLoan = false;
-        this.#loanInterestSteps = 0;
+        this.#gameState.budget = CONFIG.INITIAL_BUDGET;
+        this.#gameState.hasActiveLoan = false;
+        this.#gameState.loanInterestSteps = 0;
         this.#notifyChange();
     }
 
@@ -31,47 +30,47 @@ export class BudgetManager {
      */
     hydrate(savedState) {
         if (!savedState) return;
-        this.#budget = savedState.budget ?? CONFIG.INITIAL_BUDGET;
-        this.#hasActiveLoan = savedState.hasActiveLoan ?? false;
-        this.#loanInterestSteps = savedState.loanInterestSteps ?? 0;
+        this.#gameState.budget = savedState.budget ?? CONFIG.INITIAL_BUDGET;
+        this.#gameState.hasActiveLoan = savedState.hasActiveLoan ?? false;
+        this.#gameState.loanInterestSteps = savedState.loanInterestSteps ?? 0;
         this.#notifyChange();
     }
 
     // --- Getters ---
 
-    get budget() { return this.#budget; }
-    get hasActiveLoan() { return this.#hasActiveLoan; }
-    get loanInterestSteps() { return this.#loanInterestSteps; }
+    get budget() { return this.#gameState.budget; }
+    get hasActiveLoan() { return this.#gameState.hasActiveLoan; }
+    get loanInterestSteps() { return this.#gameState.loanInterestSteps; }
 
     /**
      * Gibt den finanzspezifischen Teil des States zurück.
      */
     getFinanceState() {
         return {
-            budget: this.#budget,
-            hasActiveLoan: this.#hasActiveLoan,
-            loanInterestSteps: this.#loanInterestSteps
+            budget: this.#gameState.budget,
+            hasActiveLoan: this.#gameState.hasActiveLoan,
+            loanInterestSteps: this.#gameState.loanInterestSteps
         };
     }
 
     // --- Logik ---
 
     canAfford(amount) {
-        return this.#budget >= amount;
+        return this.#gameState.budget >= amount;
     }
 
     addReward(amount) {
-        const oldBudget = this.#budget;
-        this.#budget += amount;
-        this.#notifyChange(this.#budget - oldBudget);
+        const oldBudget = this.#gameState.budget;
+        this.#gameState.budget += amount;
+        this.#notifyChange(this.#gameState.budget - oldBudget);
     }
 
     deductBudget(amount) {
-        const oldBudget = this.#budget;
-        this.#budget = Math.max(0, this.#budget - amount);
-        this.#notifyChange(this.#budget - oldBudget);
+        const oldBudget = this.#gameState.budget;
+        this.#gameState.budget = Math.max(0, this.#gameState.budget - amount);
+        this.#notifyChange(this.#gameState.budget - oldBudget);
         
-        if (this.#budget <= 0) {
+        if (this.#gameState.budget <= 0) {
             this.#handleInsolvency();
         }
     }
@@ -81,16 +80,16 @@ export class BudgetManager {
      * Verhindert schwere Full-State Broadcasts.
      */
     applyBudgetTick(newBudget, diff) {
-        this.#budget = newBudget;
-        eventBus.emit(EVENTS.BUDGET_TICK, { total: this.#budget, diff });
+        this.#gameState.budget = newBudget;
+        eventBus.emit(EVENTS.BUDGET_TICK, { total: this.#gameState.budget, diff });
     }
 
     /**
      * Verarbeitet Zinsen für den laufenden Kredit bei jedem Schritt.
      */
     applyStepInterest() {
-        if (this.#hasActiveLoan) {
-            this.#loanInterestSteps += 1; // 1 € pro Schritt (Fixer Wert laut Game.js Legacy)
+        if (this.#gameState.hasActiveLoan) {
+            this.#gameState.loanInterestSteps += CONFIG.LOAN.STEP_INTEREST; 
         }
     }
 
@@ -104,25 +103,24 @@ export class BudgetManager {
      * @returns {number} Der abgezogene Schuldenbetrag.
      */
     processLoanRepayment() {
-        if (!this.#hasActiveLoan) return 0;
+        if (!this.#gameState.hasActiveLoan) return 0;
 
-        // In der aktuellen Version: Rückzahlung = Basis (2000) + aufgelaufene Zinsen
-        const debt = 2000 + this.#loanInterestSteps; 
-        this.#hasActiveLoan = false;
-        this.#loanInterestSteps = 0;
+        const debt = CONFIG.LOAN.REPAYMENT_BASE + this.#gameState.loanInterestSteps; 
+        this.#gameState.hasActiveLoan = false;
+        this.#gameState.loanInterestSteps = 0;
         
         return debt;
     }
 
     handleAcceptLoan() {
-        this.#budget = 1500; // Fixbetrag laut Legacy-Logik
-        this.#hasActiveLoan = true;
-        this.#loanInterestSteps = 0;
+        this.#gameState.budget = CONFIG.LOAN.AMOUNT; 
+        this.#gameState.hasActiveLoan = true;
+        this.#gameState.loanInterestSteps = 0;
         this.#notifyChange();
     }
 
     #handleInsolvency() {
-        if (!this.#hasActiveLoan) {
+        if (!this.#gameState.hasActiveLoan) {
             // Wenn pleite, aber noch kein Kredit: Angebot machen
             eventBus.emit(EVENTS.SHOW_DIALOG, {
                 title: 'Pleite!',
@@ -140,7 +138,7 @@ export class BudgetManager {
 
     #notifyChange(diff = 0) {
         eventBus.emit(EVENTS.BUDGET_UPDATED, {
-            total: this.#budget,
+            total: this.#gameState.budget,
             diff: diff
         });
     }

@@ -40,8 +40,8 @@ export class MissionService {
                 const nd = this.#mapData.getNode(id);
                 if (!nd) return false;
                 const d = this.#mapData.calculateDistance(targetNode, nd);
-                // Zwischen 50m und 150m für den schnellen Einstieg
-                return d >= 50 && d <= CONFIG.MAX_DISTANCE_TUTORIAL_PUB;
+                // Dynamische Distanz-Prüfung
+                return d >= CONFIG.MISSION.MIN_POI_DISTANCE && d <= CONFIG.MAX_DISTANCE_TUTORIAL_PUB;
             });
 
             if (candidates.length === 0) continue;
@@ -90,8 +90,8 @@ export class MissionService {
 
             const dist = this.#mapData.calculateDistance(centerNode, { lat, lon });
             
-            // Suche Ziele in anspruchsvollerer Distanz (mind. 600m)
-            if (dist >= CONFIG.MIN_DISTANCE_POI && dist <= (CONFIG.MIN_DISTANCE_POI + 600)) {
+            // Suche Ziele in anspruchsvollerer Distanz
+            if (dist >= CONFIG.MIN_DISTANCE_POI && dist <= (CONFIG.MIN_DISTANCE_POI + CONFIG.MISSION.MAX_POI_SPREAD)) {
                 // Finde den nächstgelegenen Straßenzugang für dieses Gebäude
                 const accessNode = this.#mapData.findNearestGraphNode(lat, lon);
                 
@@ -115,7 +115,7 @@ export class MissionService {
 
         for (const cand of shuffled) {
             if (selected.length >= 3) break;
-            const tooClose = selected.some(s => this.#mapData.calculateDistance(s, cand) < 200);
+            const tooClose = selected.some(s => this.#mapData.calculateDistance(s, cand) < CONFIG.MISSION.MIN_TARGET_SPACING);
             if (!tooClose) {
                 selected.push(cand);
             }
@@ -143,7 +143,7 @@ export class MissionService {
                 log("TRACE BIKES: Prüfe Stellplatz", p.id, "Distance:", dist, "Hat AccessNode:", !!accessNode);
                 return { ...p, distance: dist, accessNode };
             })
-            .filter(p => p.distance >= CONFIG.MIN_DISTANCE_BIKE && p.distance <= (CONFIG.MIN_DISTANCE_BIKE + 600) && p.accessNode !== null) 
+            .filter(p => p.distance >= CONFIG.MIN_DISTANCE_BIKE && p.distance <= (CONFIG.MIN_DISTANCE_BIKE + CONFIG.MISSION.MAX_POI_SPREAD) && p.accessNode !== null) 
             .sort((a, b) => a.distance - b.distance);
 
         log("TRACE BIKES: Kandidaten nach Filterung:", candidates.length);

@@ -1,6 +1,7 @@
 import { eventBus } from './EventBus.js';
 import { EVENTS } from './EventTypes.js';
 import { sanitizeHTML } from './Utils.js';
+import { DialogFactory } from './DialogFactory.js';
 
 export class UIManager {
     constructor() {
@@ -68,7 +69,7 @@ export class UIManager {
     handleCascade(data) {
         this.currentCascadeData = data;
         this.infoModalTitle.innerText = data.title || "Information";
-        this.infoModalText.innerHTML = sanitizeHTML(data.fullText || "");
+        this.infoModalText.innerHTML = sanitizeHTML(data.body || "");
         
         // Reset classes
         this.infoModal.classList.remove('hidden');
@@ -166,23 +167,10 @@ export class UIManager {
      * Nutzt die bestehende Modal-Struktur für hohe Aufmerksamkeit.
      */
     showEncounterModal(event) {
-        this.currentCascadeData = {
-            title: event.title,
-            fullText: `
-                <div style="line-height: 1.6;">
-                    <p style="margin-bottom: 20px;">${event.text}</p>
-                    <div style="color: var(--color-danger); font-weight: bold; font-size: 1.2rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
-                        Verlust: -${event.cost} €
-                    </div>
-                </div>
-            `,
-            shortText: `Ereignis: ${event.title} (-${event.cost} €)`,
-            logId: 'last-encounter',
-            nextEvent: EVENTS.RESUME_GAME
-        };
+        this.currentCascadeData = DialogFactory.getEncounterDialog(event);
         
         this.infoModalTitle.innerText = this.currentCascadeData.title;
-        this.infoModalText.innerHTML = sanitizeHTML(this.currentCascadeData.fullText);
+        this.infoModalText.innerHTML = sanitizeHTML(this.currentCascadeData.body);
         this.infoModalBtn.innerText = "Verstanden";
         
         this.infoModal.classList.remove('hidden');
@@ -195,21 +183,6 @@ export class UIManager {
      * Zeigt das Modal für die "Zweite Chance" (Kredit der Verbrecher*innen-Innung).
      */
     showLoanModal() {
-        eventBus.emit(EVENTS.SHOW_DIALOG, {
-            title: 'Zweite Chance?',
-            text: `
-                <div style="line-height: 1.6;">
-                    <p>"Du bist pleite. Die Verbrecher*innen-Innung bietet dir einen Überbrückungskredit an, damit du dein Ding weiter durchziehen kannst."</p>
-                    <p style="color:var(--color-warning); font-weight:bold; margin-top:15px;">
-                        ⚠️ WARNUNG: Jeder Schritt kostet ab jetzt 1 € Zinsen. Rückzahlung erfolgt automatisch beim nächsten Erfolg.
-                    </p>
-                    <p>Akzeptierst du den Pakt?</p>
-                </div>
-            `,
-            buttons: [
-                { text: 'Annehmen', event: EVENTS.ACCEPT_LOAN_OFFER, className: 'btn-danger' },
-                { text: 'Ablehnen (Spiel beenden)', event: EVENTS.REJECT_LOAN, className: 'btn-secondary' }
-            ]
-        });
+        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getLoanDialog());
     }
 }

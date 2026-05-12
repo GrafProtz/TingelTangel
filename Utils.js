@@ -70,3 +70,41 @@ export const sanitizeHTML = (html) => {
     clean(doc.body);
     return doc.body.innerHTML;
 };
+
+/**
+ * Drosselt die Ausführung einer Funktion auf ein bestimmtes Zeitintervall.
+ * @param {Function} func - Die zu drosselnde Funktion.
+ * @param {number} limit - Das Zeitintervall in Millisekunden.
+ */
+export function throttle(func, limit) {
+    let inThrottle;
+    return function(...args) {
+        if (!inThrottle) {
+            func.apply(this, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    };
+}
+
+/**
+ * Robuster Fetch-Helper mit exponentiellem Back-off.
+ * @param {string} url - Die Ziel-URL.
+ * @param {Object} options - Fetch-Optionen.
+ * @param {number} retries - Anzahl der Versuche (Default: 3).
+ * @param {number} delay - Initiale Verzögerung in ms (Default: 1000).
+ */
+export async function fetchWithRetry(url, options = {}, retries = 3, delay = 1000) {
+    try {
+        const response = await fetch(url, options);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        return await response.json();
+    } catch (error) {
+        if (retries > 0) {
+            log(`Fetch failed, retrying in ${delay}ms... (${retries} left)`, error);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return fetchWithRetry(url, options, retries - 1, delay * 2);
+        }
+        throw error;
+    }
+}

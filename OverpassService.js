@@ -5,7 +5,8 @@ import { eventBus } from './EventBus.js';
 import { gameState, GamePhase } from './GameState.js';
 import { OSMValidator } from './OSMValidator.js';
 import { EVENTS } from './EventTypes.js';
-import { log } from './Utils.js';
+import { log, fetchWithRetry } from './Utils.js';
+import { CONFIG } from './GameConfig.js';
 
 class OverpassService {
     #inMemoryCache = new Map();
@@ -58,29 +59,38 @@ class OverpassService {
         const query = this.#buildQuery(coords);
 
         try {
-            const rawData = await this.#fetchWithRetry(query);
+            const rawData = await fetchWithRetry(this.#endpoint, {
+                method: 'POST',
+                body: 'data=' + encodeURIComponent(query)
+            });
             const cleanData = OSMValidator.validate(rawData);
             
             await this.#saveToCache(cacheKey, cleanData);
             this.#finalize(cleanData);
             return cleanData;
         } catch (error) {
-            console.error("[OverpassService] API-Fehler:", error);
-            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Verbindung fehlgeschlagen.", type: 'fail' });
-            gameState.setPhase(GamePhase.INIT);
-            throw error;
+            console.error("[OverpassService] API-Fehler nach Retries:", error);
+            eventBus.emit(EVENTS.SHOW_TOAST, { 
+                message: "Netzwerkfehler: Kartendaten konnten nicht geladen werden.", 
+                type: 'error' 
+            });
+            
+            if (typeof gameState !== 'undefined' && gameState.setPhase) {
+                gameState.setPhase(GamePhase.INIT);
+            }
+            return null; 
         }
     }
 
     #generateCacheKey(coords) {
-        const range = 0.008;
+        const range = CONFIG.MAP.FETCH_RANGE;
         const s = coords[0] - range, w = coords[1] - range;
         const n = coords[0] + range, e = coords[1] + range;
         return `osm_${s.toFixed(3)}_${w.toFixed(3)}_${n.toFixed(3)}_${e.toFixed(3)}`;
     }
 
     #buildQuery(coords) {
-        const range = 0.008;
+        const range = CONFIG.MAP.FETCH_RANGE;
         const s = coords[0] - range, w = coords[1] - range;
         const n = coords[0] + range, e = coords[1] + range;
         return `[out:json][timeout:60];(way["highway"](${s},${w},${n},${e});node["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});node["amenity"~"police|police_station"](${s},${w},${n},${e});way["building"](${s},${w},${n},${e});node["shop"="hairdresser"](${s},${w},${n},${e});node["amenity"="bicycle_parking"](${s},${w},${n},${e}););(._;>;);out body center;`;
@@ -145,23 +155,6 @@ class OverpassService {
         });
     }
 
-    async #fetchWithRetry(query, maxRetries = 3) {
-        let lastError;
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                const response = await fetch(this.#endpoint, {
-                    method: 'POST',
-                    body: 'data=' + encodeURIComponent(query)
-                });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                return await response.json();
-            } catch (error) {
-                lastError = error;
-                if (attempt < maxRetries) await new Promise(res => setTimeout(res, Math.pow(2, attempt) * 1000));
-            }
-        }
-        throw lastError;
-    }
 
     #finalize(data) {
         eventBus.emit(EVENTS.DATA_LOADED, data);

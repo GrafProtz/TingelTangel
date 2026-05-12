@@ -2,6 +2,7 @@ import { eventBus } from './EventBus.js';
 import { ENCOUNTERS } from './EncounterData.js';
 import { log } from './Utils.js';
 import { EVENTS } from './EventTypes.js';
+import { CONFIG } from './GameConfig.js';
 
 /**
  * EncounterManager - Die Logik-Zentrale für Zufallsereignisse.
@@ -15,9 +16,9 @@ export class EncounterManager {
     static checkAndTriggerEvent(state) {
         log("TRACE ENCOUNTER: Prüfung gestartet. In Kneipe:", state.isInPub);
         
-        // 1. Gatekeeper: Zurück auf 5% Standard
+        // 1. Gatekeeper: Basierend auf Config
         const gateRoll = Math.random();
-        const encounterChance = 0.05; 
+        const encounterChance = CONFIG.RISK_FACTORS.ENCOUNTER_CHANCE; 
         log("TRACE ENCOUNTER: Würfelwurf: " + gateRoll.toFixed(4) + " (Limit: " + encounterChance + ")");
         
         if (gateRoll > encounterChance) {

@@ -38,6 +38,11 @@ class MapView {
         this.#isLockCamera = false;
         this._isIntroFlying = false;
 
+        // Batch-Rendering State
+        this.#pendingPOIs = null;
+        this.#pendingNeighbors = null;
+        this.#renderRequested = false;
+
         // Globaler Kamera-Listener für entkoppelte Steuerung
         eventBus.subscribe(EVENTS.CAMERA_FIT_BOUNDS_REQUESTED, (coords) => this.fitBounds(coords));
         
@@ -85,6 +90,36 @@ class MapView {
     #isLockCamera;
     #lockTimer;
     #targetClickHandler;
+    
+    // Batch-Rendering State
+    #pendingPOIs;
+    #pendingNeighbors;
+    #renderRequested;
+
+    /**
+     * Schiebt ein Rendering in den nächsten Animations-Frame.
+     */
+    #requestBatchRender() {
+        if (this.#renderRequested) return;
+        this.#renderRequested = true;
+        
+        requestAnimationFrame(() => {
+            this.#renderRequested = false;
+            
+            // 1. POIs rendern falls vorhanden
+            if (this.#pendingPOIs) {
+                this.#executeRenderPOIs(this.#pendingPOIs);
+                this.#pendingPOIs = null;
+            }
+            
+            // 2. Nachbarn rendern falls vorhanden
+            if (this.#pendingNeighbors) {
+                const { neighbors, targetNodeId, isBiking, lastPubVisit, onClickCb } = this.#pendingNeighbors;
+                this.#executeRenderNeighbors(neighbors, targetNodeId, isBiking, lastPubVisit, onClickCb);
+                this.#pendingNeighbors = null;
+            }
+        });
+    }
 
     // ----------------------------------------------------------------
     //  Polizei-Radar
@@ -293,6 +328,11 @@ class MapView {
      * @param {Function} onClickCb
      */
     renderNeighbors(neighbors, targetNodeId, isBiking, lastPubVisit, onClickCb) {
+        this.#pendingNeighbors = { neighbors, targetNodeId, isBiking, lastPubVisit, onClickCb };
+        this.#requestBatchRender();
+    }
+
+    #executeRenderNeighbors(neighbors, targetNodeId, isBiking, lastPubVisit, onClickCb) {
         if (this._neighborTimeout) clearTimeout(this._neighborTimeout);
 
         // 1. Welche IDs werden JETZT benötigt?
@@ -464,6 +504,11 @@ class MapView {
      * }]
      */
     renderPOIs(poiArray) {
+        this.#pendingPOIs = poiArray;
+        this.#requestBatchRender();
+    }
+
+    #executeRenderPOIs(poiArray) {
         // Zwingende Initialisierung falls noch nicht geschehen
         if (!(this._activePOIMarkers instanceof Map)) this._activePOIMarkers = new Map();
 

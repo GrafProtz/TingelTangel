@@ -37,8 +37,8 @@ class Game {
         this.#mapData = mapData;
         this.#missionService = missionService;
         this.#gameState = new GameState();
-        this.#budgetManager = new BudgetManager();
-        this.#movementEngine = new MovementEngine(this.#mapData);
+        this.#budgetManager = new BudgetManager(this.#gameState);
+        this.#movementEngine = new MovementEngine(this.#mapData, this.#gameState);
         this.#riskCalculator = new RiskCalculator(this.#mapData);
         this.#setupInteractionListeners();
     }
@@ -82,7 +82,7 @@ class Game {
     }
 
     #handleInvestmentConsultant() {
-        const cost = 75; // TODO: In CONFIG verschieben
+        const cost = CONFIG.PRICES.CONSULTANT;
         if (!this.canAfford(cost)) {
             eventBus.emit(EVENTS.SHOW_TOAST, { message: "Nicht genug Geld für den Berater!", type: 'fail' });
             this.resume();
@@ -110,7 +110,7 @@ class Game {
 
     #registerPurchaseFlows() {
         eventBus.subscribe(EVENTS.BUY_BOLT_CUTTER, (payload) => {
-            const cost = payload.cost || 75;
+            const cost = payload?.cost || CONFIG.PRICES.BOLT_CUTTER;
             if (!this.canAfford(cost)) {
                 eventBus.emit(EVENTS.SHOW_TOAST, { message: "Nicht genug Geld für den Bolzenschneider!", type: 'fail' });
                 this.resume();
@@ -144,14 +144,14 @@ class Game {
         });
 
         // Fix Etappe 7.2.1: Friseur-Ticket Flow konsolidiert
-        eventBus.subscribe(EVENTS.BUY_BARBER_TICKET, ({ barber, barberName }) => {
-            const cost = 50; 
-            if (!this.canAfford(cost)) {
+        eventBus.subscribe(EVENTS.BUY_BARBER_TICKET, ({ barber, barberName = "den Friseur", cost } = {}) => {
+            const actualCost = cost || CONFIG.PRICES.BARBER_TIP || 50;
+            if (!this.canAfford(actualCost)) {
                 eventBus.emit(EVENTS.SHOW_TOAST, { message: "Nicht genug Kohle für den Friseur!", type: 'fail' });
                 return;
             }
 
-            this.deductBudget(cost);
+            this.deductBudget(actualCost);
             eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-pub' });
             eventBus.emit(EVENTS.CLOSE_INTERACTION);
             
@@ -235,7 +235,7 @@ class Game {
         eventBus.subscribe(EVENTS.START_BICYCLE_THEFT_RNG, ({ target, riskData }) => {
             eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: "Knackversuch läuft...", logId: 'bicycle-theft-progress', notify: false });
 
-            if (Math.random() * 100 > riskData.totalRisk) {
+            if (this.#riskCalculator.checkSuccess(riskData.totalRisk)) {
                 this.#handleBicycleTheftSuccess();
             } else {
                 this.#handleBicycleTheftFailure();
@@ -335,40 +335,24 @@ class Game {
      * Nutzt structuredClone, um Referenz-Leaks zu verhindern.
      */
     getState() {
-        return structuredClone({
-            ...this.#budgetManager.getFinanceState(),
-            currentPlayerNodeId: this.#gameState.currentPlayerNodeId,
-            gameActive: this.#gameState.gameActive,
-            isMoving: this.#movementEngine.isMoving,
-            targetPubNodeId: this.#gameState.targetPubNodeId,
-            targetPubName: this.#gameState.targetPubName,
-            radarUnlocked: this.#gameState.radarUnlocked,
-            lastRadarTime: this.#gameState.lastRadarTime,
-            lastPubVisit: this.#gameState.lastPubVisit,
-            showPubCooldownText: this.#gameState.showPubCooldownText,
-            moveCount: this.#gameState.moveCount,
-            missionPhase: this.#gameState.missionPhase,
-            infoMenuOpenUntilMove: this.#gameState.infoMenuOpenUntilMove,
-            isInfoMenuOpen: this.#gameState.isInfoMenuOpen,
-            activeCrimeTargets: this.#gameState.activeCrimeTargets.map(t => ({
+        const snapshot = this.#gameState.getSnapshot();
+
+        return {
+            ...snapshot,
+            // Proximity-Daten dynamisch anreichern
+            activeCrimeTargets: (snapshot.activeCrimeTargets || []).map(t => ({
                 ...t,
                 isPlayerAtTarget: this.#checkProximity(t.accessNodeId)
             })),
-            activeBarber: this.#gameState.activeBarber ? {
-                ...this.#gameState.activeBarber,
-                isPlayerAtBarber: this.#checkProximity(this.#gameState.activeBarber.accessNodeId)
+            activeBarber: snapshot.activeBarber ? {
+                ...snapshot.activeBarber,
+                isPlayerAtBarber: this.#checkProximity(snapshot.activeBarber.accessNodeId)
             } : null,
-            activeBicycleTargets: this.#gameState.activeBicycleTargets.map(t => ({
+            activeBicycleTargets: (snapshot.activeBicycleTargets || []).map(t => ({
                 ...t,
                 isPlayerAtBicycle: this.#checkProximity(t.accessNodeId)
-            })),
-            isDisguised: this.#gameState.isDisguised,
-            hasBoltCutter: this.#gameState.hasBoltCutter,
-            isBiking: this.#gameState.isBiking,
-            hasBicycle: this.#gameState.hasBicycle,
-            isInPub: this.#gameState.isInPub,
-            logbook: this.#gameState.logbook
-        });
+            }))
+        };
     }
 
     // ----------------------------------------------------------------
@@ -562,7 +546,7 @@ class Game {
 
     #checkPubArrival() {
         const diff = (Date.now() - this.#gameState.lastPubVisit) / 1000;
-        const cooldownSec = CONFIG.PUB_COOLDOWN / 1000;
+        const cooldownSec = CONFIG.COOLDOWNS.PUB / 1000;
 
         if (diff < cooldownSec) {
             const remaining = Math.ceil(cooldownSec - diff);
@@ -604,7 +588,6 @@ class Game {
         const riskData = targetNode ? this.#riskCalculator.getPoliceRiskModifier([targetNode.lat, targetNode.lon]) : { riskMalus: 0 };
         
         const finalRisk = opt.risk !== undefined ? opt.risk : Math.min(100, (opt.risk || 0) + riskData.riskMalus);
-        const roll = Math.random() * 100;
 
         // 1. Radar-Kauf (Key A)
         if (key === 'A') return this.#handleRadarPurchase();
@@ -613,7 +596,7 @@ class Game {
         if (key === 'D') return this.#handleInfoPurchase();
 
         // 3. Risiko-Check (Erwischt)
-        if (roll < finalRisk) {
+        if (!this.#riskCalculator.checkSuccess(finalRisk)) {
             return this.#handleInteractionFailure(opt);
         }
 
@@ -715,18 +698,13 @@ class Game {
         if (!targetNode) return null;
 
         const riskData = this.#riskCalculator.getPoliceRiskModifier([targetNode.lat, targetNode.lon]);
-        const baseRisk = (key === 'B') ? CONFIG.RISK_PUB_EASY : CONFIG.RISK_PUB_HARD;
-        const finalRisk = Math.min(100, baseRisk + riskData.riskMalus);
-
-        let previewText = '';
-        if (key === 'B') previewText = STRINGS.interactions.pub.previewB(finalRisk);
-        if (key === 'C') previewText = STRINGS.interactions.pub.previewC(finalRisk);
+        const preview = this.#riskCalculator.getInteractionPreview(key, riskData.riskMalus);
 
         if (riskData.riskMalus > 0) {
-            previewText = `<div style="color: #ef4444; font-weight: bold; margin-bottom: 8px;">🚨 WARNUNG: Erhöhte Polizeipräsenz im Viertel!</div>${previewText}`;
+            preview.text = `<div style="color: #ef4444; font-weight: bold; margin-bottom: 8px;">🚨 WARNUNG: Erhöhte Polizeipräsenz im Viertel!</div>${preview.text}`;
         }
 
-        return { key, risk: finalRisk, text: previewText };
+        return { key, risk: preview.risk, text: preview.text };
     }
 
     calculateTargetRisk(targetNode) {
@@ -738,9 +716,8 @@ class Game {
         if (!target) return;
 
         const riskData = this.calculateTargetRisk(target);
-        const roll = Math.random() * 100;
 
-        if (roll > riskData.totalRisk) {
+        if (this.#riskCalculator.checkSuccess(riskData.totalRisk)) {
             // Erfolg
             this.#gameState.isBiking = true;
             this.#gameState.activeBicycleTargets = [];
@@ -855,11 +832,18 @@ class Game {
     }
 
     #registerBarberFlow() {
-        eventBus.subscribe(EVENTS.BARBER_TRANSFORM_START, () => {
+        eventBus.subscribe(EVENTS.BARBER_TRANSFORM_START, (payload) => {
+            const cost = payload?.cost || CONFIG.PRICES.BARBER;
+            if (!this.canAfford(cost)) {
+                eventBus.emit(EVENTS.SHOW_TOAST, { message: "Nicht genug Kohle für das Umstyling!", type: 'fail' });
+                return;
+            }
+
             // 1. Visuelles Feedback via Event (MapView/UIAnimator hört hierauf)
             eventBus.emit(EVENTS.START_BARBER_ANIMATION);
 
-            // 2. Mechanik aktivieren
+            // 2. Mechanik aktivieren & Bezahlen
+            this.deductBudget(cost);
             this.applyBarberBuff();
             
             // 3. UI-Bereinigung
@@ -877,10 +861,17 @@ class Game {
         this.#gameState.activeBarber = null; // POI deaktivieren (aus dem State entfernen)
         
         // Fix Etappe 7.2.1: Logbuch-Eintrag für den Erfolg (Persistenz via GameState)
-        this.#gameState.addLogEntry({
+        const entry = {
             time: Date.now(),
             text: "Beim Friseur gewesen. Neues Gesicht erhalten.",
             type: 'success'
+        };
+        this.#gameState.addLogEntry(entry);
+        
+        // UI-Synchronisation via Event
+        eventBus.emit(EVENTS.ADD_LOG_ENTRY, {
+            shortText: entry.text,
+            notify: true
         });
 
         this.#notifyStateChange();
@@ -894,40 +885,32 @@ class Game {
         const target = this.#gameState.activeCrimeTargets?.find(t => t.id === targetId);
         if (!target) return null;
 
-        const riskData = this.#riskCalculator.getPoliceRiskModifier([target.lat, target.lon]);
+        const options = this.#riskCalculator.getBurglaryOptions(target);
         
-        let mult = 1.0;
-        if (target.type === 'commercial') mult = 1.2;
-        if (target.type === 'public') mult = 1.5;
-        if (target.type === 'allotments') mult = 0.6;
-
-        const warning = riskData.riskMalus > 0 ? '🚨 ' : '';
-        const warningSuffix = riskData.riskMalus > 0 ? ' (Hohe Polizeipräsenz!)' : '';
-
         return {
             title: STRINGS.interactions.burglary.title(target.type),
             options: {
                 A: { 
-                    text: `${warning}${STRINGS.interactions.burglary.optionA}${warningSuffix}`, 
-                    risk: Math.min(95, Math.round((CONFIG.RISK_BURGLARY_EASY + riskData.riskMalus) * mult)), 
-                    reward: 180, 
-                    preview: (warning ? `<div style="color: #ef4444; font-weight: bold;">🚨 WARNUNG: Hohes Risiko durch Polizei!</div>` : '') + STRINGS.interactions.burglary.previewA,
+                    text: `${options.warning}${STRINGS.interactions.burglary.optionA}${options.warningSuffix}`, 
+                    risk: options.A.risk, 
+                    reward: options.A.reward, 
+                    preview: (options.warning ? `<div style="color: #ef4444; font-weight: bold;">🚨 WARNUNG: Hohes Risiko durch Polizei!</div>` : '') + STRINGS.interactions.burglary.previewA,
                     successMsg: STRINGS.interactions.burglary.success,
                     caughtMsg: STRINGS.interactions.burglary.caught
                 },
                 B: { 
-                    text: `${warning}${STRINGS.interactions.burglary.optionB}${warningSuffix}`, 
-                    risk: Math.min(95, Math.round((CONFIG.RISK_BURGLARY_MEDIUM + riskData.riskMalus) * mult)), 
-                    reward: 450, 
-                    preview: (warning ? `<div style="color: #ef4444; font-weight: bold;">🚨 WARNUNG: Hohes Risiko durch Polizei!</div>` : '') + STRINGS.interactions.burglary.previewB,
+                    text: `${options.warning}${STRINGS.interactions.burglary.optionB}${options.warningSuffix}`, 
+                    risk: options.B.risk, 
+                    reward: options.B.reward, 
+                    preview: (options.warning ? `<div style="color: #ef4444; font-weight: bold;">🚨 WARNUNG: Hohes Risiko durch Polizei!</div>` : '') + STRINGS.interactions.burglary.previewB,
                     successMsg: STRINGS.interactions.burglary.success,
                     caughtMsg: STRINGS.interactions.burglary.caught
                 },
                 C: { 
-                    text: `${warning}${STRINGS.interactions.burglary.optionC}${warningSuffix}`, 
-                    risk: Math.min(98, Math.round((CONFIG.RISK_BURGLARY_HARD + riskData.riskMalus) * mult)), 
-                    reward: 1350, 
-                    preview: (warning ? `<div style="color: #ef4444; font-weight: bold;">🚨 WARNUNG: Hohes Risiko durch Polizei!</div>` : '') + STRINGS.interactions.burglary.previewC,
+                    text: `${options.warning}${STRINGS.interactions.burglary.optionC}${options.warningSuffix}`, 
+                    risk: options.C.risk, 
+                    reward: options.C.reward, 
+                    preview: (options.warning ? `<div style="color: #ef4444; font-weight: bold;">🚨 WARNUNG: Hohes Risiko durch Polizei!</div>` : '') + STRINGS.interactions.burglary.previewC,
                     successMsg: STRINGS.interactions.burglary.success,
                     caughtMsg: STRINGS.interactions.burglary.caught
                 }

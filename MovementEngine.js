@@ -1,21 +1,25 @@
 import { eventBus } from './EventBus.js';
 import { CONFIG } from './GameConfig.js';
 import { EVENTS } from './EventTypes.js';
+import { throttle } from './Utils.js';
 
 /**
  * MovementEngine - Kapselt die Bewegungs-Mechanik und Animation.
  * Entlastet Game.js von der rAF-Schleife und Interpolation.
  */
 export class MovementEngine {
+    #gameState;
     #mapData;
-    #isMoving = false;
     #animFrameId = null;
-
-    constructor(mapData) {
+    
+    constructor(mapData, gameState) {
         this.#mapData = mapData;
+        this.#gameState = gameState;
     }
 
-    get isMoving() { return this.#isMoving; }
+
+
+    get isMoving() { return this.#gameState.isMoving; }
 
     /**
      * Startet die Bewegung zu einem Zielknoten.
@@ -25,14 +29,14 @@ export class MovementEngine {
      * @param {Object} options - Callbacks (onTick, onComplete) und Context
      */
     moveTo(targetId, startNodeId, isBiking, options) {
-        if (this.#isMoving) return;
+        if (this.#gameState.isMoving) return;
 
         const neighbors = this.#mapData.getNeighbors(startNodeId, isBiking);
         const neighbor = neighbors.find(nb => String(nb.id) === String(targetId));
         
         if (!neighbor) return;
 
-        this.#isMoving = true;
+        this.#gameState.isMoving = true;
         
         const ctx = this.#prepareMovement(neighbor, targetId, startNodeId, isBiking, options);
         
@@ -46,7 +50,7 @@ export class MovementEngine {
      * Bricht laufende Animationen ab (Fix für rAF Memory Leak).
      */
     stop() {
-        this.#isMoving = false;
+        this.#gameState.isMoving = false;
         if (this.#animFrameId) {
             cancelAnimationFrame(this.#animFrameId);
             this.#animFrameId = null;
@@ -58,12 +62,12 @@ export class MovementEngine {
         const startNode = this.#mapData.getNode(startNodeId);
         const fullPath = [[startNode.lat, startNode.lon], ...edge.path];
 
-        const costMultiplier = isBiking ? 1.5 : 1.0;
+        const costMultiplier = isBiking ? CONFIG.MULTIPLIERS.BIKING_COST : 1.0;
         const totalCost = Math.max(1, Math.ceil(edge.distance * CONFIG.COST_PER_METER * costMultiplier));
         const budgetAtStart = options.currentBudget;
 
-        // Geschwindigkeit: 240 m/s (Biking) vs 120 m/s (Walking)
-        const speed = isBiking ? 240 : 120;
+        // Geschwindigkeit: m/s laut Config
+        const speed = isBiking ? CONFIG.MOVEMENT.SPEED_BIKING : CONFIG.MOVEMENT.SPEED_WALKING;
         const durationMs = (edge.distance / speed) * 1000;
         const startTime = performance.now();
 
@@ -78,7 +82,7 @@ export class MovementEngine {
     }
 
     #animateMovement(now, ctx, options) {
-        if (!this.#isMoving) return;
+        if (!this.#gameState.isMoving) return;
 
         const elapsed = now - ctx.startTime;
         const t = Math.min(elapsed / ctx.durationMs, 1);
@@ -108,7 +112,7 @@ export class MovementEngine {
     }
 
     #finishMovement(targetId, options) {
-        this.#isMoving = false;
+        this.#gameState.isMoving = false;
         this.#animFrameId = null;
 
         if (options.onComplete) {
