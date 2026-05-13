@@ -36,6 +36,9 @@ class Game {
     #riskCalculator;
     #gameState;
 
+    /** @type {Function[]} */
+    #subscriptions = [];
+
     /**
      * @param {MapData} mapData
      * @param {MissionService} missionService
@@ -81,19 +84,23 @@ class Game {
     // ================================================================
 
     #registerGameControlFlows() {
-        eventBus.subscribe(EVENTS.RESUME_GAME, () => {
-            eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-find-target' });
-            this.resume();
-        });
+        this.#subscriptions.push(
+            eventBus.subscribe(EVENTS.RESUME_GAME, () => {
+                eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-find-target' });
+                this.resume();
+            })
+        );
 
-        eventBus.subscribe(EVENTS.TOGGLE_DEV_ENCOUNTERS, () => {
-            this.#gameState.devEncountersDisabled = !this.#gameState.devEncountersDisabled;
-            const msg = this.#gameState.devEncountersDisabled
-                ? 'Dev-Mode: Zufallsereignisse deaktiviert.'
-                : 'Dev-Mode: Zufallsereignisse wieder aktiv.';
-            eventBus.emit(EVENTS.SHOW_TOAST, { message: msg, type: 'info' });
-            this.#notifyStateChange();
-        });
+        this.#subscriptions.push(
+            eventBus.subscribe(EVENTS.TOGGLE_DEV_ENCOUNTERS, () => {
+                this.#gameState.devEncountersDisabled = !this.#gameState.devEncountersDisabled;
+                const msg = this.#gameState.devEncountersDisabled
+                    ? 'Dev-Mode: Zufallsereignisse deaktiviert.'
+                    : 'Dev-Mode: Zufallsereignisse wieder aktiv.';
+                eventBus.emit(EVENTS.SHOW_TOAST, { message: msg, type: 'info' });
+                this.#notifyStateChange();
+            })
+        );
     }
 
     // ================================================================
@@ -196,6 +203,24 @@ class Game {
 
     isGameActive() {
         return this.#gameState.gameActive;
+    }
+
+    /**
+     * Kaskadierender Teardown: Zerstört alle Controller und meldet eigene Listener ab.
+     */
+    destroy() {
+        log('[GAME] Kaskadierender Teardown wird ausgefuehrt...');
+        
+        // 1. Controller zerstoeren
+        if (this.#movementController) this.#movementController.destroy();
+        if (this.#crimeController)    this.#crimeController.destroy();
+        if (this.#economyController)  this.#economyController.destroy();
+
+        // 2. Eigene Subscriptions abmelden
+        this.#subscriptions.forEach(unsub => unsub());
+        this.#subscriptions = [];
+
+        log('[GAME] Teardown abgeschlossen.');
     }
 
     // ================================================================

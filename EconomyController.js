@@ -78,7 +78,7 @@ export class EconomyController {
             
             this.#gameState.gameActive = false;
             eventBus.emit(EVENTS.GAME_PAUSED);
-            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBarberDialog());
+            eventBus.emit(EVENTS.BARBER_INTERACTION_READY, { barber, price: 50 });
         });
 
         // Barber-Info (Tipp vom Kneipier)

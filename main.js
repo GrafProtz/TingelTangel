@@ -34,12 +34,30 @@ async function initApp() {
     const mapData = new MapData();
     let mapView;
     const missionService = new MissionService(mapData);
-    const game    = new Game(mapData, missionService);
+    let game    = null; // Wird in setupGameSession (re)instanziiert
     const hud     = new HUDManager();
     const interaction = new InteractionManager();
     const notification = new NotificationManager();
     const saveManager = new SaveManager();
     const uiManager = new UIManager();
+    const devBtn = document.getElementById('dev-toggle-encounters');
+
+    /** @type {Function[]} Array für anonyme Subscriptions in main.js */
+    let appSubscriptions = [];
+
+    /** Hilfsfunktion zum sauberen Abmelden aller main.js Listener */
+    const clearAppSubscriptions = () => {
+        if (appSubscriptions.length > 0) {
+            log(`[MAIN] Bereinige ${appSubscriptions.length} App-Subscriptions...`);
+            appSubscriptions.forEach(unsub => unsub());
+            appSubscriptions = [];
+        }
+    };
+
+    /** Hilfs-Wrapper für EventBus-Sub in main.js */
+    const appSub = (event, handler) => {
+        appSubscriptions.push(eventBus.subscribe(event, handler));
+    };
 
     // Dropdown dynamisch füllen
     const dropdown = document.getElementById('city-dropdown-intro');
@@ -53,162 +71,208 @@ async function initApp() {
         });
     }
 
-    let missionPOI = null;
+    /**
+     * Registriert alle session-spezifischen Listener für die UI-Bridge.
+     * Wird bei jedem Session-Start aufgerufen, nachdem alte Listener entfernt wurden.
+     */
+    const registerSessionListeners = () => {
+        clearAppSubscriptions();
+        log("[MAIN] Registriere Session-Listener neu...");
 
-    // ----- Core Game Events -----
-    eventBus.subscribe(EVENTS.PLAYER_POSITION_UPDATED, ({ lat, lon }) => {
-        mapView.updatePlayerPosition([lat, lon]);
-    });
-
-    eventBus.subscribe(EVENTS.FIRST_MOVE_COMPLETED, () => {
-        eventBus.emit(EVENTS.TOGGLE_INFO, false);
-    });
-
-    // ----- UI-Bridge: Crime-Events (Etappe 3) -----
-    // Der CrimeController feuert reine Daten-Events.
-    // Hier wird die Verbindung zur DialogFactory hergestellt.
-    eventBus.subscribe(EVENTS.BURGLARY_RESOLVED, (payload) => {
-        if (payload.outcome === 'aborted') {
-            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglaryAbort());
-        } else if (payload.outcome === 'caught') {
-            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglaryCaught(payload.fine));
-        } else if (payload.outcome === 'success') {
-            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglarySuccess(payload.loot, payload.debtAmount));
-        }
-    });
-
-    eventBus.subscribe(EVENTS.BICYCLE_THEFT_RESOLVED, (payload) => {
-        if (payload.outcome === 'success') {
-            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleTheftSuccess());
-        } else {
-            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleTheftFailure(payload.fine));
-        }
-    });
-
-    // ----- UI-Bridge: Economy-Events (Etappe 4) -----
-    eventBus.subscribe(EVENTS.RADAR_TUTORIAL_TRIGGERED, (payload) => {
-        eventBus.emit(EVENTS.SHOW_INFO_CASCADE, DialogFactory.getRadarTutorial(payload.stationCount));
-    });
-
-    // ----- Mission & Target Spawning -----
-    eventBus.subscribe(EVENTS.SPAWN_TARGETS, ({ targetType, centerNodeId }) => {
-        const targets = missionService.spawnTargets(targetType, centerNodeId);
-        if (targets.length > 0) {
-            eventBus.emit(EVENTS.INTENT_SET_CRIME_TARGETS, { targets });
-            
-            // Kamera-Totale (Übersicht) anfordern
-            const coordsToFit = [];
-            
-            // 1. Spieler-Position einbeziehen (Erzeuge saubere Floats für Leaflet)
-            const playerNode = mapData.getNode(centerNodeId);
-            if (playerNode && playerNode.lat != null) {
-                coordsToFit.push([parseFloat(playerNode.lat), parseFloat(playerNode.lon)]);
-            }
-            
-            // 2. Alle Ziel-Positionen einbeziehen
-            targets.forEach(t => {
-                const node = mapData.getNode(t.accessNodeId);
-                if (node && node.lat != null) {
-                    coordsToFit.push([parseFloat(node.lat), parseFloat(node.lon)]);
-                }
-            });
-
-            // Event für MapView abfeuern
-            eventBus.emit(EVENTS.CAMERA_FIT_BOUNDS_REQUESTED, coordsToFit);
-            
-            eventBus.emit(EVENTS.SHOW_TOAST, { message: `${targets.length} Ziele in der Nähe markiert!`, type: 'success' });
-        } else {
-            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Keine passenden Gebäude gefunden.", type: 'fail' });
-        }
-    });
-
-    // ----- State Handling -----
-    // ----- Granulare UI-Updates -----
-    
-    // 1. Bewegung & Navigation: Rendert Spieler und die grünen Wege-Punkte
-    eventBus.subscribe(EVENTS.PLAYER_MOVED, (state) => {
-        if (state.currentPlayerNodeId === null) return;
-        
-        if (state.isMoving) {
-            mapView.renderNeighbors([], () => {});
-            return;
-        }
-
-        const node = mapData.getNode(state.currentPlayerNodeId);
-        if (node) mapView.renderPlayer([node.lat, node.lon]);
-
-        const neighbors = mapData.getNeighbors(state.currentPlayerNodeId, state.isBiking);
-        mapView.renderNeighbors(neighbors, state.targetPubNodeId, state.isBiking, state.lastPubVisit, (clickedId) => {
-            eventBus.emit(EVENTS.INTENT_MOVE_PLAYER, { targetId: clickedId });
+        // ----- Core Game Events -----
+        appSub(EVENTS.PLAYER_POSITION_UPDATED, ({ lat, lon }) => {
+            mapView?.updatePlayerPosition([lat, lon]);
         });
-    });
 
-    // 2. POI-Management: Rendert Icons für Ziele, Barber und Fahrräder
-    eventBus.subscribe(EVENTS.TARGETS_UPDATED, (state) => {
-        const poiList = [];
-        
-        // Primäres Ziel (Kneipe)
-        const targetNode = mapData.getNode(state.targetPubNodeId);
-        if (targetNode) {
-            poiList.push({ ...targetNode, type: 'pub', isPrimary: true });
-        }
+        appSub(EVENTS.FIRST_MOVE_COMPLETED, () => {
+            eventBus.emit(EVENTS.TOGGLE_INFO, false);
+        });
 
-        // Einbruchs-Ziele
-        if (state.activeCrimeTargets) {
-            state.activeCrimeTargets.forEach(target => {
-                const accessNode = mapData.getNode(target.accessNodeId);
-                poiList.push({
-                    ...target,
-                    accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
-                    onClickCallback: () => {
-                        eventBus.emit(EVENTS.INTENT_SCOUT_TARGET, { target });
-                    }
-                });
-            });
-        }
+        // ----- UI-Bridge: Crime-Events (Etappe 3) -----
+        appSub(EVENTS.BURGLARY_RESOLVED, (payload) => {
+            if (payload.outcome === 'aborted') {
+                eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglaryAbort());
+            } else if (payload.outcome === 'caught') {
+                eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglaryCaught(payload.fine));
+            } else if (payload.outcome === 'success') {
+                eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglarySuccess(payload.loot, payload.debtAmount));
+            }
+        });
 
-        // Friseur (Tarnung)
-        if (state.activeBarber) {
-            const b = state.activeBarber;
-            const accessNode = mapData.getNode(b.accessNodeId);
-            poiList.push({
-                ...b,
-                type: 'barber',
-                accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
-                onClickCallback: () => {
-                    eventBus.emit(EVENTS.INTENT_BARBER_TARGET, { barber: b });
+        appSub(EVENTS.BICYCLE_THEFT_RESOLVED, (payload) => {
+            if (payload.outcome === 'success') {
+                eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleTheftSuccess());
+            } else {
+                eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleTheftFailure(payload.fine));
+            }
+        });
+
+        // ----- UI-Bridge: Economy-Events (Etappe 4) -----
+        appSub(EVENTS.RADAR_TUTORIAL_TRIGGERED, (payload) => {
+            eventBus.emit(EVENTS.SHOW_INFO_CASCADE, DialogFactory.getRadarTutorial(payload.stationCount));
+        });
+
+        // ----- Mission & Target Spawning -----
+        appSub(EVENTS.SPAWN_TARGETS, ({ targetType, centerNodeId }) => {
+            const targets = missionService.spawnTargets(targetType, centerNodeId);
+            if (targets.length > 0) {
+                eventBus.emit(EVENTS.INTENT_SET_CRIME_TARGETS, { targets });
+                const coordsToFit = [];
+                const playerNode = mapData.getNode(centerNodeId);
+                if (playerNode && playerNode.lat != null) {
+                    coordsToFit.push([parseFloat(playerNode.lat), parseFloat(playerNode.lon)]);
                 }
-            });
-        }
-
-        // Fahrräder (Diebstahl)
-        if (state.activeBicycleTargets) {
-            state.activeBicycleTargets.forEach(target => {
-                const accessNode = mapData.getNode(target.accessNodeId);
-                poiList.push({
-                    ...target,
-                    type: 'bicycle',
-                    accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
-                    onClickCallback: () => {
-                        eventBus.emit(EVENTS.INTENT_BICYCLE_TARGET, { target });
+                targets.forEach(t => {
+                    const node = mapData.getNode(t.accessNodeId);
+                    if (node && node.lat != null) {
+                        coordsToFit.push([parseFloat(node.lat), parseFloat(node.lon)]);
                     }
                 });
+                eventBus.emit(EVENTS.CAMERA_FIT_BOUNDS_REQUESTED, coordsToFit);
+                eventBus.emit(EVENTS.SHOW_TOAST, { message: `${targets.length} Ziele in der Naehe markiert!`, type: 'success' });
+            } else {
+                eventBus.emit(EVENTS.SHOW_TOAST, { message: "Keine passenden Gebaeude gefunden.", type: 'fail' });
+            }
+        });
+
+        // ----- State Handling & UI-Updates -----
+        appSub(EVENTS.PLAYER_MOVED, (state) => {
+            if (state.currentPlayerNodeId === null) return;
+            if (state.isMoving) {
+                mapView?.renderNeighbors([], () => {});
+                return;
+            }
+            const node = mapData.getNode(state.currentPlayerNodeId);
+            if (node) mapView?.renderPlayer([node.lat, node.lon]);
+            const neighbors = mapData.getNeighbors(state.currentPlayerNodeId, state.isBiking);
+            mapView?.renderNeighbors(neighbors, state.targetPubNodeId, state.isBiking, state.lastPubVisit, (clickedId) => {
+                eventBus.emit(EVENTS.INTENT_MOVE_PLAYER, { targetId: clickedId });
             });
-        }
+        });
 
-        mapView.renderPOIs(poiList);
-    });
+        appSub(EVENTS.TARGETS_UPDATED, (state) => {
+            const poiList = [];
+            const targetNode = mapData.getNode(state.targetPubNodeId);
+            if (targetNode) {
+                poiList.push({ ...targetNode, type: 'pub', isPrimary: true });
+            }
+            if (state.activeCrimeTargets) {
+                state.activeCrimeTargets.forEach(target => {
+                    const accessNode = mapData.getNode(target.accessNodeId);
+                    poiList.push({
+                        ...target,
+                        accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
+                        onClickCallback: () => {
+                            eventBus.emit(EVENTS.INTENT_SCOUT_TARGET, { target });
+                        }
+                    });
+                });
+            }
+            if (state.activeBarber) {
+                const b = state.activeBarber;
+                const accessNode = mapData.getNode(b.accessNodeId);
+                poiList.push({
+                    ...b,
+                    type: 'barber',
+                    accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
+                    onClickCallback: () => {
+                        eventBus.emit(EVENTS.INTENT_BARBER_TARGET, { barber: b });
+                    }
+                });
+            }
+            if (state.activeBicycleTargets) {
+                state.activeBicycleTargets.forEach(target => {
+                    const accessNode = mapData.getNode(target.accessNodeId);
+                    poiList.push({
+                        ...target,
+                        type: 'bicycle',
+                        accessNodeCoords: accessNode ? { lat: accessNode.lat, lon: accessNode.lon } : null,
+                        onClickCallback: () => {
+                            eventBus.emit(EVENTS.INTENT_BICYCLE_TARGET, { target });
+                        }
+                    });
+                });
+            }
+            mapView?.renderPOIs(poiList);
+        });
 
-    // 3. Fallback / Globaler Sync (z.B. für Load/Save)
-    eventBus.subscribe(EVENTS.GAME_STATE_CHANGED, (state) => {
-        // Initiale Events triggern, falls nötig
-        if (state.currentPlayerNodeId && !state.isMoving) {
-            // Wir nutzen die granularen Events, um den Initial-Zustand zu zeichnen
-            eventBus.emit(EVENTS.PLAYER_MOVED, state);
-            eventBus.emit(EVENTS.TARGETS_UPDATED, state);
-        }
-    });
+        appSub(EVENTS.GAME_STATE_CHANGED, (state) => {
+            if (state.currentPlayerNodeId && !state.isMoving) {
+                eventBus.emit(EVENTS.PLAYER_MOVED, state);
+                eventBus.emit(EVENTS.TARGETS_UPDATED, state);
+            }
+        });
 
+        appSub(EVENTS.BICYCLE_THEFT_SUCCESS_DONE, () => {
+            eventBus.emit(EVENTS.SHOW_INFO_CASCADE, {
+                title: "Fahrrad-Modus",
+                shortText: "Hotkey F: Auf/Absteigen. Vorsicht: 15 Cent/Meter (1,5x Preise)!",
+                fullText: "Hoer zu, Freundchen. Das Rad gehoert jetzt dir. Damit bist du doppelt so schnell unterwegs, aber du faellst auch mehr auf. Das kostet dich natuerlich auch mehr. Logo, versteht sich. Mit 'F' kannst du jederzeit auf- oder absteigen, um unauffaellig zu bleiben.",
+                nextEvent: EVENTS.RESUME_GAME
+            });
+        });
+
+        appSub(EVENTS.OPTION_C_CLICKED, () => {
+            eventBus.emit(EVENTS.INTENT_REQUEST_BARBER_INFO);
+        });
+
+        appSub(EVENTS.BARBER_INFO_READY, ({ barber }) => {
+            const barberName = sanitizeHTML(barber?.tags?.name) || "Schnittwunde";
+            eventBus.emit(EVENTS.SHOW_DIALOG, {
+                title: 'Ein zwielichtiger Tipp',
+                text: `Ich kenne da jemanden. Geh zu '<strong>${barberName}</strong>'. Lass dir die Haare faerben, setz eine Brille auf. Wenn du nicht aussiehst wie ein typischer Einbrecher, faellst du weniger auf. Das halbiert dein Risiko und die Hausbesitzer schoepfen nicht so schnell Verdacht, was deine Abbruchquote drastisch senkt.`,
+                buttons: [
+                    { text: 'Einverstanden (50 Euro)', event: EVENTS.BUY_BARBER_TICKET, payload: { barber, barberName } },
+                    { text: 'Ablehnen', event: EVENTS.RESUME_GAME }
+                ]
+            });
+        });
+
+        appSub(EVENTS.OPTION_D_CLICKED, () => {
+            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBoltCutterDialog(75));
+        });
+
+        appSub(EVENTS.PUB_TARGET_REACHED, () => {
+            game?.pause();
+            mapView?.playCinematicSequence('door', 1500, () => {});
+        });
+
+        appSub(EVENTS.START_POLICE_REVEAL, async () => {
+            const policeStations = mapData.getPoliceStations();
+            const playerNode = mapData.getNode(game.getState().currentPlayerNodeId);
+            const playerCoords = playerNode ? [playerNode.lat, playerNode.lon] : null;
+            await mapView?.playPoliceRevealSequence(policeStations, playerCoords);
+            game?.resume();
+        });
+
+        appSub(EVENTS.RADAR_SEQUENCE_START, async () => {
+            eventBus.emit(EVENTS.INTENT_TRIGGER_RADAR, { force: true });
+        });
+
+        appSub(EVENTS.RADAR_RESULT_READY, async (result) => {
+            await mapView?.playPoliceRevealSequence(result.stations, result.playerCoords);
+            game?.resume();
+        });
+
+        appSub(EVENTS.BICYCLE_INTERACTION_READY, ({ target, riskData }) => {
+            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleInteractionDialog(riskData, target));
+        });
+
+        appSub(EVENTS.BARBER_INTERACTION_READY, () => {
+            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBarberDialog());
+        });
+
+        // Dev-Tool UI Sync
+        appSub(EVENTS.GAME_STATE_CHANGED, (state) => {
+            if (devBtn) {
+                devBtn.classList.toggle('active', state.devEncountersDisabled);
+                devBtn.title = state.devEncountersDisabled ? "Ereignisse: DEAKTIVIERT" : "Ereignisse: AKTIV";
+            }
+        });
+    };
+
+    // ----- Globale UI Handlers (Session-uebergreifend) -----
+    
     // Globaler Key-Listener für Fahrrad-Toggle (Taste F)
     window.addEventListener('keydown', (e) => {
         if (e.key.toLowerCase() === 'f') {
@@ -216,101 +280,26 @@ async function initApp() {
         }
     });
 
-    eventBus.subscribe(EVENTS.BICYCLE_THEFT_SUCCESS_DONE, () => {
-        eventBus.emit(EVENTS.SHOW_INFO_CASCADE, {
-            title: "Fahrrad-Modus",
-            shortText: "Hotkey F: Auf/Absteigen. Vorsicht: 15 Cent/Meter (1,5x Preise)!",
-            fullText: "Hör zu, Freundchen. Das Rad gehört jetzt dir. Damit bist du doppelt so schnell unterwegs, aber du fällst auch mehr auf. Das kostet dich natürlich auch mehr. Logo, versteht sich. Mit 'F' kannst du jederzeit auf- oder absteigen, um unauffällig zu bleiben.",
-            nextEvent: EVENTS.RESUME_GAME
-        });
-    });
-
-
-    
-    eventBus.subscribe(EVENTS.OPTION_C_CLICKED, () => {
-        eventBus.emit(EVENTS.INTENT_REQUEST_BARBER_INFO);
-    });
-
-    eventBus.subscribe(EVENTS.BARBER_INFO_READY, ({ barber }) => {
-        const barberName = sanitizeHTML(barber?.tags?.name) || "Schnittwunde";
-        
-        eventBus.emit(EVENTS.SHOW_DIALOG, {
-            title: 'Ein zwielichtiger Tipp',
-            text: `Ich kenne da jemanden. Geh zu '<strong>${barberName}</strong>'. Lass dir die Haare färben, setz eine Brille auf. Wenn du nicht aussiehst wie ein typischer Einbrecher, fällst du weniger auf. Das halbiert dein Risiko und die Hausbesitzer schöpfen nicht so schnell Verdacht, was deine Abbruchquote drastisch senkt.`,
-            buttons: [
-                { 
-                    text: 'Einverstanden (50 €)', 
-                    event: EVENTS.BUY_BARBER_TICKET, 
-                    payload: { barber, barberName } 
-                },
-                { text: 'Ablehnen', event: EVENTS.RESUME_GAME }
-            ]
-        });
-    });
-
-
-
-
-
-    eventBus.subscribe(EVENTS.OPTION_D_CLICKED, () => {
-        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBoltCutterDialog(75));
-    });
-
-    eventBus.subscribe(EVENTS.PUB_TARGET_REACHED, () => {
-        game.pause();
-        mapView.playCinematicSequence('door', 1500, () => {
-            // OPEN_INTERACTION via Game.js #notifyTargetReached
-        });
-    });
-
-    // ----- Police Reveal Sequence (Kamerafahrt nach Intro Dialog) -----
-        eventBus.subscribe(EVENTS.START_POLICE_REVEAL, async () => {
-        const policeStations = mapData.getPoliceStations();
-        const playerNode = mapData.getNode(game.getState().currentPlayerNodeId);
-        const playerCoords = playerNode ? [playerNode.lat, playerNode.lon] : null;
-
-        await mapView.playPoliceRevealSequence(policeStations, playerCoords);
-        
-        log('TRACE: Police-Reveal beendet, Spiel wird freigegeben.');
-        game.resume();
-    });
-
-    // ----- Radar Sequence (Kamerafahrt nach Kauf durch Hotkey P) -----
-    eventBus.subscribe(EVENTS.RADAR_SEQUENCE_START, async () => {
-        eventBus.emit(EVENTS.INTENT_TRIGGER_RADAR, { force: true });
-    });
-
-    eventBus.subscribe(EVENTS.RADAR_RESULT_READY, async (result) => {
-        // Warten bis die gesamte Choreografie (Zoom raus -> 5s Display -> Zoom rein) fertig ist
-        await mapView.playPoliceRevealSequence(result.stations, result.playerCoords);
-        
-        // Erst jetzt das Spiel wieder freigeben
-        log('[MAIN] Radar-Sequenz beendet, Spiel wird fortgesetzt.');
-        game.resume();
-    });
-
-    eventBus.subscribe(EVENTS.BICYCLE_INTERACTION_READY, ({ target, riskData }) => {
-        eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleInteractionDialog(riskData, target));
-    });
-
-    // ----- UI Handlers -----
-    document.addEventListener('keydown', (e) => {
-        if (e.key.toLowerCase() !== 'p') return;
-        eventBus.emit(EVENTS.INTENT_TRIGGER_RADAR, { force: false });
-    });
-
-    // Dropdown-Logik: Prüfe auf Savegame
+    // Dropdown-Logik: Pruefe auf Savegame
     document.getElementById('city-dropdown-intro')?.addEventListener('change', (e) => {
         const val = e.target.value;
         if (val === '') return;
         const city = CITIES[parseInt(val, 10)];
-        
         const hasSave = saveManager.hasSave(city.name);
         document.getElementById('btn-continue-game').style.display = hasSave ? 'block' : 'none';
     });
 
     // Hilfsfunktion zum Starten/Fortsetzen
     const setupGameSession = async (city, isContinue) => {
+        // --- 1. Kaskadierender Teardown ---
+        if (game) {
+            game.destroy();
+        }
+        registerSessionListeners();
+
+        // --- 2. Neue Instanz erzeugen ---
+        game = new Game(mapData, missionService);
+
         mapData.cityName = city.name;
         saveManager.setCurrentCity(city.name);
         
@@ -356,7 +345,7 @@ async function initApp() {
             game.startMission(scenario.startNodeId, scenario.targetNodeId, scenario.poiName);
 
             // Wenn das Modal weggeklickt wird, erwacht die Karte zum Leben
-            eventBus.subscribe(EVENTS.START_MAP_INTRO, () => {
+            appSub(EVENTS.START_MAP_INTRO, () => {
                 log("DEBUG 1: Event START_MAP_INTRO ist in main.js angekommen!");
                 mapView.renderPlayer(scenario.startCoords);
                 
@@ -388,16 +377,8 @@ async function initApp() {
     document.getElementById('back-to-menu')?.addEventListener('click', () => location.reload());
 
     // --- Dev Tools ---
-    const devBtn = document.getElementById('dev-toggle-encounters');
     devBtn?.addEventListener('click', () => {
         eventBus.emit(EVENTS.TOGGLE_DEV_ENCOUNTERS);
-    });
-
-    eventBus.subscribe(EVENTS.GAME_STATE_CHANGED, (state) => {
-        if (devBtn) {
-            devBtn.classList.toggle('active', state.devEncountersDisabled);
-            devBtn.title = state.devEncountersDisabled ? "Ereignisse: DEAKTIVIERT" : "Ereignisse: AKTIV";
-        }
     });
 }
 
