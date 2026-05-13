@@ -86,6 +86,11 @@ class MapView {
     #lockTimer;
     #targetClickHandler;
 
+    // Dirty-Checking fuer differenzielles Rendern
+    #lastRenderedPlayerNode = null;
+    #lastRenderedNeighborSet = null;
+    #renderPending = false;
+
     // ----------------------------------------------------------------
     //  Polizei-Radar
     // ----------------------------------------------------------------
@@ -248,8 +253,12 @@ class MapView {
     //  Spieler
     // ----------------------------------------------------------------
 
-    /** Erstellt oder setzt den Spieler-Marker (für Ankunft / Start). */
-    renderPlayer(coords) {
+    /** Erstellt oder setzt den Spieler-Marker (fuer Ankunft / Start). */
+    renderPlayer(coords, nodeId = null) {
+        // Dirty-Check: Nichts tun, wenn die Node-ID identisch ist
+        if (nodeId !== null && this.#lastRenderedPlayerNode === String(nodeId)) return;
+        if (nodeId !== null) this.#lastRenderedPlayerNode = String(nodeId);
+
         if (!this._playerMarker) {
             this._playerMarker = L.marker(coords, {
                 icon: L.divIcon({
@@ -287,12 +296,28 @@ class MapView {
     // ----------------------------------------------------------------
     /**
      * Rendert Nachbar-Kreuzungen als klickbare Marker.
-     * @param {number} targetNodeId
-     * @param {boolean} isBiking
-     * @param {number} lastPubVisit - Zeitstempel des letzten Besuchs
-     * @param {Function} onClickCb
+     * Debounced via requestAnimationFrame; bricht ab, wenn sich die Nachbar-Menge
+     * seit dem letzten Render nicht veraendert hat.
      */
     renderNeighbors(neighbors, targetNodeId, isBiking, lastPubVisit, onClickCb) {
+        // Dirty-Check: Berechne einen Schluessel aus der aktuellen Nachbar-Menge
+        const neighborKey = neighbors.map(nb => String(nb.id)).sort().join(',') + '|' + String(targetNodeId);
+
+        if (this.#lastRenderedNeighborSet === neighborKey) return;
+
+        // rAF-Debouncer: Nur ein Render pro Frame planen
+        if (this.#renderPending) return;
+        this.#renderPending = true;
+
+        requestAnimationFrame(() => {
+            this.#renderPending = false;
+            this.#lastRenderedNeighborSet = neighborKey;
+            this.#doRenderNeighbors(neighbors, targetNodeId, isBiking, lastPubVisit, onClickCb);
+        });
+    }
+
+    /** Interne Render-Logik (wird vom rAF-Callback aufgerufen). */
+    #doRenderNeighbors(neighbors, targetNodeId, isBiking, lastPubVisit, onClickCb) {
         if (this._neighborTimeout) clearTimeout(this._neighborTimeout);
 
         // 1. Welche IDs werden JETZT benötigt?
@@ -404,6 +429,8 @@ class MapView {
     }
 
     _clearNeighbors() {
+        // Dirty-Check-Cache ebenfalls invalidieren
+        this.#lastRenderedNeighborSet = null;
         const mapContainer = this._map.getContainer();
         if (mapContainer.classList.contains('biking-move-cursor')) {
             mapContainer.classList.remove('biking-move-cursor');

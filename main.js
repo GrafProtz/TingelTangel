@@ -145,7 +145,7 @@ async function initApp() {
                 return;
             }
             const node = mapData.getNode(state.currentPlayerNodeId);
-            if (node) mapView?.renderPlayer([node.lat, node.lon]);
+            if (node) mapView?.renderPlayer([node.lat, node.lon], state.currentPlayerNodeId);
             const neighbors = mapData.getNeighbors(state.currentPlayerNodeId, state.isBiking);
             mapView?.renderNeighbors(neighbors, state.targetPubNodeId, state.isBiking, state.lastPubVisit, (clickedId) => {
                 eventBus.emit(EVENTS.INTENT_MOVE_PLAYER, { targetId: clickedId });
