@@ -1,19 +1,20 @@
 /**
- * OverpassService.js - Netzwerk-Layer mit Caching, Retry und Validierung.
+ * OverpassService.js - Zentraler Netzwerk-Layer mit Caching, Retry und OSM-Härtung.
+ * Konsolidiert alle API-Aufrufe und verwaltet den IndexedDB Cache.
  */
 import { eventBus } from './EventBus.js';
-import { gameState, GamePhase } from './GameState.js';
 import { OSMValidator } from './OSMValidator.js';
 import { EVENTS } from './EventTypes.js';
 import { log } from './Utils.js';
 
 class OverpassService {
-    #inMemoryCache = new Map();
-    #pendingRequests = new Map();
-    #endpoint = 'https://overpass-api.de/api/interpreter';
     #dbName = 'GridCrimeOSM';
     #storeName = 'osm_cache';
     #CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 Tage
+    #endpoint = 'https://overpass-api.de/api/interpreter';
+    
+    /** @type {Map<string, Promise>} Request-Locking gegen Mehrfach-Loads */
+    #pendingRequests = new Map();
 
     constructor() {
         if (OverpassService.instance) return OverpassService.instance;
@@ -22,18 +23,18 @@ class OverpassService {
 
     /**
      * Hauptmethode zum Laden von Stadtdaten.
-     * Implementiert Request-Locking und Cache-Validierung.
+     * Implementiert Cache-Check, Fetch-Retry und OSM-Validierung.
      */
     async fetchCityData(coords) {
         const cacheKey = this.#generateCacheKey(coords);
 
-        // 1. Request-Locking: Falls derselbe Bereich gerade geladen wird, hänge dich an das Promise
+        // 1. Request-Locking (De-Duplizierung)
         if (this.#pendingRequests.has(cacheKey)) {
-            log(`[OverpassService] Request-Lock aktiv für: ${cacheKey}`);
+            log(`[OverpassService] Bestehender Request erkannt für: ${cacheKey}`);
             return this.#pendingRequests.get(cacheKey);
         }
 
-        const fetchPromise = this.#executeFetchFlow(coords, cacheKey);
+        const fetchPromise = this.#executeFlow(coords, cacheKey);
         this.#pendingRequests.set(cacheKey, fetchPromise);
 
         try {
@@ -43,31 +44,33 @@ class OverpassService {
         }
     }
 
-    async #executeFetchFlow(coords, cacheKey) {
-        // 2. Cache-Check (Memory -> DB)
-        const cachedData = await this.#getFromCache(cacheKey);
-        if (cachedData) {
-            this.#finalize(cachedData);
-            return cachedData;
+    async #executeFlow(coords, cacheKey) {
+        // 2. Cache-Check
+        const cached = await this.#getFromCache(cacheKey);
+        if (cached) {
+            log(`[OverpassService] Cache-Hit für ${cacheKey}`);
+            return cached;
         }
 
-        // 3. API Fetch
-        gameState.setPhase(GamePhase.LOADING_MAP);
-        eventBus.emit(EVENTS.API_FETCH_START, { coords });
-
+        // 3. API Fetch mit Retry-Logik
+        eventBus.emit(EVENTS.MAP_LOAD_PROGRESS, { stage: 'download', progress: 0, message: 'Lade Stadt-Daten von OSM...' });
+        
         const query = this.#buildQuery(coords);
-
+        
         try {
             const rawData = await this.#fetchWithRetry(query);
+            
+            // 4. Strikte Middleware: Validierung & Sanitizing
+            eventBus.emit(EVENTS.MAP_LOAD_PROGRESS, { stage: 'parsing', progress: 0, message: 'Härte Daten (XSS-Schutz)...' });
             const cleanData = OSMValidator.validate(rawData);
             
+            // 5. Caching
             await this.#saveToCache(cacheKey, cleanData);
-            this.#finalize(cleanData);
+            
             return cleanData;
         } catch (error) {
-            console.error("[OverpassService] API-Fehler:", error);
-            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Verbindung fehlgeschlagen.", type: 'fail' });
-            gameState.setPhase(GamePhase.INIT);
+            console.error("[OverpassService] Kritischer Ladefehler:", error);
+            eventBus.emit(EVENTS.MAP_LOAD_ERROR, { error: error.message });
             throw error;
         }
     }
@@ -83,53 +86,48 @@ class OverpassService {
         const range = 0.008;
         const s = coords[0] - range, w = coords[1] - range;
         const n = coords[0] + range, e = coords[1] + range;
-        return `[out:json][timeout:60];(way["highway"](${s},${w},${n},${e});node["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});node["amenity"~"police|police_station"](${s},${w},${n},${e});way["building"](${s},${w},${n},${e});node["shop"="hairdresser"](${s},${w},${n},${e});node["amenity"="bicycle_parking"](${s},${w},${n},${e}););(._;>;);out body center;`;
+        return `[out:json][timeout:60];(
+            way["highway"](${s},${w},${n},${e});
+            node["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
+            way["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
+            node["amenity"~"police|police_station"](${s},${w},${n},${e});
+            way["amenity"~"police|police_station"](${s},${w},${n},${e});
+            way["building"](${s},${w},${n},${e});
+            node["shop"="hairdresser"](${s},${w},${n},${e});
+            way["shop"="hairdresser"](${s},${w},${n},${e});
+            node["amenity"="bicycle_parking"](${s},${w},${n},${e});
+            way["amenity"="bicycle_parking"](${s},${w},${n},${e});
+            relation["amenity"~"police|police_station"](${s},${w},${n},${e});
+            node["office"="government"]["government"="police"](${s},${w},${n},${e});
+            way["office"="government"]["government"="police"](${s},${w},${n},${e});
+            relation["office"="government"]["government"="police"](${s},${w},${n},${e});
+        );(._;>;);out body center;`;
     }
 
-    async #getFromCache(cacheKey) {
-        // Memory-Check
-        if (this.#inMemoryCache.has(cacheKey)) return this.#inMemoryCache.get(cacheKey);
+    async #fetchWithRetry(query, retries = 3) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const response = await fetch(this.#endpoint, {
+                    method: 'POST',
+                    body: 'data=' + encodeURIComponent(query)
+                });
 
-        // Persistent Check (IndexedDB)
-        try {
-            const db = await this.#getDB();
-            return new Promise((resolve) => {
-                const tx = db.transaction(this.#storeName, 'readonly');
-                const store = tx.objectStore(this.#storeName);
-                const req = store.get(cacheKey);
-                req.onsuccess = () => {
-                    if (req.result) {
-                        const age = Date.now() - req.result.timestamp;
-                        if (age < this.#CACHE_TTL_MS) {
-                            this.#inMemoryCache.set(cacheKey, req.result.data);
-                            resolve(req.result.data);
-                            return;
-                        }
-                        log(`[OverpassService] Cache abgelaufen für: ${cacheKey}`);
-                    }
-                    resolve(null);
-                };
-                req.onerror = () => resolve(null);
-            });
-        } catch (e) {
-            return null;
+                if (response.status === 429 || response.status === 504) {
+                    log(`[OverpassService] Server beschäftigt (${response.status}), Retry ${i+1}/${retries}...`);
+                    await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+                    continue;
+                }
+
+                if (!response.ok) throw new Error(`Overpass API Error: ${response.status}`);
+                return await response.json();
+            } catch (err) {
+                if (i === retries - 1) throw err;
+                await new Promise(r => setTimeout(r, 1000));
+            }
         }
     }
 
-    async #saveToCache(cacheKey, data) {
-        this.#inMemoryCache.set(cacheKey, data);
-        try {
-            const db = await this.#getDB();
-            const tx = db.transaction(this.#storeName, 'readwrite');
-            tx.objectStore(this.#storeName).put({
-                cacheKey,
-                data,
-                timestamp: Date.now()
-            });
-        } catch (e) {
-            console.warn("[OverpassService] Cache-Speicherung fehlgeschlagen", e);
-        }
-    }
+    // --- IndexedDB Cache Logic ---
 
     async #getDB() {
         return new Promise((resolve, reject) => {
@@ -145,27 +143,39 @@ class OverpassService {
         });
     }
 
-    async #fetchWithRetry(query, maxRetries = 3) {
-        let lastError;
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                const response = await fetch(this.#endpoint, {
-                    method: 'POST',
-                    body: 'data=' + encodeURIComponent(query)
-                });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                return await response.json();
-            } catch (error) {
-                lastError = error;
-                if (attempt < maxRetries) await new Promise(res => setTimeout(res, Math.pow(2, attempt) * 1000));
-            }
+    async #getFromCache(cacheKey) {
+        try {
+            const db = await this.#getDB();
+            return new Promise((resolve) => {
+                const tx = db.transaction(this.#storeName, 'readonly');
+                const store = tx.objectStore(this.#storeName);
+                const req = store.get(cacheKey);
+                req.onsuccess = () => {
+                    if (req.result && (Date.now() - req.result.timestamp < this.#CACHE_TTL_MS)) {
+                        resolve(req.result.data);
+                    } else {
+                        resolve(null);
+                    }
+                };
+                req.onerror = () => resolve(null);
+            });
+        } catch (e) {
+            return null;
         }
-        throw lastError;
     }
 
-    #finalize(data) {
-        eventBus.emit(EVENTS.DATA_LOADED, data);
-        gameState.setPhase(GamePhase.READY);
+    async #saveToCache(cacheKey, data) {
+        try {
+            const db = await this.#getDB();
+            const tx = db.transaction(this.#storeName, 'readwrite');
+            tx.objectStore(this.#storeName).put({
+                cacheKey,
+                data,
+                timestamp: Date.now()
+            });
+        } catch (e) {
+            console.warn("[OverpassService] Cache-Save fehlgeschlagen:", e);
+        }
     }
 }
 

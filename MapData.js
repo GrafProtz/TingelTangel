@@ -2,81 +2,11 @@ import { CONFIG } from './GameConfig.js';
 import { eventBus } from './EventBus.js';
 import { EVENTS } from './EventTypes.js';
 import { log } from './Utils.js';
-
-/**
- * Leichtgewichtiger Wrapper für IndexedDB, spezifisch für Map-Caching.
- */
-class OSMIndexedDB {
-    constructor(dbName = 'GridCrimeOSM', storeName = 'osm_cache') {
-        this.dbName = dbName;
-        this.storeName = storeName;
-        this.version = 1;
-    }
-
-    async #getDB() {
-        return new Promise((resolve, reject) => {
-            const req = indexedDB.open(this.dbName, this.version);
-            req.onupgradeneeded = (e) => {
-                const db = e.target.result;
-                if (!db.objectStoreNames.contains(this.storeName)) {
-                    db.createObjectStore(this.storeName, { keyPath: 'cacheKey' });
-                }
-            };
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
-    }
-
-    async get(cacheKey, maxAgeMs) {
-        try {
-            const db = await this.#getDB();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(this.storeName, 'readonly');
-                const store = tx.objectStore(this.storeName);
-                const req = store.get(cacheKey);
-                req.onsuccess = () => {
-                    if (req.result) {
-                        const age = Date.now() - req.result.timestamp;
-                        if (age < maxAgeMs) {
-                            resolve(req.result.data);
-                        } else {
-                            resolve(null); // Cache abgelaufen
-                        }
-                    } else {
-                        resolve(null);
-                    }
-                };
-                req.onerror = () => reject(req.error);
-            });
-        } catch (err) {
-            console.warn('IndexedDB read failed, skipping cache.', err);
-            return null;
-        }
-    }
-
-    async set(cacheKey, data) {
-        try {
-            const db = await this.#getDB();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(this.storeName, 'readwrite');
-                const store = tx.objectStore(this.storeName);
-                const payload = {
-                    cacheKey,
-                    data,
-                    timestamp: Date.now()
-                };
-                const req = store.put(payload);
-                req.onsuccess = () => resolve();
-                req.onerror = () => reject(req.error);
-            });
-        } catch (err) {
-            console.warn('IndexedDB write failed.', err);
-        }
-    }
-}
+import { overpassService } from './OverpassService.js';
 
 /**
  * MapData - Der Data-Layer der Engine.
+ * Zuständig für Graph-Building, Spatial Indexing und POI-Management.
  */
 class MapData {
     #nodes = new Map();
@@ -90,10 +20,7 @@ class MapData {
     #gridSize = 0.001;
 
     #abortController = null;
-    #db = new OSMIndexedDB();
     
-    // 7 Tage Cache-TTL
-    #CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
     // Max ms pro Frame für Time-Slicing
     #YIELD_THRESHOLD_MS = 15;
 
@@ -113,107 +40,40 @@ class MapData {
     //  Laden
     // ----------------------------------------------------------------
 
+    /**
+     * Lädt Stadtdaten über den zentralen OverpassService.
+     * @param {Array} coords - [lat, lon]
+     */
     async loadCityData(coords) {
-        eventBus.emit(EVENTS.MAP_LOAD_START, { message: 'Prüfe Cache...' });
-
-        // 1. API Resilienz (Vorherigen Request abbrechen)
-        if (this.#abortController) this.#abortController.abort();
-        this.#abortController = new AbortController();
-
-        const range = 0.008;
-        const s = coords[0] - range, w = coords[1] - range;
-        const n = coords[0] + range, e = coords[1] + range;
-        
-        // Cache Key basierend auf Koordinaten-Bounding-Box (auf 3 Nachkommastellen gerundet)
-        const cacheKey = `osm_${s.toFixed(3)}_${w.toFixed(3)}_${n.toFixed(3)}_${e.toFixed(3)}`;
+        eventBus.emit(EVENTS.MAP_LOAD_START, { message: 'Prüfe Datenquelle...' });
 
         try {
-            let data = await this.#db.get(cacheKey, this.#CACHE_TTL_MS);
+            // Die gesamte Netzwerk- und Caching-Logik liegt nun im OverpassService
+            const data = await overpassService.fetchCityData(coords);
 
-            if (data) {
-                log(`MapData: Lade "${this.cityName}" aus IndexedDB Cache...`);
-            } else {
-                eventBus.emit(EVENTS.MAP_LOAD_PROGRESS, { stage: 'download', progress: 0, message: 'Lade Stadt-Daten von OSM...' });
-                log(`MapData: Starte Overpass-Abfrage für "${this.cityName}"...`);
-                
-                const query = `[out:json][timeout:60];(
-                    way["highway"](${s},${w},${n},${e});
-                    node["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
-                    way["amenity"~"pub|bar|restaurant"](${s},${w},${n},${e});
-                    node["amenity"~"police|police_station"](${s},${w},${n},${e});
-                    way["amenity"~"police|police_station"](${s},${w},${n},${e});
-                    way["building"](${s},${w},${n},${e});
-                    node["shop"="hairdresser"](${s},${w},${n},${e});
-                    way["shop"="hairdresser"](${s},${w},${n},${e});
-                    node["amenity"="bicycle_parking"](${s},${w},${n},${e});
-                    way["amenity"="bicycle_parking"](${s},${w},${n},${e});
-                    relation["amenity"~"police|police_station"](${s},${w},${n},${e});
-                    node["office"="government"]["government"="police"](${s},${w},${n},${e});
-                    way["office"="government"]["government"="police"](${s},${w},${n},${e});
-                    relation["office"="government"]["government"="police"](${s},${w},${n},${e});
-                );(._;>;);out body center;`;
-
-                let resp;
-                let retries = 3;
-                while (retries > 0) {
-                    try {
-                        resp = await fetch('https://overpass-api.de/api/interpreter', {
-                            method: 'POST',
-                            body: 'data=' + encodeURIComponent(query),
-                            signal: this.#abortController.signal
-                        });
-
-                        if (resp.ok) break;
-                        
-                        // Bei 504 (Timeout) oder 429 (Too Many Requests) versuchen wir es erneut
-                        if (resp.status === 504 || resp.status === 429) {
-                            console.warn(`Overpass Server busy (${resp.status}). Retrying in 3s... (${retries-1} left)`);
-                            eventBus.emit(EVENTS.MAP_LOAD_PROGRESS, { message: `Server überlastet (${resp.status}). Erneuter Versuch...` });
-                        } else {
-                            throw new Error(`Overpass API Fehler: ${resp.status}`);
-                        }
-                    } catch (e) {
-                        if (e.name === 'AbortError') throw e;
-                        if (retries <= 1) throw e;
-                        console.warn("Fetch-Fehler, versuche erneut...", e);
-                    }
-                    
-                    retries--;
-                    if (retries > 0) await new Promise(r => setTimeout(r, 3000));
-                }
-
-                if (!resp || !resp.ok) {
-                    throw new Error(`Overpass API konnte nicht geladen werden (Status: ${resp?.status || 'N/A'})`);
-                }
-
-                data = await resp.json();
-                if (!data.elements || data.elements.length === 0) {
-                    throw new Error('Keine Daten von OpenStreetMap erhalten.');
-                }
-
-                // In IndexedDB speichern
-                await this.#db.set(cacheKey, data);
+            if (!data || !data.elements) {
+                throw new Error('Ungültige Kartendaten empfangen.');
             }
 
+            // Lokales Parsing und Graph-Building (mit Time-Slicing)
             await this.#parseOSMData(data);
             await this.#buildMacroGraph();
 
             if (this.#macroGraph.size === 0) {
-                throw new Error('Keine befahrbaren Straßen gefunden.');
+                throw new Error('Keine befahrbaren Straßen im gewählten Bereich gefunden.');
             }
 
             eventBus.emit(EVENTS.MAP_LOAD_SUCCESS);
+            log(`MapData: "${this.cityName}" erfolgreich geladen und verarbeitet.`);
 
         } catch (err) {
-            if (err.name === 'AbortError') {
-                log('MapData: Request wurde abgebrochen.');
-                return;
+            console.error('MapData.loadCityData Fehler:', err);
+            // Das Error-Event wird bereits teilweise vom Service gefeuert, 
+            // aber wir fangen hier App-spezifische Graph-Fehler ab.
+            if (!err.message.includes('Aborted')) {
+                eventBus.emit(EVENTS.MAP_LOAD_ERROR, { error: err.message });
             }
-            console.error('MapData: Overpass/Loading-Fehler', err);
-            eventBus.emit(EVENTS.MAP_LOAD_ERROR, { error: err.message });
             throw err;
-        } finally {
-            this.#abortController = null;
         }
     }
 
