@@ -25,7 +25,8 @@ class MapView {
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
-            attribution: '&copy; OpenStreetMap'
+            attribution: '&copy; OpenStreetMap',
+            crossOrigin: true
         }).addTo(this._map);
 
         this._playerMarker    = null;
@@ -599,14 +600,18 @@ class MapView {
 
                 if (poi.onClickCallback) {
                     const layer = typeof marker !== 'undefined' ? marker : polygon;
-                    const el = layer?.getElement();
-                    if (el) {
-                        el.style.pointerEvents = 'auto';
-                        el.addEventListener('pointerdown', (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
+                    if (layer) {
+                        // Use native Leaflet event binding, this works reliably for both Markers and SVG Polygons
+                        layer.on('click', (e) => {
+                            L.DomEvent.stopPropagation(e);
                             poi.onClickCallback();
                         });
+                        
+                        // Ensure pointer events are active on the DOM element if available
+                        const el = layer.getElement ? layer.getElement() : null;
+                        if (el) {
+                            el.style.pointerEvents = 'auto';
+                        }
                     }
                 }
 
