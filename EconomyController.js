@@ -533,15 +533,23 @@ export class EconomyController {
         if (!this.#gameState.radarUnlocked) return null;
 
         if (!force && (Date.now() - this.#gameState.lastRadarTime < CONFIG.RADAR_COOLDOWN)) {
-            const remaining = Math.ceil(
-                (CONFIG.RADAR_COOLDOWN - (Date.now() - this.#gameState.lastRadarTime)) / 60000
-            );
+            const diffMs = CONFIG.RADAR_COOLDOWN - (Date.now() - this.#gameState.lastRadarTime);
+            const mins = Math.floor(diffMs / 60000);
+            const secs = Math.ceil((diffMs % 60000) / 1000);
+            const timeStr = mins > 0 ? `${mins} Min. ${secs} Sek.` : `${secs} Sek.`;
+
             const entry = {
+                logId: 'RADAR_STATUS',
                 time: Date.now(),
-                shortText: 'Radar im Cooldown (noch ' + remaining + ' Min).',
+                shortText: `Polizeiradar im Cooldown. Nächster Scan in: ${timeStr}`,
                 type: 'info'
             };
-            eventBus.emit(EVENTS.MUTATE_STATE, { newLogEntry: entry });
+
+            // Deduplizierung im State-Array
+            const logbook = this.#gameState.logbook.filter(e => e.logId !== 'RADAR_STATUS');
+            logbook.unshift(entry);
+
+            eventBus.emit(EVENTS.MUTATE_STATE, { logbook });
             eventBus.emit(EVENTS.ADD_LOG_ENTRY, entry);
             return 'cooldown';
         }
@@ -549,15 +557,21 @@ export class EconomyController {
         if (!force) {
             const now = Date.now();
             const entry = {
+                logId: 'RADAR_STATUS',
                 time: now,
-                shortText: 'Polizeiradar aktiviert. Scan laeuft...',
+                shortText: 'Polizeiradar aktiviert. Scan läuft...',
                 type: 'info'
             };
+
+            // Deduplizierung im State-Array
+            const logbook = this.#gameState.logbook.filter(e => e.logId !== 'RADAR_STATUS');
+            logbook.unshift(entry);
+
             eventBus.emit(EVENTS.MUTATE_STATE, {
                 lastRadarTime: now,
-                newLogEntry: entry
+                logbook
             });
-            eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: entry.shortText, type: entry.type, notify: true });
+            eventBus.emit(EVENTS.ADD_LOG_ENTRY, entry);
         }
 
         const playerNode = this.#mapData.getNode(this.#gameState.currentPlayerNodeId);

@@ -104,9 +104,11 @@ export class UIManager {
         // Sidebar Toggle
         this.#sidebarToggle?.addEventListener('click', () => this.#toggleSidebar());
 
-        // Global Key Listener (Fahrrad Toggle)
+        // Global Key Listener (Fahrrad & Radar)
         window.addEventListener('keydown', (e) => {
-            if (e.key.toLowerCase() === 'f') eventBus.emit(EVENTS.TOGGLE_BICYCLE);
+            const key = e.key.toLowerCase();
+            if (key === 'f') eventBus.emit(EVENTS.TOGGLE_BICYCLE);
+            if (key === 'p') eventBus.emit(EVENTS.INTENT_TRIGGER_RADAR, { force: false });
         });
 
         // Info-Modal Button

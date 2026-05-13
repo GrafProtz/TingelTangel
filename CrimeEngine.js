@@ -34,7 +34,7 @@ export class CrimeEngine {
             // 2. Risiko-Check (Erwischt werden)
             if (Math.random() * 100 <= riskData.totalRisk) {
                 const fine = Math.ceil(this.#gameState.budget * 0.2);
-                eventBus.emit(EVENTS.DEDUCT_BUDGET, fine);
+                eventBus.emit(EVENTS.MUTATE_STATE, { budgetDelta: -fine });
                 eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBurglaryCaught(fine));
             } else {
                 // 3. Erfolg
@@ -68,8 +68,7 @@ export class CrimeEngine {
 
         setTimeout(() => {
             if (Math.random() * 100 > riskData.totalRisk) {
-                this.#gameState.isBiking = true;
-                this.#gameState.hasBicycle = true;
+                eventBus.emit(EVENTS.MUTATE_STATE, { isBiking: true, hasBicycle: true });
                 
                 eventBus.emit(EVENTS.BIKING_STATE_CHANGED, true);
                 eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleTheftSuccess());
@@ -81,17 +80,19 @@ export class CrimeEngine {
                 eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: "🚨 Erwischt!", notify: true });
             }
             
-            this.#gameState.activeBicycleTargets = [];
+            eventBus.emit(EVENTS.MUTATE_STATE, { activeBicycleTargets: [] });
             eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'bicycle-theft-progress' });
-            eventBus.emit(EVENTS.TARGETS_UPDATED, this.#gameState.collectState());
+            eventBus.emit(EVENTS.TARGETS_UPDATED, this.#gameState.getState());
         }, 1000);
     }
 
     #resetCrimeState() {
-        this.#gameState.activeCrimeTargets = [];
-        this.#gameState.isDisguised = false;
-        this.#gameState.missionPhase = 1;
+        eventBus.emit(EVENTS.MUTATE_STATE, {
+            activeCrimeTargets: [],
+            isDisguised: false,
+            missionPhase: 1
+        });
         eventBus.emit(EVENTS.RESUME_GAME);
-        eventBus.emit(EVENTS.TARGETS_UPDATED, this.#gameState.collectState());
+        eventBus.emit(EVENTS.TARGETS_UPDATED, this.#gameState.getState());
     }
 }

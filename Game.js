@@ -109,10 +109,11 @@ class Game {
     // ================================================================
 
     getState() {
-        return this.#gameState.collectState(
-            this.#budgetManager.getFinanceState(),
-            { isMoving: this.#movementEngine.isMoving }
-        );
+        return {
+            ...this.#gameState.getState(),
+            ...this.#budgetManager.getFinanceState(),
+            isMoving: this.#movementEngine.isMoving
+        };
     }
 
     // ================================================================

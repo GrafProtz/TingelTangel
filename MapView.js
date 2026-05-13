@@ -38,6 +38,7 @@ class MapView {
 
         this.#isLockCamera = false;
         this._isIntroFlying = false;
+        this.#markerPool = [];
 
         // Globaler Kamera-Listener für entkoppelte Steuerung
         eventBus.subscribe(EVENTS.CAMERA_FIT_BOUNDS_REQUESTED, (coords) => this.fitBounds(coords));
@@ -86,6 +87,63 @@ class MapView {
     #isLockCamera;
     #lockTimer;
     #targetClickHandler;
+    #markerPool;
+
+    /**
+     * Zieht einen Marker aus dem Pool oder erstellt einen neuen.
+     * @param {L.LatLng} latlng 
+     * @param {Object} options 
+     */
+    #getMarker(latlng, options) {
+        const targetPane = options.pane || 'markerPane';
+        // Suche passenden Marker im Pool (nach Pane gefiltert)
+        const index = this.#markerPool.findIndex(m => (m.options.pane || 'markerPane') === targetPane);
+        
+        if (index !== -1) {
+            const marker = this.#markerPool.splice(index, 1)[0];
+            
+            // 1. Optionen synchronisieren & Defaults erzwingen (verhindert unsichtbare Marker)
+            marker.options.interactive = options.interactive !== undefined ? options.interactive : true;
+            marker.setOpacity(options.opacity !== undefined ? options.opacity : 1.0);
+            marker.setZIndexOffset(options.zIndexOffset !== undefined ? options.zIndexOffset : 0);
+
+            marker.setLatLng(latlng);
+            
+            // 2. DOM-Reset erzwingen
+            const el = marker.getElement();
+            if (el) {
+                el.className = 'leaflet-marker-icon leaflet-zoom-animated';
+                el.style.cssText = ''; 
+                el.innerHTML = ''; // Force Leaflet to re-render the icon content
+            }
+
+            if (options.icon) marker.setIcon(options.icon);
+            
+            return marker.addTo(this._map);
+        }
+        return L.marker(latlng, options).addTo(this._map);
+    }
+
+    /**
+     * Bereinigt einen Marker und gibt ihn in den Pool zurück.
+     * @param {L.Marker} marker 
+     */
+    #releaseMarker(marker) {
+        if (!marker) return;
+        
+        // BUGFIX: State Contamination im DOM verhindern
+        // Wir setzen das Element auf Leaflet-Standards zurück, damit alte Klassen 
+        // (z.B. .neighbor-marker) nicht am recycelten Marker hängen bleiben.
+        const el = marker.getElement();
+        if (el) {
+            el.className = 'leaflet-marker-icon leaflet-zoom-animated';
+            el.style.cssText = ''; 
+        }
+
+        marker.off(); // Alle Event-Listener (on('click') etc.) entfernen
+        this._map.removeLayer(marker);
+        this.#markerPool.push(marker);
+    }
 
     // Dirty-Checking fuer differenzielles Rendern
     #lastRenderedPlayerNode = null;
@@ -106,8 +164,14 @@ class MapView {
         // 1. Camera Lock anlegen
         this._isIntroFlying = true;
 
-        // Alte Marker sofort löschen
-        this._radarMarkers.forEach(c => this._map.removeLayer(c));
+        // Alte Marker sofort in den Pool schieben
+        this._radarMarkers.forEach(obj => {
+            if (obj instanceof L.Marker) {
+                this.#releaseMarker(obj);
+            } else {
+                this._map.removeLayer(obj);
+            }
+        });
         this._radarMarkers = [];
 
         // 2. Bounding Box (Totale) berechnen und anfliegen
@@ -147,18 +211,24 @@ class MapView {
                 this._radarMarkers.push(circle);
             });
 
-            const siren = L.marker(pos, {
+            const siren = this.#getMarker(pos, {
                 icon: sirenIcon,
                 interactive: false
-            }).addTo(this._map);
+            });
             this._radarMarkers.push(siren);
         });
 
         // 4. Dramatische Pause (5000ms), während die Stationen pulsieren
         await new Promise(r => setTimeout(r, 5000));
 
-        // 5. Polizei-Marker wieder vernichten
-        this._radarMarkers.forEach(c => this._map.removeLayer(c));
+        // 5. Polizei-Marker wieder vernichten (poolen)
+        this._radarMarkers.forEach(obj => {
+            if (obj instanceof L.Marker) {
+                this.#releaseMarker(obj);
+            } else {
+                this._map.removeLayer(obj);
+            }
+        });
         this._radarMarkers = [];
 
         // 6. Rückflug zum Spieler berechnen und ausführen
@@ -324,10 +394,10 @@ class MapView {
         // 1. Welche IDs werden JETZT benötigt?
         const newNeighborIds = new Set(neighbors.map(nb => String(nb.id)));
 
-        // 2. Diffing: Alte Marker entfernen, die nicht mehr in der Liste sind
+        // 2. Diffing: Alte Marker entfernen (poolen), die nicht mehr in der Liste sind
         for (const [id, marker] of this._neighborMarkers.entries()) {
             if (!newNeighborIds.has(id)) {
-                this._map.removeLayer(marker);
+                this.#releaseMarker(marker);
                 this._neighborMarkers.delete(id);
             }
         }
@@ -393,12 +463,12 @@ class MapView {
             } 
             // Normalfall: Kleine Kreuzungs-Marker
             else if (!this._neighborMarkers.has(nbId)) {
-                const marker = L.marker([nb.lat, nb.lon], {
+                const marker = this.#getMarker([nb.lat, nb.lon], {
                     icon: L.divIcon({
                         className: 'neighbor-marker',
                         iconSize: [12, 12]
                     })
-                }).addTo(this._map);
+                });
 
                 marker.on('click', (e) => {
                     L.DomEvent.stopPropagation(e);
@@ -438,7 +508,7 @@ class MapView {
             mapContainer.classList.remove('biking-move-cursor');
         }
 
-        this._neighborMarkers.forEach(m => this._map.removeLayer(m));
+        this._neighborMarkers.forEach(m => this.#releaseMarker(m));
         this._neighborMarkers.clear();
         this._clearGhostPath();
     }
@@ -499,10 +569,15 @@ class MapView {
         // 1. Welche IDs werden JETZT benötigt?
         const newPoiIds = new Set(poiArray.map(poi => String(poi.id)));
 
-        // 2. Diffing: Alte POI-Marker entfernen, die nicht mehr in der Liste sind
+        // 2. Diffing: Alte POI-Marker entfernen (poolen), die nicht mehr in der Liste sind
         for (const [id, marker] of this._activePOIMarkers.entries()) {
             if (!newPoiIds.has(id)) {
-                this._map.removeLayer(marker);
+                // Nur Marker poolen, Polygone werden normal gelöscht
+                if (marker instanceof L.Marker) {
+                    this.#releaseMarker(marker);
+                } else {
+                    this._map.removeLayer(marker);
+                }
                 this._activePOIMarkers.delete(id);
             }
         }
@@ -552,7 +627,7 @@ class MapView {
                     const coords = poi.resolvedCoords ?? [];
 
                     if (coords.length === 0) {
-                        marker = L.marker([poi.lat, poi.lon], {
+                        marker = this.#getMarker([poi.lat, poi.lon], {
                             icon: L.divIcon({
                                 className: 'target-marker',
                                 html: html,
@@ -562,7 +637,7 @@ class MapView {
                             pane: 'popupPane',
                             zIndexOffset: 2000,
                             interactive: !!poi.onClickCallback
-                        }).addTo(this._map);
+                        });
                         
                         if (marker.getElement()) {
                             marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
@@ -580,7 +655,7 @@ class MapView {
                         if (polygon.getElement()) polygon.getElement().setAttribute('data-node-id', poi.accessNodeId);
                     }
                 } else {
-                    marker = L.marker([poi.lat, poi.lon], {
+                    marker = this.#getMarker([poi.lat, poi.lon], {
                         icon: L.divIcon({
                             className: 'target-marker',
                             html: html,
@@ -590,7 +665,7 @@ class MapView {
                         pane: 'popupPane',
                         zIndexOffset: 2000,
                         interactive: !!poi.onClickCallback
-                    }).addTo(this._map);
+                    });
                     
                     if (marker.getElement()) {
                         marker.getElement().setAttribute('data-node-id', poi.accessNodeId);
