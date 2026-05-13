@@ -16,6 +16,10 @@ export class HUDController {
     // Lokaler State fuer Teardown
     #subscriptions = [];
 
+    // Debouncing
+    #latestState = null;
+    #renderPending = false;
+
     constructor() {
         this.#cacheDOM();
         this.#registerListeners();
@@ -63,11 +67,21 @@ export class HUDController {
     }
 
     /**
-     * Haupt-Update-Loop bei Zustandsaenderung.
+     * Haupt-Update-Loop bei Zustandsaenderung (Debounced via rAF).
      */
     #onStateChanged(state) {
-        this.#updateBudgetDisplay(state);
-        this.#updateInfoPanel(state);
+        this.#latestState = state;
+
+        if (this.#renderPending) return;
+
+        this.#renderPending = true;
+        requestAnimationFrame(() => {
+            if (this.#latestState) {
+                this.#updateBudgetDisplay(this.#latestState);
+                this.#updateInfoPanel(this.#latestState);
+            }
+            this.#renderPending = false;
+        });
     }
 
     /**
