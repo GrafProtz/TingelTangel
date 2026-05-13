@@ -134,8 +134,10 @@ export class MovementController {
             eventBus.emit(EVENTS.INTENT_PUB_INTERACTION);
         }
 
-        // 5. Zufalls-Begegnung
-        EncounterManager.checkAndTriggerEvent(this.#gameState.getState());
+        // 5. Zufalls-Begegnung (Etappe 6.9 Dev-Toggle Fix)
+        if (!this.#gameState.devEncountersDisabled) {
+            EncounterManager.checkAndTriggerEvent(this.#gameState.getState());
+        }
 
         // 6. Broadcasts
         eventBus.emit(EVENTS.PLAYER_MOVED, this.#gameState.getState());
