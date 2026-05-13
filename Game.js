@@ -42,11 +42,12 @@ class Game {
     /**
      * @param {MapData} mapData
      * @param {MissionService} missionService
+     * @param {GameState} gameState
      */
-    constructor(mapData, missionService) {
+    constructor(mapData, missionService, gameState) {
         this.#mapData = mapData;
         this.#missionService = missionService;
-        this.#gameState = new GameState();
+        this.#gameState = gameState;
         this.#budgetManager = new BudgetManager();
         this.#movementEngine = new MovementEngine(this.#mapData);
         this.#riskCalculator = new RiskCalculator(this.#mapData);
@@ -93,12 +94,12 @@ class Game {
 
         this.#subscriptions.push(
             eventBus.subscribe(EVENTS.TOGGLE_DEV_ENCOUNTERS, () => {
-                this.#gameState.devEncountersDisabled = !this.#gameState.devEncountersDisabled;
-                const msg = this.#gameState.devEncountersDisabled
+                const newState = !this.#gameState.devEncountersDisabled;
+                const msg = newState
                     ? 'Dev-Mode: Zufallsereignisse deaktiviert.'
                     : 'Dev-Mode: Zufallsereignisse wieder aktiv.';
                 eventBus.emit(EVENTS.SHOW_TOAST, { message: msg, type: 'info' });
-                this.#notifyStateChange();
+                eventBus.emit(EVENTS.MUTATE_STATE, { devEncountersDisabled: newState });
             })
         );
     }
@@ -118,10 +119,6 @@ class Game {
     //  Notifications (Internal)
     // ================================================================
 
-    #notifyStateChange() {
-        eventBus.emit(EVENTS.GAME_STATE_CHANGED, this.getState());
-    }
-
     #emitMissionUpdate() {
         eventBus.emit(EVENTS.MISSION_STATE_CHANGED, {
             phase: this.#gameState.missionPhase,
@@ -135,36 +132,38 @@ class Game {
 
     startMission(startNodeId, targetNodeId, pubName) {
         this.#budgetManager.init();
-        this.#gameState.budget = CONFIG.INITIAL_BUDGET;
-        this.#gameState.currentPlayerNodeId = String(startNodeId);
-        this.#gameState.gameActive = false;
-        this.#movementEngine.stop();
-        this.#gameState.targetPubNodeId = String(targetNodeId);
-        this.#gameState.targetPubName = pubName || 'Kneipe';
-        this.#gameState.radarUnlocked = false;
-        this.#gameState.lastRadarTime = 0;
-        this.#gameState.lastPubVisit = 0;
-        this.#gameState.showPubCooldownText = false;
-        this.#gameState.moveCount = 0;
-        this.#gameState.missionPhase = 1;
-        this.#gameState.infoMenuOpenUntilMove = -1;
-        this.#gameState.isInfoMenuOpen = false;
-        this.#gameState.activeCrimeTargets = [];
-        this.#gameState.logbook = [];
-        this.#gameState.isInPub = false;
-        this.#gameState.firstMoveFired = false;
+        
+        eventBus.emit(EVENTS.MUTATE_STATE, {
+            budget: CONFIG.INITIAL_BUDGET,
+            currentPlayerNodeId: String(startNodeId),
+            gameActive: false,
+            targetPubNodeId: String(targetNodeId),
+            targetPubName: pubName || 'Kneipe',
+            radarUnlocked: false,
+            lastRadarTime: 0,
+            lastPubVisit: 0,
+            showPubCooldownText: false,
+            moveCount: 0,
+            missionPhase: 1,
+            infoMenuOpenUntilMove: -1,
+            isInfoMenuOpen: false,
+            activeCrimeTargets: [],
+            logbook: [],
+            isInPub: false,
+            firstMoveFired: false
+        });
 
-        log('Mission gestartet. Ziel-ID:', this.#gameState.targetPubNodeId);
+        log('Mission gestartet. Ziel-ID:', targetNodeId);
 
         const cityName = this.#mapData.cityName || 'der Stadt';
-        eventBus.emit(EVENTS.SHOW_INFO_CASCADE, DialogFactory.getWelcomeDialog(cityName, this.#gameState.targetPubName));
+        eventBus.emit(EVENTS.SHOW_INFO_CASCADE, DialogFactory.getWelcomeDialog(cityName, pubName || 'Kneipe'));
     }
 
     triggerIntroRender() {
-        this.#notifyStateChange();
+        eventBus.emit(EVENTS.MUTATE_STATE, {}); // Trigger broadcast
 
         setTimeout(() => {
-            this.#gameState.gameActive = true;
+            eventBus.emit(EVENTS.MUTATE_STATE, { gameActive: true });
             eventBus.emit(EVENTS.INTRO_COMPLETE);
         }, 6000);
     }
@@ -173,32 +172,31 @@ class Game {
         if (!savedState) return;
 
         this.#budgetManager.hydrate(savedState);
-        this.#gameState.hydrate(savedState);
+        // Hydrierung des States erfolgt nun im StateController via main.js oder hier
+        eventBus.emit(EVENTS.MUTATE_STATE, savedState); 
 
         this.#movementEngine.stop();
-        this.#gameState.firstMoveFired = true;
+        eventBus.emit(EVENTS.MUTATE_STATE, { firstMoveFired: true });
 
-        log('Spielstand geladen. Knoten:', this.#gameState.currentPlayerNodeId);
+        log('Spielstand geladen. Knoten:', savedState.currentPlayerNodeId);
 
-        this.#notifyStateChange();
         this.#emitMissionUpdate();
     }
 
     pause() {
-        this.#gameState.gameActive = false;
         this.#movementEngine.stop();
         eventBus.emit(EVENTS.GAME_PAUSED);
-        this.#notifyStateChange();
+        eventBus.emit(EVENTS.MUTATE_STATE, { gameActive: false });
     }
 
     resume() {
+        const delta = { gameActive: true };
         if (this.#gameState.isInPub) {
-            this.#gameState.lastPubVisit = Date.now();
-            this.#gameState.isInPub = false;
+            delta.lastPubVisit = Date.now();
+            delta.isInPub = false;
         }
-        this.#gameState.gameActive = true;
+        eventBus.emit(EVENTS.MUTATE_STATE, delta);
         eventBus.emit(EVENTS.GAME_RESUMED);
-        this.#notifyStateChange();
     }
 
     isGameActive() {

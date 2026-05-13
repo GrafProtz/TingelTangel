@@ -12,6 +12,7 @@ import { eventBus } from './EventBus.js';
 import { sanitizeHTML } from './Utils.js';
 import { DialogFactory } from './DialogFactory.js';
 import { EVENTS } from './EventTypes.js';
+import { StateController } from './StateController.js';
 import './UIAnimator.js';
 
 const CITIES = [
@@ -35,7 +36,8 @@ async function initApp() {
     let mapView;
     const missionService = new MissionService(mapData);
     let game    = null; // Wird in setupGameSession (re)instanziiert
-    let hudController = null; // Wird in setupGameSession (re)instanziiert
+    let hudController = null;
+    let stateController = null;
     const interaction = new InteractionManager();
     const notification = new NotificationManager();
     const saveManager = new SaveManager();
@@ -297,7 +299,11 @@ async function initApp() {
         registerSessionListeners();
 
         // --- 2. Neue Instanz erzeugen ---
-        game = new Game(mapData, missionService);
+        if (stateController) stateController.destroy();
+        stateController = new StateController();
+
+        game = new Game(mapData, missionService, stateController.getStateInstance ? stateController.getStateInstance() : stateController.getState());
+        
         if (hudController) hudController.destroy();
         hudController = new HUDController();
 

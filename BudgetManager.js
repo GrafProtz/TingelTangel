@@ -139,9 +139,10 @@ export class BudgetManager {
     }
 
     #notifyChange(diff = 0) {
-        eventBus.emit(EVENTS.BUDGET_UPDATED, {
-            total: this.#budget,
-            diff: diff
+        eventBus.emit(EVENTS.MUTATE_STATE, {
+            budget: this.#budget,
+            hasActiveLoan: this.#hasActiveLoan,
+            loanInterestSteps: this.#loanInterestSteps
         });
     }
 }

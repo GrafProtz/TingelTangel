@@ -81,6 +81,7 @@ export class GameState {
     set hasBoltCutter(val) { this.#hasBoltCutter = !!val; }
     set hasBicycle(val) { this.#hasBicycle = !!val; }
     set budget(val) { this.#budget = Number(val) || 0; }
+    set budgetDelta(val) { this.#budget = (Number(this.#budget) || 0) + (Number(val) || 0); }
     set hasActiveLoan(val) { this.#hasActiveLoan = !!val; }
     set loanInterestSteps(val) { this.#loanInterestSteps = Number(val) || 0; }
     set gameActive(val) { this.#gameActive = !!val; }

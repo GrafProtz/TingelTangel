@@ -70,7 +70,6 @@ export class CrimeController {
                         centerNodeId: this.#gameState.currentPlayerNodeId
                     });
                     this.#setGameActive(true);
-                    this.#broadcastState();
                 })
             );
         });
@@ -97,7 +96,7 @@ export class CrimeController {
                     return;
                 }
                 
-                this.#gameState.gameActive = false;
+                eventBus.emit(EVENTS.MUTATE_STATE, { gameActive: false });
                 eventBus.emit(EVENTS.GAME_PAUSED);
                 
                 const riskData = this.calculateTargetRisk(target);
@@ -197,17 +196,18 @@ export class CrimeController {
      * Setzt den State nach einem Einbruch zurück (egal ob Erfolg/Fail).
      */
     #resetBurglaryState() {
-        this.#gameState.activeCrimeTargets = [];
-        this.#gameState.isDisguised = false;
-        this.#gameState.missionPhase = 1;
+        eventBus.emit(EVENTS.MUTATE_STATE, {
+            activeCrimeTargets: [],
+            isDisguised: false,
+            missionPhase: 1
+        });
 
         eventBus.emit(EVENTS.MISSION_STATE_CHANGED, {
-            phase: this.#gameState.missionPhase,
+            phase: 1,
             moveCount: this.#gameState.moveCount
         });
 
         this.#setGameActive(true);
-        this.#broadcastState();
     }
 
     // ================================================================
@@ -228,8 +228,7 @@ export class CrimeController {
         const success = Math.random() * 100 > riskData.totalRisk;
 
         if (success) {
-            this.#gameState.setBiking(true);
-            this.#gameState.hasBicycle = true;
+            eventBus.emit(EVENTS.MUTATE_STATE, { isBiking: true, hasBicycle: true });
 
             eventBus.emit(EVENTS.BIKING_STATE_CHANGED, true);
             eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-steal-bicycle' });
@@ -250,8 +249,7 @@ export class CrimeController {
             target
         });
 
-        this.#gameState.activeBicycleTargets = [];
-        this.#broadcastState();
+        eventBus.emit(EVENTS.MUTATE_STATE, { activeBicycleTargets: [] });
     }
 
     // ================================================================
@@ -284,15 +282,16 @@ export class CrimeController {
      * @param {Array} targets
      */
     setCrimeTargets(targets) {
-        this.#gameState.activeCrimeTargets = targets;
-        this.#gameState.missionPhase = 3;
+        eventBus.emit(EVENTS.MUTATE_STATE, { 
+            activeCrimeTargets: targets,
+            missionPhase: 3 
+        });
 
         eventBus.emit(EVENTS.MISSION_STATE_CHANGED, {
-            phase: this.#gameState.missionPhase,
+            phase: 3,
             moveCount: this.#gameState.moveCount
         });
         eventBus.emit(EVENTS.TARGETS_UPDATED, this.#gameState.getState());
-        this.#broadcastState();
     }
 
     /**
@@ -326,14 +325,10 @@ export class CrimeController {
     // ================================================================
 
     #setGameActive(active) {
-        this.#gameState.gameActive = active;
+        eventBus.emit(EVENTS.MUTATE_STATE, { gameActive: active });
         if (active) {
             eventBus.emit(EVENTS.GAME_RESUMED);
         }
-    }
-
-    #broadcastState() {
-        eventBus.emit(EVENTS.GAME_STATE_CHANGED, this.#gameState.getState());
     }
 
     /**

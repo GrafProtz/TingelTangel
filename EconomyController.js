@@ -29,6 +29,18 @@ export class EconomyController {
     /** @type {Function[]} */
     #subscriptions = [];
 
+    #sub(eventName, callback) {
+        this.#subscriptions.push(eventBus.subscribe(eventName, callback));
+    }
+
+    #resume() {
+        eventBus.emit(EVENTS.MUTATE_STATE, { gameActive: true });
+    }
+
+    #pause() {
+        eventBus.emit(EVENTS.MUTATE_STATE, { gameActive: false });
+    }
+
     constructor({ gameState, budgetManager, riskCalculator, mapData, missionService }) {
         this.#gameState      = gameState;
         this.#budgetManager  = budgetManager;
@@ -76,7 +88,7 @@ export class EconomyController {
                 return;
             }
             
-            this.#gameState.gameActive = false;
+            this.#pause();
             eventBus.emit(EVENTS.GAME_PAUSED);
             eventBus.emit(EVENTS.BARBER_INTERACTION_READY, { barber, price: 50 });
         });
@@ -106,8 +118,7 @@ export class EconomyController {
             return;
         }
 
-        this.#gameState.gameActive = false;
-        this.#gameState.isInPub = true;
+        eventBus.emit(EVENTS.MUTATE_STATE, { gameActive: false, isInPub: true });
         eventBus.emit(EVENTS.PUB_TARGET_REACHED, { nodeId: this.#gameState.currentPlayerNodeId });
         this.#notifyTargetReached();
     }
@@ -203,13 +214,16 @@ export class EconomyController {
         }
 
         this.#budgetManager.deductBudget(CONFIG.RADAR_COST);
-        this.#gameState.radarUnlocked = true;
-
         const currentNode = this.#mapData.getNode(this.#gameState.currentPlayerNodeId);
         const risk = this.#riskCalculator.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
         const msg = STRINGS.interactions.pub.barkeeperInfo(risk.activeStations);
 
-        this.#recordDecision(msg, 'success');
+        eventBus.emit(EVENTS.MUTATE_STATE, { 
+            radarUnlocked: true,
+            newLogEntry: { time: Date.now(), text: msg, type: 'success' },
+            lastPubVisit: Date.now()
+        });
+        this.#resume();
         return msg;
     }
 
@@ -220,7 +234,11 @@ export class EconomyController {
 
         this.#budgetManager.deductBudget(CONFIG.INFO_COST);
         const msg = 'Du kaufst Infos fuer ' + CONFIG.INFO_COST + ' Euro. Ein Tipp: "Halte dich vom Osten fern."';
-        this.#recordDecision(msg, 'success');
+        eventBus.emit(EVENTS.MUTATE_STATE, { 
+            newLogEntry: { time: Date.now(), text: msg, type: 'success' },
+            lastPubVisit: Date.now()
+        });
+        this.#resume();
         return msg;
     }
 
@@ -228,7 +246,11 @@ export class EconomyController {
         const fine = Math.ceil(opt.reward * 0.5);
         this.#budgetManager.deductBudget(fine);
         const msg = opt.caughtMsg ? opt.caughtMsg(fine) : 'ERWISCHT! Strafe: ' + fine + ' Euro.';
-        this.#recordDecision(msg, 'fail');
+        eventBus.emit(EVENTS.MUTATE_STATE, { 
+            newLogEntry: { time: Date.now(), text: msg, type: 'fail' },
+            lastPubVisit: Date.now()
+        });
+        this.#resume();
         return msg;
     }
 
@@ -237,13 +259,17 @@ export class EconomyController {
         const msg = opt.successMsg
             ? opt.successMsg(opt.reward)
             : 'Erfolg! Du kassierst ' + opt.reward + ' Euro fuer "' + opt.text + '".';
-        this.#recordDecision(msg, 'success');
+        eventBus.emit(EVENTS.MUTATE_STATE, { 
+            newLogEntry: { time: Date.now(), text: msg, type: 'success' },
+            lastPubVisit: Date.now()
+        });
+        this.#resume();
         return msg;
     }
 
     #recordDecision(msg, type) {
         this.#gameState.addLogEntry({ time: Date.now(), text: msg, type: type });
-        this.#gameState.lastPubVisit = Date.now();
+        eventBus.emit(EVENTS.MUTATE_STATE, { lastPubVisit: Date.now() });
         this.#resume();
     }
 
@@ -266,9 +292,10 @@ export class EconomyController {
     }
 
     #triggerRadarTutorial() {
-        this.#gameState.missionPhase = 2;
+        const newPhase = 2;
+        eventBus.emit(EVENTS.MUTATE_STATE, { missionPhase: newPhase });
         eventBus.emit(EVENTS.MISSION_STATE_CHANGED, {
-            phase: this.#gameState.missionPhase,
+            phase: newPhase,
             moveCount: this.#gameState.moveCount
         });
 
@@ -312,18 +339,23 @@ export class EconomyController {
             }
 
             this.#budgetManager.deductBudget(cost);
-            this.#gameState.hasBoltCutter = true;
-
+            
             const playerNode = this.#mapData.getNode(this.#gameState.currentPlayerNodeId);
             const targets = this.#missionService.spawnBicycleTargets(this.#mapData, playerNode);
-            this.#gameState.activeBicycleTargets = targets;
+
+            eventBus.emit(EVENTS.MUTATE_STATE, { 
+                hasBoltCutter: true,
+                activeBicycleTargets: targets 
+            });
 
             eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-pub' });
 
-            this.#gameState.addLogEntry({
-                time: Date.now(),
-                text: 'Ziel: Knacke ein Fahrrad an einem der markierten Stellplaetze.',
-                type: 'info'
+            eventBus.emit(EVENTS.MUTATE_STATE, {
+                newLogEntry: {
+                    time: Date.now(),
+                    text: 'Ziel: Knacke ein Fahrrad an einem der markierten Stellplaetze.',
+                    type: 'info'
+                }
             });
 
             const coordsToFit = [];
@@ -333,7 +365,6 @@ export class EconomyController {
 
             eventBus.emit(EVENTS.CLOSE_INTERACTION);
             this.#resume();
-            this.#broadcastState();
         });
 
         // Friseur-Ticket
@@ -348,10 +379,12 @@ export class EconomyController {
             eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-pub' });
             eventBus.emit(EVENTS.CLOSE_INTERACTION);
 
-            this.#gameState.addLogEntry({
-                time: Date.now(),
-                text: 'Ziel: Besuche ' + barberName + ' fuer eine Tarnung.',
-                type: 'info'
+            eventBus.emit(EVENTS.MUTATE_STATE, {
+                newLogEntry: {
+                    time: Date.now(),
+                    text: 'Ziel: Besuche ' + barberName + ' fuer eine Tarnung.',
+                    type: 'info'
+                }
             });
 
             if (barber) {
@@ -360,7 +393,6 @@ export class EconomyController {
             }
 
             this.#resume();
-            this.#broadcastState();
         });
 
         // Investment abgebrochen
@@ -392,18 +424,20 @@ export class EconomyController {
     }
 
     applyBarberBuff() {
-        this.#gameState.isDisguised = true;
-        this.#gameState.activeBarber = null;
+        eventBus.emit(EVENTS.MUTATE_STATE, { 
+            isDisguised: true,
+            activeBarber: null 
+        });
 
         const entry = {
             time: Date.now(),
             shortText: 'Neues Gesicht erhalten. Risiko um 50% gesenkt.',
             type: 'success'
         };
-        this.#gameState.addLogEntry(entry);
+        eventBus.emit(EVENTS.MUTATE_STATE, { 
+            newLogEntry: entry 
+        });
         eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: entry.shortText, type: entry.type, notify: true });
-
-        this.#broadcastState();
     }
 
     /**
@@ -445,9 +479,8 @@ export class EconomyController {
     }
 
     setActiveBarber(barber) {
-        this.#gameState.activeBarber = barber;
+        eventBus.emit(EVENTS.MUTATE_STATE, { activeBarber: barber });
         eventBus.emit(EVENTS.TARGETS_UPDATED, this.#gameState.getState());
-        this.#broadcastState();
     }
 
     // ================================================================
@@ -475,11 +508,10 @@ export class EconomyController {
 
     #registerEncounterHooks() {
         this.#sub(EVENTS.ENCOUNTER_TRIGGERED, (encounter) => {
-            this.#gameState.gameActive = false;
+            this.#pause();
             eventBus.emit(EVENTS.GAME_PAUSED);
             this.#budgetManager.deductBudget(encounter.cost);
             eventBus.emit(EVENTS.SHOW_ENCOUNTER, encounter);
-            this.#broadcastState();
         });
 
         this.#sub(EVENTS.RADAR_ACKNOWLEDGED, () => {});
@@ -509,23 +541,24 @@ export class EconomyController {
                 shortText: 'Radar im Cooldown (noch ' + remaining + ' Min).',
                 type: 'info'
             };
-            this.#gameState.addLogEntry(entry);
+            eventBus.emit(EVENTS.MUTATE_STATE, { newLogEntry: entry });
             eventBus.emit(EVENTS.ADD_LOG_ENTRY, entry);
             return 'cooldown';
         }
 
         if (!force) {
-            this.#gameState.lastRadarTime = Date.now();
+            const now = Date.now();
             const entry = {
-                time: Date.now(),
+                time: now,
                 shortText: 'Polizeiradar aktiviert. Scan laeuft...',
                 type: 'info'
             };
-            this.#gameState.addLogEntry(entry);
+            eventBus.emit(EVENTS.MUTATE_STATE, {
+                lastRadarTime: now,
+                newLogEntry: entry
+            });
             eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: entry.shortText, type: entry.type, notify: true });
         }
-
-        this.#broadcastState();
 
         const playerNode = this.#mapData.getNode(this.#gameState.currentPlayerNodeId);
         const playerCoords = playerNode ? [playerNode.lat, playerNode.lon] : [0, 0];
@@ -546,38 +579,15 @@ export class EconomyController {
 
     deductBudget(amount) {
         this.#budgetManager.deductBudget(amount);
-        this.#broadcastState();
     }
 
     addReward(amount) {
         this.#budgetManager.addReward(amount);
-        this.#broadcastState();
     }
 
     // ================================================================
     //  Helpers
     // ================================================================
-
-    #resume() {
-        if (this.#gameState.isInPub) {
-            this.#gameState.lastPubVisit = Date.now();
-            this.#gameState.isInPub = false;
-        }
-        this.#gameState.gameActive = true;
-        eventBus.emit(EVENTS.GAME_RESUMED);
-        this.#broadcastState();
-    }
-
-    #broadcastState() {
-        eventBus.emit(EVENTS.GAME_STATE_CHANGED, this.#gameState.getState());
-    }
-
-    /**
-     * Shorthand fuer eventBus.subscribe mit automatischem Teardown-Tracking.
-     */
-    #sub(event, handler) {
-        this.#subscriptions.push(eventBus.subscribe(event, handler));
-    }
 
     destroy() {
         this.#subscriptions.forEach(unsub => unsub());

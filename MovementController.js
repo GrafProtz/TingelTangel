@@ -85,10 +85,12 @@ export class MovementController {
             this.#gameState.isBiking,
             {
                 currentBudget: this.#budgetManager.budget,
-                onStart:      () => this.#broadcastState(),
                 onBudgetTick: (newBudget) => {
                     const diff = newBudget - this.#budgetManager.budget;
                     this.#budgetManager.applyBudgetTick(newBudget, diff);
+                    
+                    // Synchronisiere den globalen State (Etappe 6.3 Fix)
+                    eventBus.emit(EVENTS.MUTATE_STATE, { budgetDelta: diff });
                 },
                 onComplete:   (reachedId) => this.#finishMovement(reachedId)
             }
@@ -105,9 +107,11 @@ export class MovementController {
      * @param {string} reachedId – Die ID des Knotens, der erreicht wurde.
      */
     #finishMovement(reachedId) {
-        // 1. State-Mutation über Reducer-API
-        this.#gameState.updatePlayerPosition(reachedId);
-        this.#gameState.moveCount = this.#gameState.moveCount + 1;
+        const newMoveCount = this.#gameState.moveCount + 1;
+        eventBus.emit(EVENTS.MUTATE_STATE, { 
+            currentPlayerNodeId: String(reachedId),
+            moveCount: newMoveCount 
+        });
 
         // 2. Info-Menü Zähler prüfen
         this.#handleInfoMenuMoveLogic();
@@ -124,7 +128,6 @@ export class MovementController {
         EncounterManager.checkAndTriggerEvent(this.#gameState.getState());
 
         // 6. Broadcasts
-        this.#broadcastState();
         eventBus.emit(EVENTS.PLAYER_MOVED, this.#gameState.getState());
     }
 
@@ -136,11 +139,12 @@ export class MovementController {
      * Schließt das Info-Menü automatisch nach einer bestimmten Anzahl Züge.
      */
     #handleInfoMenuMoveLogic() {
-        if (!this.#gameState.isInfoMenuOpen || this.#gameState.infoMenuOpenUntilMove === -1) return;
         if (this.#gameState.moveCount < this.#gameState.infoMenuOpenUntilMove) return;
 
-        this.#gameState.isInfoMenuOpen = false;
-        this.#gameState.infoMenuOpenUntilMove = -1;
+        eventBus.emit(EVENTS.MUTATE_STATE, { 
+            isInfoMenuOpen: false,
+            infoMenuOpenUntilMove: -1 
+        });
         eventBus.emit(EVENTS.INFO_MENU_STATE, false);
     }
 
@@ -149,7 +153,7 @@ export class MovementController {
      */
     #handleFirstMoveLogic() {
         if (this.#gameState.firstMoveFired) return;
-        this.#gameState.firstMoveFired = true;
+        eventBus.emit(EVENTS.MUTATE_STATE, { firstMoveFired: true });
         eventBus.emit(EVENTS.FIRST_MOVE_COMPLETED);
     }
 
@@ -161,7 +165,7 @@ export class MovementController {
         if (!this.#gameState.hasBicycle) return;
 
         const newState = !this.#gameState.isBiking;
-        this.#gameState.setBiking(newState);
+        eventBus.emit(EVENTS.MUTATE_STATE, { isBiking: newState });
 
         const msg = newState
             ? 'Aufgestiegen. Du bist jetzt schneller.'
@@ -169,7 +173,6 @@ export class MovementController {
 
         eventBus.emit(EVENTS.BIKING_STATE_CHANGED, newState);
         eventBus.emit(EVENTS.SHOW_TOAST, { message: msg, type: 'success' });
-        this.#broadcastState();
     }
 
     // ----------------------------------------------------------------
@@ -194,14 +197,6 @@ export class MovementController {
     // ----------------------------------------------------------------
     //  Helper
     // ----------------------------------------------------------------
-
-    /**
-     * Sendet den vollständigen State über den Bus.
-     * Wird intern aufgerufen, um alle UI-Subscriber zu informieren.
-     */
-    #broadcastState() {
-        eventBus.emit(EVENTS.GAME_STATE_CHANGED, this.#gameState.getState());
-    }
 
     /**
      * Entfernt alle registrierten Event-Listener (für Tests / Cleanup).
