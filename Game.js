@@ -120,7 +120,6 @@ class Game {
 
     #notifyStateChange() {
         eventBus.emit(EVENTS.GAME_STATE_CHANGED, this.getState());
-        this.#updateHUDInfo();
     }
 
     #emitMissionUpdate() {
@@ -136,6 +135,7 @@ class Game {
 
     startMission(startNodeId, targetNodeId, pubName) {
         this.#budgetManager.init();
+        this.#gameState.budget = CONFIG.INITIAL_BUDGET;
         this.#gameState.currentPlayerNodeId = String(startNodeId);
         this.#gameState.gameActive = false;
         this.#movementEngine.stop();
@@ -221,45 +221,6 @@ class Game {
         this.#subscriptions = [];
 
         log('[GAME] Teardown abgeschlossen.');
-    }
-
-    // ================================================================
-    //  HUD
-    // ================================================================
-
-    #updateHUDInfo() {
-        if (!this.#gameState.gameActive && this.#gameState.currentPlayerNodeId === null) {
-            eventBus.emit(EVENTS.INFO_UPDATED, []);
-            return;
-        }
-
-        const infoCards = [];
-        const targetNode = this.#mapData.getNode(this.#gameState.targetPubNodeId);
-        const targetName = targetNode && targetNode.tags ? targetNode.tags.name : 'Unbekannte Gaststaette';
-
-        if (this.#gameState.gameActive) {
-            if (this.#gameState.missionPhase === 1) {
-                infoCards.push(
-                    { title: 'AKTUELLES ZIEL', body: targetName },
-                    { title: 'AUFGABE', body: 'Erreiche die Kneipe, um Informationen zu sammeln.' },
-                    { title: 'STEUERUNG', body: 'Klicke auf die gruenen Punkte, um dich durch die Stadt zu bewegen.' }
-                );
-            } else if (this.#gameState.missionPhase === 2) {
-                infoCards.push({
-                    title: 'RADAR-SYSTEM',
-                    body: 'Druecke "P", um Standorte der Polizei fuer 5 Sek. aufzudecken. (5 Min. Cooldown)'
-                });
-            }
-        }
-
-        if (this.#gameState.showPubCooldownText) {
-            infoCards.push({
-                title: 'HINWEIS',
-                body: 'Du kannst erst wieder in drei Minuten die Kneipe besuchen.'
-            });
-        }
-
-        eventBus.emit(EVENTS.INFO_UPDATED, infoCards);
     }
 }
 

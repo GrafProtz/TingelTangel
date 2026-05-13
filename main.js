@@ -1,7 +1,7 @@
 import { MapData } from './MapData.js';
 import { Game } from './Game.js';
 import { MapView } from './MapView.js';
-import { HUDManager } from './HUDManager.js';
+import { HUDController } from './HUDController.js';
 import { InteractionManager } from './InteractionManager.js';
 import { NotificationManager } from './NotificationManager.js';
 import { MissionService } from './MissionService.js';
@@ -35,7 +35,7 @@ async function initApp() {
     let mapView;
     const missionService = new MissionService(mapData);
     let game    = null; // Wird in setupGameSession (re)instanziiert
-    const hud     = new HUDManager();
+    let hudController = null; // Wird in setupGameSession (re)instanziiert
     const interaction = new InteractionManager();
     const notification = new NotificationManager();
     const saveManager = new SaveManager();
@@ -258,14 +258,13 @@ async function initApp() {
             eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleInteractionDialog(riskData, target));
         });
 
-        appSub(EVENTS.BARBER_INTERACTION_READY, () => {
-            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBarberDialog());
+        appSub(EVENTS.BARBER_INTERACTION_READY, (data) => {
+            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBarberDialog(data));
         });
 
-        // Dev-Tool UI Sync
+        // Dev-Tool UI Sync (Wird nun durch HUDController oder spezialisierte Listener abgedeckt)
         appSub(EVENTS.GAME_STATE_CHANGED, (state) => {
             if (devBtn) {
-                devBtn.classList.toggle('active', state.devEncountersDisabled);
                 devBtn.title = state.devEncountersDisabled ? "Ereignisse: DEAKTIVIERT" : "Ereignisse: AKTIV";
             }
         });
@@ -299,6 +298,8 @@ async function initApp() {
 
         // --- 2. Neue Instanz erzeugen ---
         game = new Game(mapData, missionService);
+        if (hudController) hudController.destroy();
+        hudController = new HUDController();
 
         mapData.cityName = city.name;
         saveManager.setCurrentCity(city.name);
