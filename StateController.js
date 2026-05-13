@@ -7,16 +7,22 @@ import { log } from './Utils.js';
 /**
  * StateController - Zentraler Waechter ueber den GameState (Single Source of Truth).
  * Verarbeitet Mutationen via Events und garantiert die Konsistenz.
+ * 
+ * ARCHITEKTUR-UPDATE (Etappe 3): 
+ * Implementiert Event-Batching via Microtask-Queue. Mutationen werden synchron 
+ * auf den GameState angewendet (verhindert State-Tearing bei synchronen Getter-Aufrufen), 
+ * aber das GAME_STATE_CHANGED Event wird nur einmal pro Execution-Tick gefeuert.
  */
 export class StateController {
     #state;
     #subscriptions = [];
+    #batchPending = false;
 
     constructor() {
         this.#state = new GameState();
         
-        // Initialisierung des Startzustands (analog zu Game.js startMission)
-        this.#state.budget = CONFIG.INITIAL_BUDGET || 300;
+        // Initialisierung des Startzustands
+        this.#state.mutate({ budget: CONFIG.INITIAL_BUDGET || 300 });
         
         this.#registerListeners();
         log('[StateController] Initialisiert.');
@@ -30,7 +36,7 @@ export class StateController {
     }
 
     /**
-     * Wendet Aenderungen auf den State an und benachrichtigt die Aussenwelt.
+     * Wendet Aenderungen synchron auf den State an und batcht das Change-Event.
      * @param {Object} delta - Die zu aendernden Felder
      */
     #handleMutation(delta) {
@@ -38,35 +44,33 @@ export class StateController {
 
         log('[StateController] Mutation:', delta);
 
-        // Felder auf den State anwenden
-        Object.entries(delta).forEach(([key, value]) => {
-            if (key === 'newLogEntry') {
-                this.#state.addLogEntry(value);
-            } else if (key in this.#state) {
-                this.#state[key] = value;
-            } else {
-                // Fallback fuer private Felder via Setter (GameState nutzt Setter)
-                try {
-                    this.#state[key] = value;
-                } catch (e) {
-                    console.warn(`[StateController] Feld ${key} konnte nicht gesetzt werden.`);
-                }
-            }
-        });
+        // 1. Synchrone Anwendung: Garantiert, dass controller.getState() 
+        // direkt im Anschluss an einen Emit die neuen Werte liefert.
+        this.#state.mutate(delta);
 
-        // Broadcast des neuen Gesamt-Zustands
-        eventBus.emit(EVENTS.GAME_STATE_CHANGED, this.#state.getState());
+        // 2. Event-Batching via Microtask: Verhindert Event-Kaskaden, 
+        // wenn mehrere MUTATE_STATE Events nacheinander abgefeuert werden.
+        if (!this.#batchPending) {
+            this.#batchPending = true;
+            Promise.resolve().then(() => {
+                this.#batchPending = false;
+                eventBus.emit(EVENTS.GAME_STATE_CHANGED, this.#state.getState());
+            });
+        }
     }
 
     /**
-     * Gibt den aktuellen State fuer Lesezugriffe (z.B. Initialisierung) zurueck.
+     * Gibt den aktuellen State fuer Lesezugriffe zurueck.
+     * Liefert nun ein tief gefrorenes Objekt (Object.freeze aus GameState),
+     * was unbeabsichtigte Manipulationen unmoeglich macht.
      */
     getState() {
         return this.#state.getState();
     }
 
     /**
-     * Liefert die Instanz des GameState (NUR ZUM LESEN).
+     * Liefert die Instanz des GameState (NUR ZUM LESEN, z.B. fuer Getter).
+     * Da Setter entfernt wurden, ist dies nun sicher.
      */
     getStateInstance() {
         return this.#state;
