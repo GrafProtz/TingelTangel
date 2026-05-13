@@ -88,9 +88,6 @@ export class MovementController {
                 onBudgetTick: (newBudget) => {
                     const diff = newBudget - this.#budgetManager.budget;
                     this.#budgetManager.applyBudgetTick(newBudget, diff);
-                    
-                    // Synchronisiere den globalen State (Etappe 6.3 Fix)
-                    eventBus.emit(EVENTS.MUTATE_STATE, { budgetDelta: diff });
                 },
                 onComplete:   (reachedId) => this.#finishMovement(reachedId)
             }
@@ -107,10 +104,23 @@ export class MovementController {
      * @param {string} reachedId – Die ID des Knotens, der erreicht wurde.
      */
     #finishMovement(reachedId) {
+        // 1. Reisekosten berechnen (Etappe 6.6 Batching)
+        const startId = this.#gameState.currentPlayerNodeId;
+        const neighbors = this.#mapData.getNeighbors(startId, this.#gameState.isBiking);
+        const neighbor = neighbors.find(nb => String(nb.id) === String(reachedId));
+        
+        let cost = 0;
+        if (neighbor) {
+            const edge = neighbor.edgeData;
+            const costMultiplier = this.#gameState.isBiking ? 1.5 : 1.0;
+            cost = Math.max(1, Math.ceil(edge.distance * CONFIG.COST_PER_METER * costMultiplier));
+        }
+
         const newMoveCount = this.#gameState.moveCount + 1;
         eventBus.emit(EVENTS.MUTATE_STATE, { 
             currentPlayerNodeId: String(reachedId),
-            moveCount: newMoveCount 
+            moveCount: newMoveCount,
+            budgetDelta: -cost
         });
 
         // 2. Info-Menü Zähler prüfen
@@ -139,6 +149,10 @@ export class MovementController {
      * Schließt das Info-Menü automatisch nach einer bestimmten Anzahl Züge.
      */
     #handleInfoMenuMoveLogic() {
+        // Dirty-Check: Nichts tun, wenn das Menü bereits geschlossen und der Timer inaktiv ist (Etappe 6.7)
+        if (!this.#gameState.isInfoMenuOpen && this.#gameState.infoMenuOpenUntilMove === -1) return;
+
+        // Timer-Check: Warten, bis die Ziel-Anzahl an Zügen erreicht ist
         if (this.#gameState.moveCount < this.#gameState.infoMenuOpenUntilMove) return;
 
         eventBus.emit(EVENTS.MUTATE_STATE, { 

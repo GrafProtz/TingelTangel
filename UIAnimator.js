@@ -1,5 +1,14 @@
 export class UIAnimator {
     static _spawnTimestamps = new Map();
+    static #spawnedIds = new Set(); // Tracking bereits verarbeiteter Nodes (Etappe 6.8)
+
+    /**
+     * Leert den Cache der bereits animierten Nodes (z.B. bei Map-Clear).
+     */
+    static resetSpawnCache() {
+        this.#spawnedIds.clear();
+        this._spawnTimestamps.clear();
+    }
 
     /**
      * Wendet den 5-Sekunden-Spawn-Effekt auf das DOM-Element des Markers an.
@@ -8,6 +17,13 @@ export class UIAnimator {
      */
     static applySpawnEffect(poiId, element) {
         if (!element) return;
+
+        const poiIdStr = String(poiId);
+
+        // Dirty-Check: Nichts tun, wenn diese ID in dieser Session bereits animiert wurde
+        if (this.#spawnedIds.has(poiIdStr)) return;
+        this.#spawnedIds.add(poiIdStr);
+        
         
         // 20ms Race-Condition-Fix: Warten, bis Leaflet das HTML physisch in den DOM gemalt hat
         setTimeout(() => {

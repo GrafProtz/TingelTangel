@@ -431,6 +431,7 @@ class MapView {
     _clearNeighbors() {
         // Dirty-Check-Cache ebenfalls invalidieren
         this.#lastRenderedNeighborSet = null;
+        UIAnimator.resetSpawnCache();
         const mapContainer = this._map.getContainer();
         if (mapContainer.classList.contains('biking-move-cursor')) {
             mapContainer.classList.remove('biking-move-cursor');

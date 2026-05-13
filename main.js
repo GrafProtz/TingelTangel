@@ -13,6 +13,7 @@ import { sanitizeHTML } from './Utils.js';
 import { DialogFactory } from './DialogFactory.js';
 import { EVENTS } from './EventTypes.js';
 import { StateController } from './StateController.js';
+import { EventTracer } from './EventTracer.js';
 import './UIAnimator.js';
 
 const CITIES = [
@@ -38,6 +39,7 @@ async function initApp() {
     let game    = null; // Wird in setupGameSession (re)instanziiert
     let hudController = null;
     let stateController = null;
+    let eventTracer = null;
     const interaction = new InteractionManager();
     const notification = new NotificationManager();
     const saveManager = new SaveManager();
@@ -301,6 +303,10 @@ async function initApp() {
         // --- 2. Neue Instanz erzeugen ---
         if (stateController) stateController.destroy();
         stateController = new StateController();
+
+        if (eventTracer) eventTracer.destroy();
+        eventTracer = new EventTracer(true);
+        eventTracer.init();
 
         game = new Game(mapData, missionService, stateController.getStateInstance ? stateController.getStateInstance() : stateController.getState());
         
