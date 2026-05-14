@@ -31,7 +31,7 @@ export class StateController {
     #registerListeners() {
         // Der einzige Weg, den State zu aendern
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.MUTATE_STATE, (delta) => this.#handleMutation(delta))
+            eventBus.subscribe(EVENTS.CMD_MUTATE_STATE, (delta) => this.#handleMutation(delta))
         );
     }
 
@@ -54,7 +54,7 @@ export class StateController {
             this.#batchPending = true;
             Promise.resolve().then(() => {
                 this.#batchPending = false;
-                eventBus.emit(EVENTS.GAME_STATE_CHANGED, this.#state.getState());
+                eventBus.emit(EVENTS.STATE_GAME_CHANGED, this.#state.getState());
             });
         }
     }
@@ -81,7 +81,7 @@ export class StateController {
      */
     hydrate(data) {
         this.#state.hydrate(data);
-        eventBus.emit(EVENTS.GAME_STATE_CHANGED, this.#state.getState());
+        eventBus.emit(EVENTS.STATE_GAME_CHANGED, this.#state.getState());
     }
 
     destroy() {

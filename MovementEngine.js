@@ -94,7 +94,7 @@ export class MovementEngine {
         }
 
         // Granulares Positions-Event für die Map (MapView hört hierauf)
-        eventBus.emit(EVENTS.PLAYER_POSITION_UPDATED, { 
+        eventBus.emit(EVENTS.STATE_PLAYER_POSITION, { 
             lat: pos[0], 
             lon: pos[1], 
             budget: newBudget 

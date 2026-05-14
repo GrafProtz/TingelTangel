@@ -34,11 +34,11 @@ export class EconomyController {
     }
 
     #resume() {
-        eventBus.emit(EVENTS.MUTATE_STATE, { gameActive: true });
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { gameActive: true });
     }
 
     #pause() {
-        eventBus.emit(EVENTS.MUTATE_STATE, { gameActive: false });
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { gameActive: false });
     }
 
     constructor({ gameState, budgetManager, riskCalculator, mapData, missionService }) {
@@ -69,12 +69,12 @@ export class EconomyController {
 
     #registerPubInteraction() {
         // Pub-Ankunft
-        this.#sub(EVENTS.INTENT_PUB_INTERACTION, () => {
+        this.#sub(EVENTS.CMD_PUB_INTERACTION, () => {
             this.#checkPubArrival();
         });
 
         // Barber-Interaktion (Etappe 5)
-        this.#sub(EVENTS.INTENT_BARBER_TARGET, ({ barber }) => {
+        this.#sub(EVENTS.CMD_BARBER_TARGET, ({ barber }) => {
             const playerIdStr = String(this.#gameState.currentPlayerNodeId);
             const targetIdStr = String(barber.accessNodeId || barber.id);
             
@@ -84,23 +84,23 @@ export class EconomyController {
                            neighbors.some(n => String(n.id) === targetIdStr);
             
             if (!isNear) {
-                eventBus.emit(EVENTS.SHOW_TOAST, { message: "Geh naeher ran an den Salon!", type: 'fail' });
+                eventBus.emit(EVENTS.UI_SHOW_TOAST, { message: "Geh naeher ran an den Salon!", type: 'fail' });
                 return;
             }
             
             this.#pause();
-            eventBus.emit(EVENTS.GAME_PAUSED);
-            eventBus.emit(EVENTS.BARBER_INTERACTION_READY, { barber, price: CONFIG.ECONOMY.BARBER_COST });
+            eventBus.emit(EVENTS.SYS_GAME_PAUSED);
+            eventBus.emit(EVENTS.NOTIFY_BARBER_INTERACTION, { barber, price: CONFIG.ECONOMY.BARBER_COST });
         });
 
         // Barber-Info (Tipp vom Kneipier)
-        this.#sub(EVENTS.INTENT_REQUEST_BARBER_INFO, () => {
+        this.#sub(EVENTS.CMD_REQUEST_BARBER_INFO, () => {
             const barber = this.findNearestHairdresser();
-            eventBus.emit(EVENTS.BARBER_INFO_READY, { barber });
+            eventBus.emit(EVENTS.NOTIFY_BARBER_INFO, { barber });
         });
 
         // Spieler waehlt eine Pub-Option (A/B/C/D)
-        this.#sub(EVENTS.INTERACTION_SELECTED, (payload) => {
+        this.#sub(EVENTS.ACTION_INTERACTION_SELECTED, (payload) => {
             this.#handleInteractionSelected(payload);
         });
     }
@@ -111,15 +111,15 @@ export class EconomyController {
 
         if (diff < cooldownSec) {
             const remaining = Math.ceil(cooldownSec - diff);
-            eventBus.emit(EVENTS.SHOW_TOAST, {
+            eventBus.emit(EVENTS.UI_SHOW_TOAST, {
                 message: 'Der Kneipier ist mal kurz mit einem Gast in den Hinterraum gegangen und hat fuer ' + remaining + ' Sekunden keine Zeit.',
                 type: 'fail'
             });
             return;
         }
 
-        eventBus.emit(EVENTS.MUTATE_STATE, { gameActive: false, isInPub: true });
-        eventBus.emit(EVENTS.PUB_TARGET_REACHED, { nodeId: this.#gameState.currentPlayerNodeId });
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { gameActive: false, isInPub: true });
+        eventBus.emit(EVENTS.SYS_PUB_REACHED, { nodeId: this.#gameState.currentPlayerNodeId });
         this.#notifyTargetReached();
     }
 
@@ -132,8 +132,8 @@ export class EconomyController {
         const optionsData = {
             A: { text: STRINGS.interactions.pub.optionA(cityName), cost: CONFIG.ECONOMY.RADAR_COST, risk: 0 },
             B: { text: STRINGS.interactions.pub.optionB(0), requiresConfirmation: false, cost: CONFIG.ECONOMY.INVESTMENT_CONSULTANT_COST },
-            C: { text: STRINGS.interactions.pub.optionC(), requiresConfirmation: false, customEvent: EVENTS.OPTION_C_CLICKED },
-            D: { text: STRINGS.interactions.pub.optionD, requiresConfirmation: false, customEvent: EVENTS.OPTION_D_CLICKED }
+            C: { text: STRINGS.interactions.pub.optionC(), requiresConfirmation: false, customEvent: EVENTS.ACTION_OPTION_C },
+            D: { text: STRINGS.interactions.pub.optionD, requiresConfirmation: false, customEvent: EVENTS.ACTION_OPTION_D }
         };
 
         const currentNode = this.#mapData.getNode(this.#gameState.currentPlayerNodeId);
@@ -147,7 +147,7 @@ export class EconomyController {
             });
         }
 
-        eventBus.emit(EVENTS.OPEN_INTERACTION, {
+        eventBus.emit(EVENTS.UI_OPEN_INTERACTION, {
             optionsData,
             riskData,
             getPreviewFn: (key) => this.getInteractionPreview(key)
@@ -167,8 +167,8 @@ export class EconomyController {
 
         const result = this.#processInteractionDecision(key, option);
 
-        eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-pub' });
-        eventBus.emit(EVENTS.CLOSE_INTERACTION);
+        eventBus.emit(EVENTS.CMD_REMOVE_LOG_ENTRY, { logId: 'goal-visit-pub' });
+        eventBus.emit(EVENTS.UI_CLOSE_INTERACTION);
 
         // Radar-Tutorial bei Erstkauf (Option A)
         if (key === 'A' && this.#gameState.radarUnlocked && this.#gameState.missionPhase < 2) {
@@ -218,7 +218,7 @@ export class EconomyController {
         const risk = this.#riskCalculator.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
         const msg = STRINGS.interactions.pub.barkeeperInfo(risk.activeStations);
 
-        eventBus.emit(EVENTS.MUTATE_STATE, { 
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { 
             radarUnlocked: true,
             newLogEntry: { time: Date.now(), text: msg, type: 'success' },
             lastPubVisit: Date.now()
@@ -234,7 +234,7 @@ export class EconomyController {
 
         this.#budgetManager.deductBudget(CONFIG.ECONOMY.INFO_COST);
         const msg = 'Du kaufst Infos fuer ' + CONFIG.ECONOMY.INFO_COST + ' Euro. Ein Tipp: "Halte dich vom Osten fern."';
-        eventBus.emit(EVENTS.MUTATE_STATE, { 
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { 
             newLogEntry: { time: Date.now(), text: msg, type: 'success' },
             lastPubVisit: Date.now()
         });
@@ -246,7 +246,7 @@ export class EconomyController {
         const fine = Math.ceil(opt.reward * CONFIG.ECONOMY.FINE_FACTOR_PUB);
         this.#budgetManager.deductBudget(fine);
         const msg = opt.caughtMsg ? opt.caughtMsg(fine) : 'ERWISCHT! Strafe: ' + fine + ' Euro.';
-        eventBus.emit(EVENTS.MUTATE_STATE, { 
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { 
             newLogEntry: { time: Date.now(), text: msg, type: 'fail' },
             lastPubVisit: Date.now()
         });
@@ -259,7 +259,7 @@ export class EconomyController {
         const msg = opt.successMsg
             ? opt.successMsg(opt.reward)
             : 'Erfolg! Du kassierst ' + opt.reward + ' Euro fuer "' + opt.text + '".';
-        eventBus.emit(EVENTS.MUTATE_STATE, { 
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { 
             newLogEntry: { time: Date.now(), text: msg, type: 'success' },
             lastPubVisit: Date.now()
         });
@@ -269,7 +269,7 @@ export class EconomyController {
 
     #recordDecision(msg, type) {
         this.#gameState.addLogEntry({ time: Date.now(), text: msg, type: type });
-        eventBus.emit(EVENTS.MUTATE_STATE, { lastPubVisit: Date.now() });
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { lastPubVisit: Date.now() });
         this.#resume();
     }
 
@@ -282,19 +282,19 @@ export class EconomyController {
         }
 
         this.#budgetManager.deductBudget(cost);
-        eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-pub' });
-        eventBus.emit(EVENTS.ADD_LOG_ENTRY, {
+        eventBus.emit(EVENTS.CMD_REMOVE_LOG_ENTRY, { logId: 'goal-visit-pub' });
+        eventBus.emit(EVENTS.CMD_ADD_LOG_ENTRY, {
             shortText: 'Ziel: Halte an den gruenen Knotenpunkten Ausschau nach lukrativen Objekten fuer deinen ersten Bruch.',
             logId: 'goal-find-target',
             notify: true
         });
-        eventBus.emit(EVENTS.OPEN_INVESTMENT, { cityName: this.#mapData.cityName });
+        eventBus.emit(EVENTS.UI_OPEN_INVESTMENT, { cityName: this.#mapData.cityName });
     }
 
     #triggerRadarTutorial() {
         const newPhase = 2;
-        eventBus.emit(EVENTS.MUTATE_STATE, { missionPhase: newPhase });
-        eventBus.emit(EVENTS.MISSION_STATE_CHANGED, {
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { missionPhase: newPhase });
+        eventBus.emit(EVENTS.STATE_MISSION_CHANGED, {
             phase: newPhase,
             moveCount: this.#gameState.moveCount
         });
@@ -302,7 +302,7 @@ export class EconomyController {
         const count = this.#mapData.getPoliceStations().length;
 
         // Daten-Event: UI rendert das Tutorial-Modal
-        eventBus.emit(EVENTS.RADAR_TUTORIAL_TRIGGERED, { stationCount: count });
+        eventBus.emit(EVENTS.NOTIFY_RADAR_TUTORIAL, { stationCount: count });
     }
 
     /**
@@ -330,10 +330,10 @@ export class EconomyController {
 
     #registerPurchaseFlows() {
         // Bolzenschneider
-        this.#sub(EVENTS.BUY_BOLT_CUTTER, (payload) => {
+        this.#sub(EVENTS.CMD_BUY_BOLT_CUTTER, (payload) => {
             const cost = payload.cost || CONFIG.ECONOMY.BOLT_CUTTER_COST;
             if (!this.#budgetManager.canAfford(cost)) {
-                eventBus.emit(EVENTS.SHOW_TOAST, { message: 'Nicht genug Geld fuer den Bolzenschneider!', type: 'fail' });
+                eventBus.emit(EVENTS.UI_SHOW_TOAST, { message: 'Nicht genug Geld fuer den Bolzenschneider!', type: 'fail' });
                 this.#resume();
                 return;
             }
@@ -343,14 +343,14 @@ export class EconomyController {
             const playerNode = this.#mapData.getNode(this.#gameState.currentPlayerNodeId);
             const targets = this.#missionService.spawnBicycleTargets(this.#mapData, playerNode);
 
-            eventBus.emit(EVENTS.MUTATE_STATE, { 
+            eventBus.emit(EVENTS.CMD_MUTATE_STATE, { 
                 hasBoltCutter: true,
                 activeBicycleTargets: targets 
             });
 
-            eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-pub' });
+            eventBus.emit(EVENTS.CMD_REMOVE_LOG_ENTRY, { logId: 'goal-visit-pub' });
 
-            eventBus.emit(EVENTS.MUTATE_STATE, {
+            eventBus.emit(EVENTS.CMD_MUTATE_STATE, {
                 newLogEntry: {
                     time: Date.now(),
                     text: 'Ziel: Knacke ein Fahrrad an einem der markierten Stellplaetze.',
@@ -361,25 +361,25 @@ export class EconomyController {
             const coordsToFit = [];
             if (playerNode) coordsToFit.push([playerNode.lat, playerNode.lon]);
             targets.forEach(t => coordsToFit.push([t.lat, t.lon]));
-            eventBus.emit(EVENTS.CAMERA_FIT_BOUNDS_REQUESTED, coordsToFit);
+            eventBus.emit(EVENTS.CMD_CAMERA_FIT_BOUNDS, coordsToFit);
 
-            eventBus.emit(EVENTS.CLOSE_INTERACTION);
+            eventBus.emit(EVENTS.UI_CLOSE_INTERACTION);
             this.#resume();
         });
 
         // Friseur-Ticket
-        this.#sub(EVENTS.BUY_BARBER_TICKET, ({ barber, barberName }) => {
+        this.#sub(EVENTS.CMD_BUY_BARBER_TICKET, ({ barber, barberName }) => {
             const cost = CONFIG.ECONOMY.BARBER_COST;
             if (!this.#budgetManager.canAfford(cost)) {
-                eventBus.emit(EVENTS.SHOW_TOAST, { message: 'Nicht genug Kohle fuer den Friseur!', type: 'fail' });
+                eventBus.emit(EVENTS.UI_SHOW_TOAST, { message: 'Nicht genug Kohle fuer den Friseur!', type: 'fail' });
                 return;
             }
 
             this.#budgetManager.deductBudget(cost);
-            eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-pub' });
-            eventBus.emit(EVENTS.CLOSE_INTERACTION);
+            eventBus.emit(EVENTS.CMD_REMOVE_LOG_ENTRY, { logId: 'goal-visit-pub' });
+            eventBus.emit(EVENTS.UI_CLOSE_INTERACTION);
 
-            eventBus.emit(EVENTS.MUTATE_STATE, {
+            eventBus.emit(EVENTS.CMD_MUTATE_STATE, {
                 newLogEntry: {
                     time: Date.now(),
                     text: 'Ziel: Besuche ' + barberName + ' fuer eine Tarnung.',
@@ -388,7 +388,7 @@ export class EconomyController {
             });
 
             if (barber) {
-                eventBus.emit(EVENTS.START_BARBER_REVEAL, { node: barber });
+                eventBus.emit(EVENTS.CMD_START_BARBER_REVEAL, { node: barber });
                 this.setActiveBarber(barber);
             }
 
@@ -396,7 +396,7 @@ export class EconomyController {
         });
 
         // Investment abgebrochen
-        this.#sub(EVENTS.INVESTMENT_CANCELLED, () => {
+        this.#sub(EVENTS.ACTION_INVESTMENT_CANCELLED, () => {
             this.#resume();
         });
     }
@@ -406,17 +406,17 @@ export class EconomyController {
     // ================================================================
 
     #registerBarberFlow() {
-        this.#sub(EVENTS.BARBER_TRANSFORM_START, () => {
+        this.#sub(EVENTS.CMD_BARBER_TRANSFORM, () => {
             // 1. Visuelles Feedback (UI-Layer hoert hierauf)
-            eventBus.emit(EVENTS.START_BARBER_ANIMATION);
+            eventBus.emit(EVENTS.UI_START_BARBER_ANIMATION);
 
             // 2. Mechanik
             this.applyBarberBuff();
 
             // 3. Events
-            eventBus.emit(EVENTS.SHOW_TOAST, { message: 'Tarnung aktiv! Du bist jetzt ein Geist.', type: 'success' });
-            eventBus.emit(EVENTS.CLOSE_INTERACTION);
-            eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-visit-barber' });
+            eventBus.emit(EVENTS.UI_SHOW_TOAST, { message: 'Tarnung aktiv! Du bist jetzt ein Geist.', type: 'success' });
+            eventBus.emit(EVENTS.UI_CLOSE_INTERACTION);
+            eventBus.emit(EVENTS.CMD_REMOVE_LOG_ENTRY, { logId: 'goal-visit-barber' });
 
             // 4. Fortsetzen
             this.#resume();
@@ -424,7 +424,7 @@ export class EconomyController {
     }
 
     applyBarberBuff() {
-        eventBus.emit(EVENTS.MUTATE_STATE, { 
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { 
             isDisguised: true,
             activeBarber: null 
         });
@@ -434,10 +434,10 @@ export class EconomyController {
             shortText: 'Neues Gesicht erhalten. Risiko um 50% gesenkt.',
             type: 'success'
         };
-        eventBus.emit(EVENTS.MUTATE_STATE, { 
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { 
             newLogEntry: entry 
         });
-        eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: entry.shortText, type: entry.type, notify: true });
+        eventBus.emit(EVENTS.CMD_ADD_LOG_ENTRY, { shortText: entry.shortText, type: entry.type, notify: true });
     }
 
     /**
@@ -479,8 +479,8 @@ export class EconomyController {
     }
 
     setActiveBarber(barber) {
-        eventBus.emit(EVENTS.MUTATE_STATE, { activeBarber: barber });
-        eventBus.emit(EVENTS.TARGETS_UPDATED, this.#gameState.getState());
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { activeBarber: barber });
+        eventBus.emit(EVENTS.STATE_TARGETS_UPDATED, this.#gameState.getState());
     }
 
     // ================================================================
@@ -488,9 +488,9 @@ export class EconomyController {
     // ================================================================
 
     #registerLoanFlow() {
-        this.#sub(EVENTS.ACCEPT_LOAN_OFFER, () => {
+        this.#sub(EVENTS.ACTION_ACCEPT_LOAN, () => {
             this.#budgetManager.handleAcceptLoan();
-            eventBus.emit(EVENTS.ADD_LOG_ENTRY, {
+            eventBus.emit(EVENTS.CMD_ADD_LOG_ENTRY, {
                 shortText: 'Not-Kredit erhalten: 1500 Euro (Zinsen laufen...)',
                 logId: 'loan-entry',
                 notify: true
@@ -498,8 +498,8 @@ export class EconomyController {
             this.#resume();
         });
 
-        this.#sub(EVENTS.RELOAD_GAME, () => location.reload());
-        this.#sub(EVENTS.REJECT_LOAN, () => location.reload());
+        this.#sub(EVENTS.CMD_RELOAD_GAME, () => location.reload());
+        this.#sub(EVENTS.ACTION_REJECT_LOAN, () => location.reload());
     }
 
     // ================================================================
@@ -507,20 +507,20 @@ export class EconomyController {
     // ================================================================
 
     #registerEncounterHooks() {
-        this.#sub(EVENTS.ENCOUNTER_TRIGGERED, (encounter) => {
+        this.#sub(EVENTS.SYS_ENCOUNTER_TRIGGERED, (encounter) => {
             this.#pause();
-            eventBus.emit(EVENTS.GAME_PAUSED);
+            eventBus.emit(EVENTS.SYS_GAME_PAUSED);
             this.#budgetManager.deductBudget(encounter.cost);
-            eventBus.emit(EVENTS.SHOW_ENCOUNTER, encounter);
+            eventBus.emit(EVENTS.UI_SHOW_ENCOUNTER, encounter);
         });
 
-        this.#sub(EVENTS.RADAR_ACKNOWLEDGED, () => {});
+        this.#sub(EVENTS.ACTION_RADAR_ACKNOWLEDGED, () => {});
 
         // --- Intent Event (Etappe 5) ---
-        this.#sub(EVENTS.INTENT_TRIGGER_RADAR, ({ force }) => {
+        this.#sub(EVENTS.CMD_TRIGGER_RADAR, ({ force }) => {
             const result = this.triggerRadar(force);
             if (result !== null && result !== 'cooldown') {
-                eventBus.emit(EVENTS.RADAR_RESULT_READY, result);
+                eventBus.emit(EVENTS.NOTIFY_RADAR_RESULT, result);
             }
         });
     }
@@ -549,8 +549,8 @@ export class EconomyController {
             const logbook = this.#gameState.logbook.filter(e => e.logId !== 'RADAR_STATUS');
             logbook.unshift(entry);
 
-            eventBus.emit(EVENTS.MUTATE_STATE, { logbook });
-            eventBus.emit(EVENTS.ADD_LOG_ENTRY, entry);
+            eventBus.emit(EVENTS.CMD_MUTATE_STATE, { logbook });
+            eventBus.emit(EVENTS.CMD_ADD_LOG_ENTRY, entry);
             return 'cooldown';
         }
 
@@ -567,11 +567,11 @@ export class EconomyController {
             const logbook = this.#gameState.logbook.filter(e => e.logId !== 'RADAR_STATUS');
             logbook.unshift(entry);
 
-            eventBus.emit(EVENTS.MUTATE_STATE, {
+            eventBus.emit(EVENTS.CMD_MUTATE_STATE, {
                 lastRadarTime: now,
                 logbook
             });
-            eventBus.emit(EVENTS.ADD_LOG_ENTRY, entry);
+            eventBus.emit(EVENTS.CMD_ADD_LOG_ENTRY, entry);
         }
 
         const playerNode = this.#mapData.getNode(this.#gameState.currentPlayerNodeId);

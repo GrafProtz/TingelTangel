@@ -42,30 +42,30 @@ export class CrimeController {
     #registerListeners() {
         // --- Einbruch ---
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.START_BURGLARY, (payload) => {
+            eventBus.subscribe(EVENTS.CMD_START_BURGLARY, (payload) => {
                 this.#handleBurglary(payload);
             })
         );
 
         // --- Fahrraddiebstahl (RNG-Phase) ---
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.START_BICYCLE_THEFT_RNG, (payload) => {
+            eventBus.subscribe(EVENTS.CMD_START_BICYCLE_THEFT, (payload) => {
                 this.#handleBicycleTheftRNG(payload);
             })
         );
 
         // --- Kategorie-Auswahl (Ziel-Spawning) ---
         const categoryMap = {
-            [EVENTS.SELECT_CATEGORY_RESIDENTIAL]: 'residential',
-            [EVENTS.SELECT_CATEGORY_COMMERCIAL]:  'commercial',
-            [EVENTS.SELECT_CATEGORY_PUBLIC]:       'public',
-            [EVENTS.SELECT_CATEGORY_ALLOTMENTS]:   'allotments'
+            [EVENTS.ACTION_SELECT_RESIDENTIAL]: 'residential',
+            [EVENTS.ACTION_SELECT_COMMERCIAL]:  'commercial',
+            [EVENTS.ACTION_SELECT_PUBLIC]:       'public',
+            [EVENTS.ACTION_SELECT_ALLOTMENTS]:   'allotments'
         };
 
         Object.entries(categoryMap).forEach(([event, type]) => {
             this.#subscriptions.push(
                 eventBus.subscribe(event, () => {
-                    eventBus.emit(EVENTS.SPAWN_TARGETS, {
+                    eventBus.emit(EVENTS.CMD_SPAWN_TARGETS, {
                         targetType: type,
                         centerNodeId: this.#gameState.currentPlayerNodeId
                     });
@@ -76,13 +76,13 @@ export class CrimeController {
 
         // --- Intent Events (Etappe 5) ---
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.INTENT_SET_CRIME_TARGETS, ({ targets }) => {
+            eventBus.subscribe(EVENTS.CMD_SET_CRIME_TARGETS, ({ targets }) => {
                 this.setCrimeTargets(targets);
             })
         );
 
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.INTENT_SCOUT_TARGET, ({ target }) => {
+            eventBus.subscribe(EVENTS.CMD_SCOUT_TARGET, ({ target }) => {
                 const playerIdStr = String(this.#gameState.currentPlayerNodeId);
                 const targetIdStr = String(target.accessNodeId || target.id);
                 
@@ -92,20 +92,20 @@ export class CrimeController {
                                neighbors.some(n => String(n.id) === targetIdStr);
                 
                 if (!isNear) {
-                    eventBus.emit(EVENTS.SHOW_TOAST, { message: "Du musst exakt am Icon stehen!", type: 'fail' });
+                    eventBus.emit(EVENTS.UI_SHOW_TOAST, { message: "Du musst exakt am Icon stehen!", type: 'fail' });
                     return;
                 }
                 
-                eventBus.emit(EVENTS.MUTATE_STATE, { gameActive: false });
-                eventBus.emit(EVENTS.GAME_PAUSED);
+                eventBus.emit(EVENTS.CMD_MUTATE_STATE, { gameActive: false });
+                eventBus.emit(EVENTS.SYS_GAME_PAUSED);
                 
                 const riskData = this.calculateTargetRisk(target);
-                eventBus.emit(EVENTS.OPEN_SCOUTING_REPORT, { target, riskData });
+                eventBus.emit(EVENTS.UI_OPEN_SCOUTING_REPORT, { target, riskData });
             })
         );
 
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.INTENT_BICYCLE_TARGET, ({ target }) => {
+            eventBus.subscribe(EVENTS.CMD_BICYCLE_TARGET, ({ target }) => {
                 const playerIdStr = String(this.#gameState.currentPlayerNodeId);
                 const targetIdStr = String(target.accessNodeId || target.id);
                 
@@ -114,11 +114,11 @@ export class CrimeController {
                                neighbors.some(n => String(n.id) === targetIdStr);
                 
                 if (!isNear) {
-                    eventBus.emit(EVENTS.SHOW_TOAST, { message: "Steh direkt am Rad, um es zu knacken!", type: 'fail' });
+                    eventBus.emit(EVENTS.UI_SHOW_TOAST, { message: "Steh direkt am Rad, um es zu knacken!", type: 'fail' });
                     return;
                 }
                 const riskData = this.calculateTargetRisk(target);
-                eventBus.emit(EVENTS.BICYCLE_INTERACTION_READY, { target, riskData });
+                eventBus.emit(EVENTS.NOTIFY_BICYCLE_INTERACTION, { target, riskData });
             })
         );
     }
@@ -135,7 +135,7 @@ export class CrimeController {
         setTimeout(() => {
             // 1. Abbruch-Check (mechanische Sicherungen)
             if (Math.random() * 100 <= riskData.abortRate) {
-                eventBus.emit(EVENTS.BURGLARY_RESOLVED, {
+                eventBus.emit(EVENTS.NOTIFY_BURGLARY_RESOLVED, {
                     outcome: 'aborted',
                     target
                 });
@@ -148,7 +148,7 @@ export class CrimeController {
                 const fine = Math.ceil(this.#budgetManager.budget * CONFIG.ECONOMY.FINE_FACTOR_BURGLARY);
                 this.#budgetManager.deductBudget(fine);
 
-                eventBus.emit(EVENTS.BURGLARY_RESOLVED, {
+                eventBus.emit(EVENTS.NOTIFY_BURGLARY_RESOLVED, {
                     outcome: 'caught',
                     fine,
                     target
@@ -160,7 +160,7 @@ export class CrimeController {
             // 3. Erfolg!
             const result = this.#calculateBurglarySuccess(riskData);
 
-            eventBus.emit(EVENTS.BURGLARY_RESOLVED, {
+            eventBus.emit(EVENTS.NOTIFY_BURGLARY_RESOLVED, {
                 outcome: 'success',
                 loot: result.netLoot,
                 loanRepaid: result.loanRepaid,
@@ -184,7 +184,7 @@ export class CrimeController {
             debtAmount = this.#budgetManager.processLoanRepayment();
             amount = Math.max(0, amount - debtAmount);
             loanRepaid = true;
-            eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'loan-entry' });
+            eventBus.emit(EVENTS.CMD_REMOVE_LOG_ENTRY, { logId: 'loan-entry' });
         }
 
         this.#budgetManager.addReward(amount);
@@ -196,13 +196,13 @@ export class CrimeController {
      * Setzt den State nach einem Einbruch zurück (egal ob Erfolg/Fail).
      */
     #resetBurglaryState() {
-        eventBus.emit(EVENTS.MUTATE_STATE, {
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, {
             activeCrimeTargets: [],
             isDisguised: false,
             missionPhase: 1
         });
 
-        eventBus.emit(EVENTS.MISSION_STATE_CHANGED, {
+        eventBus.emit(EVENTS.STATE_MISSION_CHANGED, {
             phase: 1,
             moveCount: this.#gameState.moveCount
         });
@@ -219,7 +219,7 @@ export class CrimeController {
      * Feuert BICYCLE_THEFT_RESOLVED mit dem Ergebnis.
      */
     #handleBicycleTheftRNG({ target, riskData }) {
-        eventBus.emit(EVENTS.ADD_LOG_ENTRY, {
+        eventBus.emit(EVENTS.CMD_ADD_LOG_ENTRY, {
             shortText: 'Knackversuch läuft...',
             logId: 'bicycle-theft-progress',
             notify: false
@@ -228,28 +228,28 @@ export class CrimeController {
         const success = Math.random() * 100 > riskData.totalRisk;
 
         if (success) {
-            eventBus.emit(EVENTS.MUTATE_STATE, { isBiking: true, hasBicycle: true });
+            eventBus.emit(EVENTS.CMD_MUTATE_STATE, { isBiking: true, hasBicycle: true });
 
-            eventBus.emit(EVENTS.BIKING_STATE_CHANGED, true);
-            eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-steal-bicycle' });
-            eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'bicycle-theft-progress' });
-            eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: '✅ Fahrrad erfolgreich geklaut.', notify: true });
+            eventBus.emit(EVENTS.STATE_BIKING_CHANGED, true);
+            eventBus.emit(EVENTS.CMD_REMOVE_LOG_ENTRY, { logId: 'goal-steal-bicycle' });
+            eventBus.emit(EVENTS.CMD_REMOVE_LOG_ENTRY, { logId: 'bicycle-theft-progress' });
+            eventBus.emit(EVENTS.CMD_ADD_LOG_ENTRY, { shortText: '✅ Fahrrad erfolgreich geklaut.', notify: true });
         } else {
             const fine = Math.ceil(this.#budgetManager.budget * CONFIG.ECONOMY.FINE_FACTOR_BICYCLE);
             this.#budgetManager.deductBudget(fine);
 
-            eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'bicycle-theft-progress' });
-            eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: '🚨 Beim Fahrraddiebstahl erwischt!', notify: true });
+            eventBus.emit(EVENTS.CMD_REMOVE_LOG_ENTRY, { logId: 'bicycle-theft-progress' });
+            eventBus.emit(EVENTS.CMD_ADD_LOG_ENTRY, { shortText: '🚨 Beim Fahrraddiebstahl erwischt!', notify: true });
         }
 
         // Daten-Event für die UI-Schicht
-        eventBus.emit(EVENTS.BICYCLE_THEFT_RESOLVED, {
+        eventBus.emit(EVENTS.NOTIFY_BICYCLE_THEFT_RESOLVED, {
             outcome: success ? 'success' : 'caught',
             fine: success ? 0 : Math.ceil(this.#budgetManager.budget * CONFIG.ECONOMY.FINE_FACTOR_BICYCLE),
             target
         });
 
-        eventBus.emit(EVENTS.MUTATE_STATE, { activeBicycleTargets: [] });
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { activeBicycleTargets: [] });
     }
 
     // ================================================================
@@ -282,16 +282,16 @@ export class CrimeController {
      * @param {Array} targets
      */
     setCrimeTargets(targets) {
-        eventBus.emit(EVENTS.MUTATE_STATE, { 
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { 
             activeCrimeTargets: targets,
             missionPhase: 3 
         });
 
-        eventBus.emit(EVENTS.MISSION_STATE_CHANGED, {
+        eventBus.emit(EVENTS.STATE_MISSION_CHANGED, {
             phase: 3,
             moveCount: this.#gameState.moveCount
         });
-        eventBus.emit(EVENTS.TARGETS_UPDATED, this.#gameState.getState());
+        eventBus.emit(EVENTS.STATE_TARGETS_UPDATED, this.#gameState.getState());
     }
 
     /**
@@ -323,9 +323,9 @@ export class CrimeController {
     // ================================================================
 
     #setGameActive(active) {
-        eventBus.emit(EVENTS.MUTATE_STATE, { gameActive: active });
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { gameActive: active });
         if (active) {
-            eventBus.emit(EVENTS.GAME_RESUMED);
+            eventBus.emit(EVENTS.SYS_GAME_RESUMED);
         }
     }
 

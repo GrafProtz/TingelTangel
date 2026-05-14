@@ -43,22 +43,22 @@ export class MovementController {
     // ----------------------------------------------------------------
 
     #registerListeners() {
-        // Primärer Einsprungpunkt: UI feuert PLAYER_MOVE_INTENT
+        // Primärer Einsprungpunkt: UI feuert ACTION_MOVE_PLAYER
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.PLAYER_MOVE_INTENT, ({ targetId }) => {
+            eventBus.subscribe(EVENTS.ACTION_MOVE_PLAYER, ({ targetId }) => {
                 this.#handleMoveIntent(targetId);
             })
         );
 
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.INTENT_MOVE_PLAYER, ({ targetId }) => {
+            eventBus.subscribe(EVENTS.CMD_MOVE_PLAYER, ({ targetId }) => {
                 this.#handleMoveIntent(targetId);
             })
         );
 
         // Fahrrad Auf-/Absteigen
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.TOGGLE_BICYCLE, () => {
+            eventBus.subscribe(EVENTS.ACTION_TOGGLE_BICYCLE, () => {
                 this.#handleToggleBicycle();
             })
         );
@@ -112,12 +112,12 @@ export class MovementController {
         let cost = 0;
         if (neighbor) {
             const edge = neighbor.edgeData;
-            const costMultiplier = this.#gameState.isBiking ? 1.5 : 1.0;
-            cost = Math.max(1, Math.ceil(edge.distance * CONFIG.COST_PER_METER * costMultiplier));
+            const costMultiplier = this.#gameState.isBiking ? CONFIG.PLAYER.BIKE_COST_MULTIPLIER : 1.0;
+            cost = Math.max(1, Math.ceil(edge.distance * CONFIG.ECONOMY.COST_PER_METER_FOOT * costMultiplier));
         }
 
         const newMoveCount = this.#gameState.moveCount + 1;
-        eventBus.emit(EVENTS.MUTATE_STATE, { 
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { 
             currentPlayerNodeId: String(reachedId),
             moveCount: newMoveCount,
             budgetDelta: -cost
@@ -131,7 +131,7 @@ export class MovementController {
 
         // 4. Pub-Ankunfts-Check (delegiert an Game.js via Event)
         if (String(this.#gameState.currentPlayerNodeId) === String(this.#gameState.targetPubNodeId)) {
-            eventBus.emit(EVENTS.INTENT_PUB_INTERACTION);
+            eventBus.emit(EVENTS.CMD_PUB_INTERACTION);
         }
 
         // 5. Zufalls-Begegnung (Etappe 6.9 Dev-Toggle Fix)
@@ -140,7 +140,7 @@ export class MovementController {
         }
 
         // 6. Broadcasts
-        eventBus.emit(EVENTS.PLAYER_MOVED, this.#gameState.getState());
+        eventBus.emit(EVENTS.STATE_PLAYER_MOVED, this.#gameState.getState());
     }
 
     // ----------------------------------------------------------------
@@ -157,11 +157,11 @@ export class MovementController {
         // Timer-Check: Warten, bis die Ziel-Anzahl an Zügen erreicht ist
         if (this.#gameState.moveCount < this.#gameState.infoMenuOpenUntilMove) return;
 
-        eventBus.emit(EVENTS.MUTATE_STATE, { 
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { 
             isInfoMenuOpen: false,
             infoMenuOpenUntilMove: -1 
         });
-        eventBus.emit(EVENTS.INFO_MENU_STATE, false);
+        eventBus.emit(EVENTS.STATE_INFO_MENU, false);
     }
 
     /**
@@ -169,8 +169,8 @@ export class MovementController {
      */
     #handleFirstMoveLogic() {
         if (this.#gameState.firstMoveFired) return;
-        eventBus.emit(EVENTS.MUTATE_STATE, { firstMoveFired: true });
-        eventBus.emit(EVENTS.FIRST_MOVE_COMPLETED);
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { firstMoveFired: true });
+        eventBus.emit(EVENTS.SYS_FIRST_MOVE_DONE);
     }
 
     // ----------------------------------------------------------------
@@ -181,14 +181,14 @@ export class MovementController {
         if (!this.#gameState.hasBicycle) return;
 
         const newState = !this.#gameState.isBiking;
-        eventBus.emit(EVENTS.MUTATE_STATE, { isBiking: newState });
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { isBiking: newState });
 
         const msg = newState
             ? 'Aufgestiegen. Du bist jetzt schneller.'
             : 'Abgestiegen. Du bist wieder zu Fuß unterwegs.';
 
-        eventBus.emit(EVENTS.BIKING_STATE_CHANGED, newState);
-        eventBus.emit(EVENTS.SHOW_TOAST, { message: msg, type: 'success' });
+        eventBus.emit(EVENTS.STATE_BIKING_CHANGED, newState);
+        eventBus.emit(EVENTS.UI_SHOW_TOAST, { message: msg, type: 'success' });
     }
 
     // ----------------------------------------------------------------

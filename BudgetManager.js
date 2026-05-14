@@ -82,7 +82,7 @@ export class BudgetManager {
      */
     applyBudgetTick(newBudget, diff) {
         this.#budget = newBudget;
-        eventBus.emit(EVENTS.BUDGET_TICK, { total: this.#budget, diff });
+        eventBus.emit(EVENTS.STATE_BUDGET_TICK, { total: this.#budget, diff });
     }
 
     /**
@@ -124,22 +124,22 @@ export class BudgetManager {
     #handleInsolvency() {
         if (!this.#hasActiveLoan) {
             // Wenn pleite, aber noch kein Kredit: Angebot machen
-            eventBus.emit(EVENTS.SHOW_DIALOG, {
+            eventBus.emit(EVENTS.UI_SHOW_DIALOG, {
                 title: 'Pleite!',
                 text: 'Du hast keinen Cent mehr in der Tasche. Ein alter Bekannter bietet dir einen Not-Kredit von 1.500 € an. Aber pass auf: Er will das Geld nach dem nächsten erfolgreichen Bruch mit Zinsen zurück!',
                 buttons: [
-                    { text: 'Kredit annehmen', event: EVENTS.ACCEPT_LOAN_OFFER },
-                    { text: 'Aufgeben', event: EVENTS.RELOAD_GAME }
+                    { text: 'Kredit annehmen', event: EVENTS.ACTION_ACCEPT_LOAN },
+                    { text: 'Aufgeben', event: EVENTS.CMD_RELOAD_GAME }
                 ]
             });
         } else {
             // Wenn bereits verschuldet und pleite: Game Over
-            eventBus.emit(EVENTS.PLAYER_BUSTED, { reason: 'BANKRUPTCY' });
+            eventBus.emit(EVENTS.SYS_PLAYER_BUSTED, { reason: 'BANKRUPTCY' });
         }
     }
 
     #notifyChange(diff = 0) {
-        eventBus.emit(EVENTS.MUTATE_STATE, {
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, {
             budget: this.#budget,
             hasActiveLoan: this.#hasActiveLoan,
             loanInterestSteps: this.#loanInterestSteps
