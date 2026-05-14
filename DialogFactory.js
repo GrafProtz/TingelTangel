@@ -77,6 +77,26 @@ export class DialogFactory {
         };
     }
 
+    static getSyndicateLoanDialog() {
+        return {
+            title: '🤝 Angebot der Verbrecher-Innung',
+            text: `<div style="line-height: 1.6;">
+                <p>„Du bist pleite, Freundchen. Kein Geld – keine Optionen. Aber die Innung schaut nicht tatenlos zu."</p>
+                <div style="background: rgba(0,0,0,0.08); border-left: 3px solid var(--color-warning); padding: 12px; border-radius: 6px; margin: 16px 0;">
+                    <div style="display:flex; justify-content:space-between; font-size:1.1rem; font-weight:bold;">
+                        <span>Überbrückungskredit:</span><span style="color:var(--color-warning);">+500 €</span>
+                    </div>
+                    <div style="font-size:0.85rem; opacity:0.75; margin-top:6px;">Rückzahlung beim nächsten erfolgreichen Bruch fällig.</div>
+                </div>
+                <p style="font-size:0.9rem; color:var(--color-danger);">⚠️ Lehnst du ab, bist du auf dich allein gestellt.</p>
+            </div>`,
+            buttons: [
+                { text: 'Annehmen (500 €)', event: EVENTS.ACTION_ACCEPT_SYNDICATE_LOAN, className: 'btn-danger' },
+                { text: 'Ablehnen', event: EVENTS.ACTION_DECLINE_SYNDICATE_LOAN, className: 'btn-secondary' }
+            ]
+        };
+    }
+
     static getRadarTutorial(count) {
         return {
             title: "Auge des Gesetzes",

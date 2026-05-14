@@ -84,10 +84,11 @@ export class MovementController {
             this.#gameState.currentPlayerNodeId,
             this.#gameState.isBiking,
             {
-                currentBudget: this.#budgetManager.budget,
+                currentBudget: this.#gameState.budget,
                 onBudgetTick: (newBudget) => {
-                    const diff = newBudget - this.#budgetManager.budget;
-                    this.#budgetManager.applyBudgetTick(newBudget, diff);
+                    const diff = newBudget - this.#gameState.budget;
+                    eventBus.emit(EVENTS.CMD_MUTATE_STATE, { budgetDelta: diff });
+                    eventBus.emit(EVENTS.STATE_BUDGET_TICK, { total: newBudget, diff });
                 },
                 onComplete:   (reachedId) => this.#finishMovement(reachedId)
             }

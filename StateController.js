@@ -17,6 +17,7 @@ export class StateController {
     #state;
     #subscriptions = [];
     #batchPending = false;
+    #isGameOver = false;
 
     constructor() {
         this.#state = new GameState();
@@ -33,6 +34,12 @@ export class StateController {
         this.#subscriptions.push(
             eventBus.subscribe(EVENTS.CMD_MUTATE_STATE, (delta) => this.#handleMutation(delta))
         );
+        this.#subscriptions.push(
+            eventBus.subscribe(EVENTS.SYS_GAME_OVER, () => {
+                this.#isGameOver = true;
+                log('[StateController] Game Over registriert. Mutationen blockiert.');
+            })
+        );
     }
 
     /**
@@ -41,12 +48,17 @@ export class StateController {
      */
     #handleMutation(delta) {
         if (!delta || typeof delta !== 'object') return;
+        if (this.#isGameOver) return;
 
         log('[StateController] Mutation:', delta);
 
-        // 1. Synchrone Anwendung: Garantiert, dass controller.getState() 
-        // direkt im Anschluss an einen Emit die neuen Werte liefert.
+        const oldBudget = this.#state.budget;
         this.#state.mutate(delta);
+
+        // Budget-Wächter: Falls sich das Budget geändert hat, feuern wir ein dediziertes Event
+        if (this.#state.budget !== oldBudget) {
+            eventBus.emit(EVENTS.STATE_BUDGET_CHANGED, this.#state.budget);
+        }
 
         // 2. Event-Batching via Microtask: Verhindert Event-Kaskaden, 
         // wenn mehrere MUTATE_STATE Events nacheinander abgefeuert werden.

@@ -20,6 +20,8 @@ export class GameState {
     #budget = 0;
     #hasActiveLoan = false;
     #loanInterestSteps = 0;
+    #syndicateLoanOffered = false;
+    #syndicateLoanActive = false;
 
     // --- Game Engine State ---
     #gameActive = false;
@@ -55,6 +57,8 @@ export class GameState {
     get budget() { return this.#budget; }
     get hasActiveLoan() { return this.#hasActiveLoan; }
     get loanInterestSteps() { return this.#loanInterestSteps; }
+    get syndicateLoanOffered() { return this.#syndicateLoanOffered; }
+    get syndicateLoanActive() { return this.#syndicateLoanActive; }
     get gameActive() { return this.#gameActive; }
     get isMoving() { return this.#isMoving; }
     get moveCount() { return this.#moveCount; }
@@ -101,6 +105,8 @@ export class GameState {
             budget: this.#budget,
             hasActiveLoan: this.#hasActiveLoan,
             loanInterestSteps: this.#loanInterestSteps,
+            syndicateLoanOffered: this.#syndicateLoanOffered,
+            syndicateLoanActive: this.#syndicateLoanActive,
             gameActive: this.#gameActive,
             isMoving: this.#isMoving,
             moveCount: this.#moveCount,
@@ -143,6 +149,8 @@ export class GameState {
         if (delta.budgetDelta !== undefined)         this.#budget += Number(delta.budgetDelta) || 0;
         if (delta.hasActiveLoan !== undefined)       this.#hasActiveLoan = !!delta.hasActiveLoan;
         if (delta.loanInterestSteps !== undefined)   this.#loanInterestSteps = Number(delta.loanInterestSteps) || 0;
+        if (delta.syndicateLoanOffered !== undefined) this.#syndicateLoanOffered = !!delta.syndicateLoanOffered;
+        if (delta.syndicateLoanActive !== undefined)  this.#syndicateLoanActive = !!delta.syndicateLoanActive;
         if (delta.gameActive !== undefined)          this.#gameActive = !!delta.gameActive;
         if (delta.isMoving !== undefined)            this.#isMoving = !!delta.isMoving;
         if (delta.moveCount !== undefined)           this.#moveCount = Number(delta.moveCount) || 0;

@@ -125,6 +125,9 @@ export class UIManager {
         sub(EVENTS.UI_SHOW_CASCADE, (data) => this.#handleCascade(data));
         sub(EVENTS.UI_SHOW_ENCOUNTER, (data) => this.#showEncounterModal(data));
         sub(EVENTS.UI_SHOW_LOAN_MODAL, () => this.#showLoanModal());
+        sub(EVENTS.UI_PROMPT_SYNDICATE_LOAN, () =>
+            eventBus.emit(EVENTS.UI_SHOW_DIALOG, DialogFactory.getSyndicateLoanDialog())
+        );
         sub(EVENTS.SYS_MAP_LOAD_ERROR, () => eventBus.emit(EVENTS.UI_SHOW_DIALOG, DialogFactory.createRetryDialog()));
 
         // --- Logbook Updates ---

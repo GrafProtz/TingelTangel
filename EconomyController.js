@@ -500,6 +500,46 @@ export class EconomyController {
 
         this.#sub(EVENTS.CMD_RELOAD_GAME, () => location.reload());
         this.#sub(EVENTS.ACTION_REJECT_LOAN, () => location.reload());
+
+        // --- Überbrückungskredit der Verbrecher-Innung ---
+
+        // Bankruptcy-Wächter: feuert einmalig bei Kontostand <= 0
+        const checkSyndicateLoanTrigger = () => {
+            if (this.#gameState.budget <= 0 && !this.#gameState.syndicateLoanOffered) {
+                // Sofort als "angeboten" markieren – verhindert Endlosschleifen
+                eventBus.emit(EVENTS.CMD_MUTATE_STATE, { syndicateLoanOffered: true });
+                eventBus.emit(EVENTS.UI_PROMPT_SYNDICATE_LOAN);
+            }
+        };
+
+        this.#sub(EVENTS.STATE_BUDGET_CHANGED, checkSyndicateLoanTrigger);
+        this.#sub(EVENTS.STATE_BUDGET_TICK,    checkSyndicateLoanTrigger);
+
+        // Spieler nimmt den Überbrückungskredit an
+        this.#sub(EVENTS.ACTION_ACCEPT_SYNDICATE_LOAN, () => {
+            const LOAN_AMOUNT = 500;
+            eventBus.emit(EVENTS.CMD_MUTATE_STATE, {
+                budgetDelta: LOAN_AMOUNT,
+                syndicateLoanActive: true
+            });
+            // STATE_LOAN_ACTIVE als dediziertes Bestätigungs-Event feuern
+            eventBus.emit(EVENTS.STATE_LOAN_ACTIVE, { amount: LOAN_AMOUNT });
+            eventBus.emit(EVENTS.CMD_ADD_LOG_ENTRY, {
+                shortText: `Überbrückungskredit der Innung erhalten: +${LOAN_AMOUNT} € (Rückzahlung beim nächsten Bruch).`,
+                logId: 'syndicate-loan-entry',
+                notify: true
+            });
+            log('[EconomyController] Überbrückungskredit angenommen.');
+        });
+
+        // Spieler lehnt den Überbrückungskredit ab
+        this.#sub(EVENTS.ACTION_DECLINE_SYNDICATE_LOAN, () => {
+            log('[EconomyController] Überbrückungskredit abgelehnt. Game Over.');
+            eventBus.emit(EVENTS.SYS_GAME_OVER, { 
+                reason: 'BANKRUPTCY', 
+                message: 'Du hast den Kredit abgelehnt und bist pleite.' 
+            });
+        });
     }
 
     // ================================================================
