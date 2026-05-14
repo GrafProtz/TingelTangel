@@ -77,7 +77,18 @@ export class DialogFactory {
         };
     }
 
-    static getSyndicateLoanDialog() {
+    static getSyndicateLoanDialog(data = {}) {
+        const nr = data.upcomingLoanNumber || 1;
+        let loanExplanation = "";
+        
+        if (nr === 1) {
+            loanExplanation = "Dies ist dein 1. Kredit. Pro Bewegungsschritt steigen deine Schulden um 5€, die erst beim nächsten Einbruch fällig werden.";
+        } else if (nr === 2) {
+            loanExplanation = "Dies ist dein 2. Kredit. Achtung: Dir werden ab sofort pro Bewegungsschritt 10€ direkt vom aktiven Bar-Budget abgezogen!";
+        } else {
+            loanExplanation = `Dies ist dein ${nr}. Kredit. Maximale Eskalationsstufe: Dir werden 15€ direkt vom aktiven Bar-Budget pro Schritt abgezogen!`;
+        }
+
         return {
             title: '🤝 Angebot der Verbrecher-Innung',
             text: `<div style="line-height: 1.6;">
@@ -86,7 +97,7 @@ export class DialogFactory {
                     <div style="display:flex; justify-content:space-between; font-size:1.1rem; font-weight:bold;">
                         <span>Überbrückungskredit:</span><span style="color:var(--color-warning);">+500 €</span>
                     </div>
-                    <div style="font-size:0.85rem; opacity:0.75; margin-top:6px;">Rückzahlung beim nächsten erfolgreichen Bruch fällig.</div>
+                    <p style="font-size:0.9rem; margin-top:8px; color:var(--color-warning);">${loanExplanation}</p>
                 </div>
                 <p style="font-size:0.9rem; color:var(--color-danger);">⚠️ Lehnst du ab, bist du auf dich allein gestellt.</p>
             </div>`,

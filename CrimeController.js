@@ -1,5 +1,6 @@
 import { eventBus } from './EventBus.js';
 import { EVENTS } from './EventTypes.js';
+import { CONFIG } from './GameConfig.js';
 import { log } from './Utils.js';
 
 /**
@@ -158,38 +159,29 @@ export class CrimeController {
             }
 
             // 3. Erfolg!
-            const result = this.#calculateBurglarySuccess(riskData);
-
-            eventBus.emit(EVENTS.NOTIFY_BURGLARY_RESOLVED, {
-                outcome: 'success',
-                loot: result.netLoot,
-                loanRepaid: result.loanRepaid,
-                debtAmount: result.debtAmount,
-                target
+            const baseLoot = this.#calculateBaseLoot(target);
+            
+            // Finanzen & Kredit-Inkasso an EconomyController delegieren
+            eventBus.emit(EVENTS.NOTIFY_BURGLARY_SUCCESS, { 
+                baseLoot, 
+                target, 
+                riskData 
             });
+
             this.#resetBurglaryState();
         }, 500);
     }
 
     /**
-     * Berechnet Beute und ggf. Kredit-Rückzahlung.
-     * Gibt ein reines Datenobjekt zurück – kein HTML.
+     * Berechnet die Basis-Beute basierend auf dem Immobilientyp.
+     * @param {Object} target 
+     * @returns {number}
      */
-    #calculateBurglarySuccess(riskData) {
-        let amount = this.#budgetManager.calculateLoot(riskData);
-        let loanRepaid = false;
-        let debtAmount = 0;
-
-        if (this.#budgetManager.hasActiveLoan) {
-            debtAmount = this.#budgetManager.processLoanRepayment();
-            amount = Math.max(0, amount - debtAmount);
-            loanRepaid = true;
-            eventBus.emit(EVENTS.CMD_REMOVE_LOG_ENTRY, { logId: 'loan-entry' });
-        }
-
-        this.#budgetManager.addReward(amount);
-
-        return { netLoot: amount, loanRepaid, debtAmount };
+    #calculateBaseLoot(target) {
+        const category = target.type || 'residential';
+        const stats = CONFIG.RISK.CATEGORY_STATS[category] || CONFIG.RISK.CATEGORY_STATS.residential;
+        const range = stats.maxLoot - stats.minLoot;
+        return stats.minLoot + Math.floor(Math.random() * range);
     }
 
     /**
@@ -262,23 +254,24 @@ export class CrimeController {
      * @returns {Object} riskData
      */
     calculateTargetRisk(targetNode) {
-        return this.#riskCalculator.calculateTargetRisk(
+        const riskData = this.#riskCalculator.calculateTargetRisk(
             targetNode,
             this.#gameState.isDisguised
         );
+
+        // Loot-Range hier hinzufügen, da der RiskCalculator nur noch Risiken berechnet
+        const category = targetNode.type || 'residential';
+        const stats = CONFIG.RISK.CATEGORY_STATS[category] || CONFIG.RISK.CATEGORY_STATS.residential;
+
+        return { 
+            ...riskData, 
+            minLoot: stats.minLoot, 
+            maxLoot: stats.maxLoot 
+        };
     }
 
     /**
-     * Berechnet den Loot basierend auf riskData.
-     * @param {Object} riskData
-     * @returns {number}
-     */
-    calculateLoot(riskData) {
-        return this.#budgetManager.calculateLoot(riskData);
-    }
-
-    /**
-     * Setzt die Einbruchsziele und wechselt in die nächste Missionsphase.
+     * Berechnet die Einbruchsziele und wechselt in die nächste Missionsphase.
      * @param {Array} targets
      */
     setCrimeTargets(targets) {

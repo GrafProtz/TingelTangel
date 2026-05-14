@@ -508,7 +508,9 @@ export class EconomyController {
             if (this.#gameState.budget <= 0 && !this.#gameState.syndicateLoanOffered) {
                 // Sofort als "angeboten" markieren – verhindert Endlosschleifen
                 eventBus.emit(EVENTS.CMD_MUTATE_STATE, { syndicateLoanOffered: true });
-                eventBus.emit(EVENTS.UI_PROMPT_SYNDICATE_LOAN);
+                eventBus.emit(EVENTS.UI_PROMPT_SYNDICATE_LOAN, { 
+                    upcomingLoanNumber: this.#gameState.syndicateLoanCount + 1 
+                });
             }
         };
 
@@ -518,18 +520,120 @@ export class EconomyController {
         // Spieler nimmt den Überbrückungskredit an
         this.#sub(EVENTS.ACTION_ACCEPT_SYNDICATE_LOAN, () => {
             const LOAN_AMOUNT = 500;
+            const newCount = this.#gameState.syndicateLoanCount + 1;
+            
             eventBus.emit(EVENTS.CMD_MUTATE_STATE, {
                 budgetDelta: LOAN_AMOUNT,
-                syndicateLoanActive: true
+                syndicateLoanActive: true,
+                syndicateLoanCount: newCount,
+                syndicateLoanAmount: this.#gameState.syndicateLoanAmount + LOAN_AMOUNT,
+                syndicateLoanOffered: false
             });
-            // STATE_LOAN_ACTIVE als dediziertes Bestätigungs-Event feuern
+
+            // Dynamischer Log-Text basierend auf Eskalationsstufe
+            let conditionText = "";
+            if (newCount === 1) conditionText = "Zinsen: 5€ pro Schritt (auf Schulden addiert).";
+            else if (newCount === 2) conditionText = "Zinsen: 10€ pro Schritt (direkter Budget-Abzug!).";
+            else conditionText = `Zinsen: 15€ pro Schritt (Eskalationsstufe ${newCount}, direkter Abzug!).`;
+
             eventBus.emit(EVENTS.STATE_LOAN_ACTIVE, { amount: LOAN_AMOUNT });
             eventBus.emit(EVENTS.CMD_ADD_LOG_ENTRY, {
-                shortText: `Überbrückungskredit der Innung erhalten: +${LOAN_AMOUNT} € (Rückzahlung beim nächsten Bruch).`,
+                shortText: `Innungs-Kredit #${newCount} erhalten: +${LOAN_AMOUNT} €. ${conditionText}`,
                 logId: 'syndicate-loan-entry',
                 notify: true
             });
-            log('[EconomyController] Überbrückungskredit angenommen.');
+            log('[EconomyController] Überbrückungskredit angenommen. Count:', newCount);
+        });
+
+        // Wucherzinsen pro Schritt
+        this.#sub(EVENTS.NOTIFY_PLAYER_MOVED, () => {
+            if (this.#gameState.syndicateLoanActive) {
+                const count = this.#gameState.syndicateLoanCount;
+                
+                if (count === 1) {
+                    // Fall 1: Schulden steigen (5€)
+                    const interest = 5;
+                    const newAmount = this.#gameState.syndicateLoanAmount + interest;
+                    eventBus.emit(EVENTS.CMD_MUTATE_STATE, { syndicateLoanAmount: newAmount });
+                    log('[EconomyController] Zinsen fällig (Schulden):', interest, '€ | Neuer Schuldenstand:', newAmount);
+                } else if (count === 2) {
+                    // Fall 2: Budget wird belastet (10€)
+                    const interest = 10;
+                    eventBus.emit(EVENTS.CMD_MUTATE_STATE, { budgetDelta: -interest });
+                    log('[EconomyController] Zinsen fällig (Budget):', interest, '€');
+                } else if (count >= 3) {
+                    // Fall 3: Starke Budget-Belastung (15€)
+                    const interest = 15;
+                    eventBus.emit(EVENTS.CMD_MUTATE_STATE, { budgetDelta: -interest });
+                    log('[EconomyController] Zinsen fällig (Extremer Zins):', interest, '€');
+                }
+            }
+        });
+
+        // Inkasso bei erfolgreichem Einbruch
+        this.#sub(EVENTS.NOTIFY_BURGLARY_SUCCESS, ({ baseLoot, target }) => {
+            let finalLoot = baseLoot;
+            let debtPaid = 0;
+            const state = this.#gameState.getState();
+
+            if (state.syndicateLoanActive) {
+                const debt = state.syndicateLoanAmount;
+                const remainingLoot = baseLoot - debt;
+
+                if (remainingLoot >= 0) {
+                    // Kredit komplett getilgt
+                    finalLoot = remainingLoot;
+                    debtPaid = debt;
+                    
+                    const settlementMsg = `Einbruch erfolgreich. Brutto: ${baseLoot} €. Die Innung kassiert ${debtPaid} € zur Tilgung. Netto für dich: ${finalLoot} €. Deine Weste ist wieder sauber.`;
+                    
+                    eventBus.emit(EVENTS.CMD_ADD_LOG_ENTRY, { shortText: settlementMsg, notify: true });
+                    eventBus.emit(EVENTS.UI_SHOW_DIALOG, {
+                        title: '🤝 Innungs-Inkasso: Volltilgung',
+                        text: settlementMsg,
+                        buttons: [{ text: 'Hervorragend', event: EVENTS.CMD_RESUME_GAME }]
+                    });
+
+                    eventBus.emit(EVENTS.CMD_MUTATE_STATE, {
+                        budgetDelta: remainingLoot,
+                        syndicateLoanAmount: 0,
+                        syndicateLoanActive: false,
+                        syndicateLoanOffered: false
+                    });
+                    eventBus.emit(EVENTS.CMD_REMOVE_LOG_ENTRY, { logId: 'syndicate-loan-entry' });
+                } else {
+                    // Teiltilgung
+                    finalLoot = 0;
+                    debtPaid = baseLoot;
+                    const newDebt = Math.abs(remainingLoot);
+
+                    const settlementMsg = `Einbruch erfolgreich. Brutto: ${baseLoot} €. Die gesamte Beute wurde von der Innung einbehalten. Restschuld: ${newDebt} €.`;
+                    
+                    eventBus.emit(EVENTS.CMD_ADD_LOG_ENTRY, { shortText: settlementMsg, notify: true });
+                    eventBus.emit(EVENTS.UI_SHOW_DIALOG, {
+                        title: '🤝 Innungs-Inkasso: Teiltilgung',
+                        text: settlementMsg,
+                        buttons: [{ text: 'Weitermachen', event: EVENTS.CMD_RESUME_GAME }]
+                    });
+
+                    eventBus.emit(EVENTS.CMD_MUTATE_STATE, {
+                        budgetDelta: 0,
+                        syndicateLoanAmount: newDebt
+                    });
+                }
+            } else {
+                // Kein aktiver Kredit
+                eventBus.emit(EVENTS.CMD_MUTATE_STATE, { budgetDelta: baseLoot });
+                
+                // Normales UI-Feedback triggern
+                eventBus.emit(EVENTS.NOTIFY_BURGLARY_RESOLVED, {
+                    outcome: 'success',
+                    loot: finalLoot,
+                    loanRepaid: false,
+                    debtAmount: 0,
+                    target
+                });
+            }
         });
 
         // Spieler lehnt den Überbrückungskredit ab

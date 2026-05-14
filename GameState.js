@@ -22,6 +22,8 @@ export class GameState {
     #loanInterestSteps = 0;
     #syndicateLoanOffered = false;
     #syndicateLoanActive = false;
+    #syndicateLoanCount = 0;
+    #syndicateLoanAmount = 0;
 
     // --- Game Engine State ---
     #gameActive = false;
@@ -59,6 +61,8 @@ export class GameState {
     get loanInterestSteps() { return this.#loanInterestSteps; }
     get syndicateLoanOffered() { return this.#syndicateLoanOffered; }
     get syndicateLoanActive() { return this.#syndicateLoanActive; }
+    get syndicateLoanCount() { return this.#syndicateLoanCount; }
+    get syndicateLoanAmount() { return this.#syndicateLoanAmount; }
     get gameActive() { return this.#gameActive; }
     get isMoving() { return this.#isMoving; }
     get moveCount() { return this.#moveCount; }
@@ -107,6 +111,8 @@ export class GameState {
             loanInterestSteps: this.#loanInterestSteps,
             syndicateLoanOffered: this.#syndicateLoanOffered,
             syndicateLoanActive: this.#syndicateLoanActive,
+            syndicateLoanCount: this.#syndicateLoanCount,
+            syndicateLoanAmount: this.#syndicateLoanAmount,
             gameActive: this.#gameActive,
             isMoving: this.#isMoving,
             moveCount: this.#moveCount,
@@ -151,6 +157,8 @@ export class GameState {
         if (delta.loanInterestSteps !== undefined)   this.#loanInterestSteps = Number(delta.loanInterestSteps) || 0;
         if (delta.syndicateLoanOffered !== undefined) this.#syndicateLoanOffered = !!delta.syndicateLoanOffered;
         if (delta.syndicateLoanActive !== undefined)  this.#syndicateLoanActive = !!delta.syndicateLoanActive;
+        if (delta.syndicateLoanCount !== undefined)   this.#syndicateLoanCount = Number(delta.syndicateLoanCount) || 0;
+        if (delta.syndicateLoanAmount !== undefined)  this.#syndicateLoanAmount = Number(delta.syndicateLoanAmount) || 0;
         if (delta.gameActive !== undefined)          this.#gameActive = !!delta.gameActive;
         if (delta.isMoving !== undefined)            this.#isMoving = !!delta.isMoving;
         if (delta.moveCount !== undefined)           this.#moveCount = Number(delta.moveCount) || 0;

@@ -142,6 +142,7 @@ export class MovementController {
 
         // 6. Broadcasts
         eventBus.emit(EVENTS.STATE_PLAYER_MOVED, this.#gameState.getState());
+        eventBus.emit(EVENTS.NOTIFY_PLAYER_MOVED);
     }
 
     // ----------------------------------------------------------------

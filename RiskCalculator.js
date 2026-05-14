@@ -44,8 +44,6 @@ export class RiskCalculator {
 
         return {
             label: config.label,
-            minLoot: config.minLoot,
-            maxLoot: config.maxLoot,
             baseRisk: config.baseRisk,
             abortRate: Number(abortRate.toFixed(1)),
             proximityRisk: Number(proximityRisk.toFixed(1)),
