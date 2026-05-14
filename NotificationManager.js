@@ -11,12 +11,12 @@ export class NotificationManager {
     }
 
     setupListeners() {
-        eventBus.subscribe(EVENTS.SHOW_TOAST, (data) => {
+        eventBus.subscribe(EVENTS.UI_SHOW_TOAST, (data) => {
             log('TRACE 4: NotificationManager hat Event empfangen:', data);
             this.showToast(data);
         });
-        eventBus.subscribe(EVENTS.FLYING_REWARD, (data) => this.animateRewardToMenu(data));
-        eventBus.subscribe(EVENTS.FLYING_INFO, (data) => this.animateInfoToMenu(data));
+        eventBus.subscribe(EVENTS.UI_FLYING_REWARD, (data) => this.animateRewardToMenu(data));
+        eventBus.subscribe(EVENTS.UI_FLYING_INFO, (data) => this.animateInfoToMenu(data));
     }
 
     /**

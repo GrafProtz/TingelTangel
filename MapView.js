@@ -41,14 +41,14 @@ class MapView {
         this.#markerPool = [];
 
         // Globaler Kamera-Listener für entkoppelte Steuerung
-        eventBus.subscribe(EVENTS.CAMERA_FIT_BOUNDS_REQUESTED, (coords) => this.fitBounds(coords));
+        eventBus.subscribe(EVENTS.CMD_CAMERA_FIT_BOUNDS, (coords) => this.fitBounds(coords));
         
         // Entsperre die Kamera, wenn das Intro vorbei ist
-        eventBus.subscribe(EVENTS.INTRO_COMPLETE, () => {
+        eventBus.subscribe(EVENTS.SYS_INTRO_COMPLETE, () => {
             this._isIntroFlying = false;
         });
 
-        eventBus.subscribe(EVENTS.START_BARBER_REVEAL, (data) => {
+        eventBus.subscribe(EVENTS.CMD_START_BARBER_REVEAL, (data) => {
             log("DEBUG: Barber Reveal gestartet mit Node:", data.node);
             if (!data.node) return;
             this._isIntroFlying = true;

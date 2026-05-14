@@ -55,7 +55,7 @@ export class EncounterManager {
         // 4. Trigger abfeuern
         if (selectedEvent) {
             log("TRACE ENCOUNTER: Event gewählt: " + selectedEvent.title + " (Kosten: " + selectedEvent.cost + "€)");
-            eventBus.emit(EVENTS.ENCOUNTER_TRIGGERED, selectedEvent);
+            eventBus.emit(EVENTS.SYS_ENCOUNTER_TRIGGERED, selectedEvent);
         }
     }
 }

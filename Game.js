@@ -86,20 +86,20 @@ class Game {
 
     #registerGameControlFlows() {
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.RESUME_GAME, () => {
-                eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'goal-find-target' });
+            eventBus.subscribe(EVENTS.CMD_RESUME_GAME, () => {
+                eventBus.emit(EVENTS.CMD_REMOVE_LOG_ENTRY, { logId: 'goal-find-target' });
                 this.resume();
             })
         );
 
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.TOGGLE_DEV_ENCOUNTERS, () => {
+            eventBus.subscribe(EVENTS.ACTION_TOGGLE_DEV_ENCOUNTERS, () => {
                 const newState = !this.#gameState.devEncountersDisabled;
                 const msg = newState
                     ? 'Dev-Mode: Zufallsereignisse deaktiviert.'
                     : 'Dev-Mode: Zufallsereignisse wieder aktiv.';
-                eventBus.emit(EVENTS.SHOW_TOAST, { message: msg, type: 'info' });
-                eventBus.emit(EVENTS.MUTATE_STATE, { devEncountersDisabled: newState });
+                eventBus.emit(EVENTS.UI_SHOW_TOAST, { message: msg, type: 'info' });
+                eventBus.emit(EVENTS.CMD_MUTATE_STATE, { devEncountersDisabled: newState });
             })
         );
     }
@@ -121,7 +121,7 @@ class Game {
     // ================================================================
 
     #emitMissionUpdate() {
-        eventBus.emit(EVENTS.MISSION_STATE_CHANGED, {
+        eventBus.emit(EVENTS.STATE_MISSION_CHANGED, {
             phase: this.#gameState.missionPhase,
             moveCount: this.#gameState.moveCount
         });
@@ -134,8 +134,8 @@ class Game {
     startMission(startNodeId, targetNodeId, pubName) {
         this.#budgetManager.init();
         
-        eventBus.emit(EVENTS.MUTATE_STATE, {
-            budget: CONFIG.INITIAL_BUDGET,
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, {
+            budget: CONFIG.ECONOMY.INITIAL_BUDGET,
             currentPlayerNodeId: String(startNodeId),
             gameActive: false,
             targetPubNodeId: String(targetNodeId),
@@ -157,15 +157,15 @@ class Game {
         log('Mission gestartet. Ziel-ID:', targetNodeId);
 
         const cityName = this.#mapData.cityName || 'der Stadt';
-        eventBus.emit(EVENTS.SHOW_INFO_CASCADE, DialogFactory.getWelcomeDialog(cityName, pubName || 'Kneipe'));
+        eventBus.emit(EVENTS.UI_SHOW_CASCADE, DialogFactory.getWelcomeDialog(cityName, pubName || 'Kneipe'));
     }
 
     triggerIntroRender() {
-        eventBus.emit(EVENTS.MUTATE_STATE, {}); // Trigger broadcast
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, {}); // Trigger broadcast
 
         setTimeout(() => {
-            eventBus.emit(EVENTS.MUTATE_STATE, { gameActive: true });
-            eventBus.emit(EVENTS.INTRO_COMPLETE);
+            eventBus.emit(EVENTS.CMD_MUTATE_STATE, { gameActive: true });
+            eventBus.emit(EVENTS.SYS_INTRO_COMPLETE);
         }, 6000);
     }
 
@@ -174,10 +174,10 @@ class Game {
 
         this.#budgetManager.hydrate(savedState);
         // Hydrierung des States erfolgt nun im StateController via main.js oder hier
-        eventBus.emit(EVENTS.MUTATE_STATE, savedState); 
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, savedState); 
 
         this.#movementEngine.stop();
-        eventBus.emit(EVENTS.MUTATE_STATE, { firstMoveFired: true });
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { firstMoveFired: true });
 
         log('Spielstand geladen. Knoten:', savedState.currentPlayerNodeId);
 
@@ -186,8 +186,8 @@ class Game {
 
     pause() {
         this.#movementEngine.stop();
-        eventBus.emit(EVENTS.GAME_PAUSED);
-        eventBus.emit(EVENTS.MUTATE_STATE, { gameActive: false });
+        eventBus.emit(EVENTS.SYS_GAME_PAUSED);
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, { gameActive: false });
     }
 
     resume() {
@@ -196,8 +196,8 @@ class Game {
             delta.lastPubVisit = Date.now();
             delta.isInPub = false;
         }
-        eventBus.emit(EVENTS.MUTATE_STATE, delta);
-        eventBus.emit(EVENTS.GAME_RESUMED);
+        eventBus.emit(EVENTS.CMD_MUTATE_STATE, delta);
+        eventBus.emit(EVENTS.SYS_GAME_RESUMED);
     }
 
     isGameActive() {

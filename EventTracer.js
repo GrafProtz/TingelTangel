@@ -17,16 +17,16 @@ export class EventTracer {
         if (!this.#debugMode) return;
 
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.MUTATE_STATE, (delta) => {
-                console.groupCollapsed(`[Tracer] MUTATE_STATE: ${Object.keys(delta || {}).join(', ')}`);
+            eventBus.subscribe(EVENTS.CMD_MUTATE_STATE, (delta) => {
+                console.groupCollapsed(`[Tracer] CMD_MUTATE_STATE: ${Object.keys(delta || {}).join(', ')}`);
                 console.table(delta);
                 console.groupEnd();
             })
         );
 
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.GAME_STATE_CHANGED, (state) => {
-                console.groupCollapsed(`[Tracer] GAME_STATE_CHANGED`);
+            eventBus.subscribe(EVENTS.STATE_GAME_CHANGED, (state) => {
+                console.groupCollapsed(`[Tracer] STATE_GAME_CHANGED`);
                 console.log(state);
                 console.groupEnd();
             })

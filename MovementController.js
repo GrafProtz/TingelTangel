@@ -8,11 +8,11 @@ import { log } from './Utils.js';
  * MovementController – Verantwortlich für den gesamten Bewegungszyklus.
  *
  * ARCHITEKTUR:
- * - Empfängt ausschließlich Intent-Events von der UI (PLAYER_MOVE_INTENT).
+ * - Empfängt ausschließlich Intent-Events von der UI (ACTION_MOVE_PLAYER).
  * - Validiert Züge über die MapData-Nachbarschaftslisten.
  * - Delegiert die rAF-Animation an die bestehende MovementEngine.
  * - Mutiert den GameState nur über dessen Reducer-API.
- * - Feuert nach Abschluss granulare Events (PLAYER_MOVED, STATE_UPDATED).
+ * - Feuert nach Abschluss granulare Events (STATE_PLAYER_MOVED, STATE_UPDATED).
  *
  * Abhängigkeiten (Dependency Injection):
  * @param {GameState}      gameState      – Die Single Source of Truth.

@@ -40,29 +40,29 @@ export class HUDController {
 
     #registerListeners() {
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.GAME_STATE_CHANGED, (state) => this.#onStateChanged(state))
+            eventBus.subscribe(EVENTS.STATE_GAME_CHANGED, (state) => this.#onStateChanged(state))
         );
 
         if (this.#infoToggleBtn) {
-            const toggleHandler = () => eventBus.emit(EVENTS.TOGGLE_INFO);
+            const toggleHandler = () => eventBus.emit(EVENTS.ACTION_TOGGLE_INFO);
             this.#infoToggleBtn.addEventListener('click', toggleHandler);
             this.#subscriptions.push(() => this.#infoToggleBtn.removeEventListener('click', toggleHandler));
         }
 
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.TOGGLE_INFO, (forceState) => this.#toggleInfoMenu(forceState))
+            eventBus.subscribe(EVENTS.ACTION_TOGGLE_INFO, (forceState) => this.#toggleInfoMenu(forceState))
         );
 
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.BUDGET_TICK, (data) => this.#showBudgetFeedback(data.diff))
+            eventBus.subscribe(EVENTS.STATE_BUDGET_TICK, (data) => this.#showBudgetFeedback(data.diff))
         );
 
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.SHOW_TUTORIAL, (data) => this.#showTutorial(data))
+            eventBus.subscribe(EVENTS.UI_SHOW_TUTORIAL, (data) => this.#showTutorial(data))
         );
         
         this.#subscriptions.push(
-            eventBus.subscribe(EVENTS.SAVE_COMPLETED, () => this.#showSaveIndicator())
+            eventBus.subscribe(EVENTS.SYS_SAVE_COMPLETED, () => this.#showSaveIndicator())
         );
     }
 
