@@ -18,13 +18,7 @@ export class RiskCalculator {
      * @returns {Object} Detaillierte Risiko-Daten
      */
     calculateTargetRisk(targetNode, isDisguised) {
-        const statsMap = {
-            'residential': { baseRisk: 15, abortRate: 15, minLoot: 150,  maxLoot: 5000,  label: 'Wohnhaus' },
-            'commercial':  { baseRisk: 30, abortRate: 28, minLoot: 500,  maxLoot: 15000, label: 'Gewerbeobjekt' },
-            'public':      { baseRisk: 30, abortRate: 25, minLoot: 100,  maxLoot: 8000,  label: 'Öffentliche Einrichtung' },
-            'allotments':  { baseRisk: 15, abortRate: 15, minLoot: 50,   maxLoot: 1950,  label: 'Kleingarten/Schuppen' },
-            'bicycle':     { baseRisk: 9.7, abortRate: 0, minLoot: 0,    maxLoot: 0,     label: 'Fahrradständer' }
-        };
+        const statsMap = CONFIG.RISK.CATEGORY_STATS;
 
         const category = targetNode.type || 'residential';
         const config = statsMap[category] || statsMap.residential;
@@ -33,19 +27,19 @@ export class RiskCalculator {
         const { proximityRisk, nearbyCount } = this.getPoliceRiskModifier([targetNode.lat, targetNode.lon]);
         
         // Interferenz-Malus (wenn mehrere Wachen in der Nähe sind)
-        const interferenceRisk = nearbyCount > 1 ? (nearbyCount - 1) * 15 : 0;
+        const interferenceRisk = nearbyCount > 1 ? (nearbyCount - 1) * CONFIG.RISK.POLICE_INTERFERENCE_FACTOR : 0;
         
         let totalRisk = config.baseRisk + proximityRisk + interferenceRisk;
         let abortRate = config.abortRate;
 
         // Tarnung-Buff anwenden (Halbierung)
         if (isDisguised) {
-            totalRisk *= 0.5;
-            abortRate *= 0.5;
+            totalRisk *= CONFIG.RISK.BARBER_RISK_REDUCTION;
+            abortRate *= CONFIG.RISK.BARBER_RISK_REDUCTION;
         }
 
-        // Deckelung bei 95%
-        totalRisk = Math.min(95, totalRisk);
+        // Deckelung
+        totalRisk = Math.min(CONFIG.RISK.MAX_RISK_CAP, totalRisk);
         const successProbability = 100 - totalRisk;
 
         return {
@@ -82,10 +76,10 @@ export class RiskCalculator {
                 { lat: station.lat, lon: station.lon }
             );
 
-            // Innerhalb von 500m steigt das Risiko linear an
-            if (dist < 500) {
+            // Innerhalb des Radius steigt das Risiko linear an
+            if (dist < CONFIG.RISK.POLICE_DETECTION_RADIUS) {
                 nearbyCount++;
-                riskMalus += (500 - dist) / 500 * 25;
+                riskMalus += (CONFIG.RISK.POLICE_DETECTION_RADIUS - dist) / CONFIG.RISK.POLICE_DETECTION_RADIUS * CONFIG.RISK.POLICE_DETECTION_MAX_RISK;
             }
         });
 
@@ -101,11 +95,12 @@ export class RiskCalculator {
      * Erzeugt eine Risiko-Vorschau für Kneipen-Optionen.
      */
     getInteractionPreview(key, riskMalus = 0) {
+        const variants = CONFIG.RISK.PUB_VARIANTS;
         const previews = {
-            'A': { text: "Ein schneller Job. Geringes Risiko.", risk: 10 + riskMalus },
-            'B': { text: "Anspruchsvoll, aber lukrativ.", risk: 30 + riskMalus },
-            'C': { text: "Extremer Hochrisiko-Einsatz!", risk: 60 + riskMalus },
-            'D': { text: "Nur für Profis.", risk: 80 + riskMalus }
+            'A': { text: "Ein schneller Job. Geringes Risiko.", risk: variants.A.baseRisk + riskMalus },
+            'B': { text: "Anspruchsvoll, aber lukrativ.", risk: variants.B.baseRisk + riskMalus },
+            'C': { text: "Extremer Hochrisiko-Einsatz!", risk: variants.C.baseRisk + riskMalus },
+            'D': { text: "Nur für Profis.", risk: variants.D.baseRisk + riskMalus }
         };
         return previews[key] || { text: "Unbekanntes Risiko", risk: 50 };
     }

@@ -90,7 +90,7 @@ export class EconomyController {
             
             this.#pause();
             eventBus.emit(EVENTS.GAME_PAUSED);
-            eventBus.emit(EVENTS.BARBER_INTERACTION_READY, { barber, price: 50 });
+            eventBus.emit(EVENTS.BARBER_INTERACTION_READY, { barber, price: CONFIG.ECONOMY.BARBER_COST });
         });
 
         // Barber-Info (Tipp vom Kneipier)
@@ -107,7 +107,7 @@ export class EconomyController {
 
     #checkPubArrival() {
         const diff = (Date.now() - this.#gameState.lastPubVisit) / 1000;
-        const cooldownSec = CONFIG.PUB_COOLDOWN / 1000;
+        const cooldownSec = CONFIG.TIMERS.PUB_COOLDOWN / 1000;
 
         if (diff < cooldownSec) {
             const remaining = Math.ceil(cooldownSec - diff);
@@ -130,8 +130,8 @@ export class EconomyController {
         const cityName = this.#mapData.cityName || 'dieser Stadt';
 
         const optionsData = {
-            A: { text: STRINGS.interactions.pub.optionA(cityName), cost: CONFIG.RADAR_COST, risk: 0 },
-            B: { text: STRINGS.interactions.pub.optionB(0), requiresConfirmation: false, cost: 75 },
+            A: { text: STRINGS.interactions.pub.optionA(cityName), cost: CONFIG.ECONOMY.RADAR_COST, risk: 0 },
+            B: { text: STRINGS.interactions.pub.optionB(0), requiresConfirmation: false, cost: CONFIG.ECONOMY.INVESTMENT_CONSULTANT_COST },
             C: { text: STRINGS.interactions.pub.optionC(), requiresConfirmation: false, customEvent: EVENTS.OPTION_C_CLICKED },
             D: { text: STRINGS.interactions.pub.optionD, requiresConfirmation: false, customEvent: EVENTS.OPTION_D_CLICKED }
         };
@@ -209,11 +209,11 @@ export class EconomyController {
             return STRINGS.interactions.pub.alreadyHaveRadar;
         }
 
-        if (!this.#budgetManager.canAfford(CONFIG.RADAR_COST)) {
-            return STRINGS.interactions.pub.noMoney(CONFIG.RADAR_COST);
+        if (!this.#budgetManager.canAfford(CONFIG.ECONOMY.RADAR_COST)) {
+            return STRINGS.interactions.pub.noMoney(CONFIG.ECONOMY.RADAR_COST);
         }
 
-        this.#budgetManager.deductBudget(CONFIG.RADAR_COST);
+        this.#budgetManager.deductBudget(CONFIG.ECONOMY.RADAR_COST);
         const currentNode = this.#mapData.getNode(this.#gameState.currentPlayerNodeId);
         const risk = this.#riskCalculator.getPoliceRiskModifier([currentNode.lat, currentNode.lon]);
         const msg = STRINGS.interactions.pub.barkeeperInfo(risk.activeStations);
@@ -228,12 +228,12 @@ export class EconomyController {
     }
 
     #handleInfoPurchase() {
-        if (!this.#budgetManager.canAfford(CONFIG.INFO_COST)) {
+        if (!this.#budgetManager.canAfford(CONFIG.ECONOMY.INFO_COST)) {
             return 'Nicht genug Geld fuer Informationen.';
         }
 
-        this.#budgetManager.deductBudget(CONFIG.INFO_COST);
-        const msg = 'Du kaufst Infos fuer ' + CONFIG.INFO_COST + ' Euro. Ein Tipp: "Halte dich vom Osten fern."';
+        this.#budgetManager.deductBudget(CONFIG.ECONOMY.INFO_COST);
+        const msg = 'Du kaufst Infos fuer ' + CONFIG.ECONOMY.INFO_COST + ' Euro. Ein Tipp: "Halte dich vom Osten fern."';
         eventBus.emit(EVENTS.MUTATE_STATE, { 
             newLogEntry: { time: Date.now(), text: msg, type: 'success' },
             lastPubVisit: Date.now()
@@ -243,7 +243,7 @@ export class EconomyController {
     }
 
     #handleInteractionFailure(opt) {
-        const fine = Math.ceil(opt.reward * 0.5);
+        const fine = Math.ceil(opt.reward * CONFIG.ECONOMY.FINE_FACTOR_PUB);
         this.#budgetManager.deductBudget(fine);
         const msg = opt.caughtMsg ? opt.caughtMsg(fine) : 'ERWISCHT! Strafe: ' + fine + ' Euro.';
         eventBus.emit(EVENTS.MUTATE_STATE, { 
@@ -274,7 +274,7 @@ export class EconomyController {
     }
 
     #handleInvestmentConsultant() {
-        const cost = 75;
+        const cost = CONFIG.ECONOMY.INVESTMENT_CONSULTANT_COST;
         if (!this.#budgetManager.canAfford(cost)) {
             eventBus.emit(EVENTS.SHOW_TOAST, { message: 'Nicht genug Geld fuer den Berater!', type: 'fail' });
             this.#resume();
@@ -313,7 +313,7 @@ export class EconomyController {
         if (!targetNode) return null;
 
         const riskData = this.#riskCalculator.getPoliceRiskModifier([targetNode.lat, targetNode.lon]);
-        const baseRisk = (key === 'B') ? CONFIG.RISK_PUB_EASY : CONFIG.RISK_PUB_HARD;
+        const baseRisk = (key === 'B') ? CONFIG.RISK.PUB_VARIANTS.B.baseRisk : CONFIG.RISK.PUB_VARIANTS.C.baseRisk; // Vereinfacht für Preview
         const finalRisk = Math.min(100, baseRisk + riskData.riskMalus);
 
         return {
@@ -331,7 +331,7 @@ export class EconomyController {
     #registerPurchaseFlows() {
         // Bolzenschneider
         this.#sub(EVENTS.BUY_BOLT_CUTTER, (payload) => {
-            const cost = payload.cost || 75;
+            const cost = payload.cost || CONFIG.ECONOMY.BOLT_CUTTER_COST;
             if (!this.#budgetManager.canAfford(cost)) {
                 eventBus.emit(EVENTS.SHOW_TOAST, { message: 'Nicht genug Geld fuer den Bolzenschneider!', type: 'fail' });
                 this.#resume();
@@ -369,7 +369,7 @@ export class EconomyController {
 
         // Friseur-Ticket
         this.#sub(EVENTS.BUY_BARBER_TICKET, ({ barber, barberName }) => {
-            const cost = 50;
+            const cost = CONFIG.ECONOMY.BARBER_COST;
             if (!this.#budgetManager.canAfford(cost)) {
                 eventBus.emit(EVENTS.SHOW_TOAST, { message: 'Nicht genug Kohle fuer den Friseur!', type: 'fail' });
                 return;
@@ -532,8 +532,8 @@ export class EconomyController {
     triggerRadar(force) {
         if (!this.#gameState.radarUnlocked) return null;
 
-        if (!force && (Date.now() - this.#gameState.lastRadarTime < CONFIG.RADAR_COOLDOWN)) {
-            const diffMs = CONFIG.RADAR_COOLDOWN - (Date.now() - this.#gameState.lastRadarTime);
+        if (!force && (Date.now() - this.#gameState.lastRadarTime < CONFIG.TIMERS.RADAR_COOLDOWN)) {
+            const diffMs = CONFIG.TIMERS.RADAR_COOLDOWN - (Date.now() - this.#gameState.lastRadarTime);
             const mins = Math.floor(diffMs / 60000);
             const secs = Math.ceil((diffMs % 60000) / 1000);
             const timeStr = mins > 0 ? `${mins} Min. ${secs} Sek.` : `${secs} Sek.`;

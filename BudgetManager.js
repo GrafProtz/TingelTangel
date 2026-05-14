@@ -12,14 +12,14 @@ export class BudgetManager {
     #loanInterestSteps = 0;
 
     constructor() {
-        this.#budget = CONFIG.INITIAL_BUDGET;
+        this.#budget = CONFIG.ECONOMY.INITIAL_BUDGET;
     }
 
     /**
      * Initialisiert das Budget für eine neue Mission.
      */
     init() {
-        this.#budget = CONFIG.INITIAL_BUDGET;
+        this.#budget = CONFIG.ECONOMY.INITIAL_BUDGET;
         this.#hasActiveLoan = false;
         this.#loanInterestSteps = 0;
         this.#notifyChange();
@@ -31,7 +31,7 @@ export class BudgetManager {
      */
     hydrate(savedState) {
         if (!savedState) return;
-        this.#budget = savedState.budget ?? CONFIG.INITIAL_BUDGET;
+        this.#budget = savedState.budget ?? CONFIG.ECONOMY.INITIAL_BUDGET;
         this.#hasActiveLoan = savedState.hasActiveLoan ?? false;
         this.#loanInterestSteps = savedState.loanInterestSteps ?? 0;
         this.#notifyChange();
@@ -90,7 +90,7 @@ export class BudgetManager {
      */
     applyStepInterest() {
         if (this.#hasActiveLoan) {
-            this.#loanInterestSteps += 1; // 1 € pro Schritt (Fixer Wert laut Game.js Legacy)
+            this.#loanInterestSteps += CONFIG.ECONOMY.LOAN_INTEREST_PER_STEP;
         }
     }
 
@@ -106,8 +106,8 @@ export class BudgetManager {
     processLoanRepayment() {
         if (!this.#hasActiveLoan) return 0;
 
-        // In der aktuellen Version: Rückzahlung = Basis (2000) + aufgelaufene Zinsen
-        const debt = 2000 + this.#loanInterestSteps; 
+        // In der aktuellen Version: Rückzahlung = Basis + aufgelaufene Zinsen
+        const debt = CONFIG.ECONOMY.LOAN_BASE_DEBT + this.#loanInterestSteps; 
         this.#hasActiveLoan = false;
         this.#loanInterestSteps = 0;
         
@@ -115,7 +115,7 @@ export class BudgetManager {
     }
 
     handleAcceptLoan() {
-        this.#budget = 1500; // Fixbetrag laut Legacy-Logik
+        this.#budget = CONFIG.ECONOMY.LOAN_AMOUNT;
         this.#hasActiveLoan = true;
         this.#loanInterestSteps = 0;
         this.#notifyChange();

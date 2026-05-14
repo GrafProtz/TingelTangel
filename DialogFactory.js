@@ -11,14 +11,14 @@ export class DialogFactory {
         const policeMalus = riskData.proximityRisk + riskData.interferenceRisk;
         const dialogBody = `
             <p style="color: var(--color-warning); font-size: 0.9rem; margin-bottom: 12px; border-left: 3px solid var(--color-warning); padding-left: 8px;">
-                Achtung: Auf dem Rad bist du schneller, aber auffälliger. Deine Informanten verlangen einen Risikoaufschlag. Die Fortbewegung kostet dich auf dem Bike 15 Cent pro Meter statt der üblichen 10 Cent.
+                Achtung: Auf dem Rad bist du schneller, aber auffälliger. Deine Informanten verlangen einen Risikoaufschlag. Die Fortbewegung kostet dich auf dem Bike ${CONFIG.ECONOMY.COST_PER_METER_BIKE * 100} Cent pro Meter statt der üblichen ${CONFIG.ECONOMY.COST_PER_METER_FOOT * 100} Cent.
             </p>
             <div class="scouting-report" style="line-height: 1.6;">
                 <p style="margin-bottom: 16px;">"Die Rechnung ist einfach, Kumpel. Schau dir die Zahlen an, bevor du den Schneider ansetzt..."</p>
                 <div style="background: rgba(0,0,0,0.05); padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 0.95rem;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Grund-Chance (Statistik):</span><span>9,7%</span></div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Grund-Chance (Statistik):</span><span>${CONFIG.RISK.BASE_BICYCLE_RISK}%</span></div>
                     <div style="display:flex; justify-content:space-between; margin-bottom: 4px; color: ${policeMalus > 0 ? 'var(--color-danger)' : 'inherit'};"><span>Bullen-Präsenz vor Ort:</span><span>+${policeMalus}%</span></div>
-                    ${riskData.isDisguised ? `<div style="display:flex; justify-content:space-between; margin-bottom: 4px; color: var(--color-secondary);"><span>Friseur-Tarnung:</span><span>-50%</span></div>` : ''}
+                    ${riskData.isDisguised ? `<div style="display:flex; justify-content:space-between; margin-bottom: 4px; color: var(--color-secondary);"><span>Friseur-Tarnung:</span><span>-${(1 - CONFIG.RISK.BARBER_RISK_REDUCTION) * 100}%</span></div>` : ''}
                 </div>
                 <div style="border-top: 2px solid var(--color-text); padding-top: 12px; display:flex; justify-content:space-between; font-weight:bold; font-size:1.2rem; color:var(--color-danger);">
                     <span>GESAMTRISIKO:</span><span>${riskData.totalRisk}%</span>
@@ -41,7 +41,7 @@ export class DialogFactory {
             title: 'Ein neues Gesicht?',
             text: `"Brauchst du ein neues Gesicht, Kumpel? Die Schmiere ist dir dicht auf den Fersen. Setz dich auf den Stuhl, lass mich die Konturen nachziehen und die Matte färben. Wenn du hier rausgehst, erkennt dich nicht mal deine eigene Mutter wieder. Dein Entdeckungsrisiko für den nächsten Bruch schmilzt auf die Hälfte zusammen, und deine Nerven bleiben wie Drahtseile – die Abbruchquote halbiert sich gleich mit. Was sagst du? Ein paar Kröten für ein Ticket in die Unsichtbarkeit?"`,
             buttons: [
-                { text: 'Umstyling starten (50 €)', event: EVENTS.BARBER_TRANSFORM_START },
+                { text: `Umstyling starten (${CONFIG.ECONOMY.BARBER_COST} €)`, event: EVENTS.BARBER_TRANSFORM_START },
                 { text: 'Später vielleicht', event: EVENTS.RESUME_GAME }
             ]
         };
@@ -69,8 +69,8 @@ export class DialogFactory {
     static getRadarTutorial(count) {
         return {
             title: "Auge des Gesetzes",
-            fullText: `Wir haben in diesem Sektor ${count} Polizeistationen. Hör gut zu: Je näher du an einer Wache ein Ding drehst, desto extremer steigt dein Risiko, geschnappt zu werden.<br><br>Damit du nicht blind in die Falle läufst: Mit dem Hotkey 'P' kannst du alle 5 Minuten für 5 Sekunden die Standorte der Bullen aufdecken. Präg sie dir gut ein!`,
-            shortText: "Polizeipräsenz aufgedeckt. Hotkey 'P' nutzt einen 5-Sekunden-Scan (Cooldown: 5 Min).",
+            fullText: `Wir haben in diesem Sektor ${count} Polizeistationen. Hör gut zu: Je näher du an einer Wache ein Ding drehst, desto extremer steigt dein Risiko, geschnappt zu werden.<br><br>Damit du nicht blind in die Falle läufst: Mit dem Hotkey 'P' kannst du alle ${CONFIG.TIMERS.RADAR_COOLDOWN / 60000} Minuten für ${CONFIG.TIMERS.RADAR_DURATION / 1000} Sekunden die Standorte der Bullen aufdecken. Präg sie dir gut ein!`,
+            shortText: `Polizeipräsenz aufgedeckt. Hotkey 'P' nutzt einen ${CONFIG.TIMERS.RADAR_DURATION / 1000}-Sekunden-Scan (Cooldown: ${CONFIG.TIMERS.RADAR_COOLDOWN / 60000} Min).`,
             nextEvent: EVENTS.START_POLICE_REVEAL
         };
     }
@@ -127,24 +127,24 @@ export class DialogFactory {
             options: {
                 A: {
                     text: warning + STRINGS.interactions.burglary.optionA + warningSuffix,
-                    risk: Math.min(95, Math.round((CONFIG.RISK_BURGLARY_EASY + riskData.riskMalus) * mult * disguiseBonus)),
-                    reward: 180,
+                    risk: Math.min(95, Math.round((CONFIG.RISK.CATEGORY_STATS.residential.baseRisk + riskData.riskMalus) * mult * disguiseBonus)),
+                    reward: CONFIG.ECONOMY.BURGLARY_REWARDS.EASY,
                     preview: disguiseText + (warning ? '<div style="color: #ef4444; font-weight: bold;">WARNUNG: Hohes Risiko durch Polizei!</div>' : '') + STRINGS.interactions.burglary.previewA,
                     successMsg: STRINGS.interactions.burglary.success,
                     caughtMsg: STRINGS.interactions.burglary.caught
                 },
                 B: {
                     text: warning + STRINGS.interactions.burglary.optionB + warningSuffix,
-                    risk: Math.min(95, Math.round((CONFIG.RISK_BURGLARY_MEDIUM + riskData.riskMalus) * mult * disguiseBonus)),
-                    reward: 450,
+                    risk: Math.min(95, Math.round((CONFIG.RISK.CATEGORY_STATS.commercial.baseRisk + riskData.riskMalus) * mult * disguiseBonus)),
+                    reward: CONFIG.ECONOMY.BURGLARY_REWARDS.MEDIUM,
                     preview: disguiseText + (warning ? '<div style="color: #ef4444; font-weight: bold;">WARNUNG: Hohes Risiko durch Polizei!</div>' : '') + STRINGS.interactions.burglary.previewB,
                     successMsg: STRINGS.interactions.burglary.success,
                     caughtMsg: STRINGS.interactions.burglary.caught
                 },
                 C: {
                     text: warning + STRINGS.interactions.burglary.optionC + warningSuffix,
-                    risk: Math.min(98, Math.round((CONFIG.RISK_BURGLARY_HARD + riskData.riskMalus) * mult * disguiseBonus)),
-                    reward: 1350,
+                    risk: Math.min(CONFIG.RISK.HARD_RISK_CAP, Math.round((CONFIG.RISK.CATEGORY_STATS.public.baseRisk + riskData.riskMalus) * mult * disguiseBonus)),
+                    reward: CONFIG.ECONOMY.BURGLARY_REWARDS.HARD,
                     preview: disguiseText + (warning ? '<div style="color: #ef4444; font-weight: bold;">WARNUNG: Hohes Risiko durch Polizei!</div>' : '') + STRINGS.interactions.burglary.previewC,
                     successMsg: STRINGS.interactions.burglary.success,
                     caughtMsg: STRINGS.interactions.burglary.caught
@@ -164,7 +164,7 @@ export class DialogFactory {
     static getWelcomeDialog(cityName, targetPubName) {
         return {
             title: "Willkommen in der Unterwelt",
-            fullText: `Willkommen in ${cityName}, Grünschnabel. Die städtische Verbrecher*innen-Innung gewährt dir ein Startkapital von 300 Euro. Betrachte es als Vorschuss. Dein erstes Ziel: Beweg deinen Hintern in die Kneipe namens '${targetPubName}', nicht weit weg von hier. Dort schnappen wir ein paar lukrative Gerüchte auf, wie man hier an echtes Geld kommt.<br><br>Aber merk dir eins: Wir spazieren hier nicht gemütlich über den Bürgersteig. Wir bewegen uns von Ecke zu Ecke, von Knotenpunkt zu Knotenpunkt - wir schleichen vorsichtig durch die Stadt. Und das kostet! Die Straße verlangt ihren Tribut. Jeder Schritt kostet Schmiergeld – exakt 10 Cent pro Meter, mindestens jedoch 1 € pro Knotenpunkt-Sprung. Behalte dein Budget im Auge. Plane deine Route über die grünen Punkte also extrem clever, sonst bist du pleite, bevor du überhaupt dein erstes Ding gedreht hast.`,
+            fullText: `Willkommen in ${cityName}, Grünschnabel. Die städtische Verbrecher*innen-Innung gewährt dir ein Startkapital von ${CONFIG.ECONOMY.INITIAL_BUDGET} Euro. Betrachte es als Vorschuss. Dein erstes Ziel: Beweg deinen Hintern in die Kneipe namens '${targetPubName}', nicht weit weg von hier. Dort schnappen wir ein paar lukrative Gerüchte auf, wie man hier an echtes Geld kommt.<br><br>Aber merk dir eins: Wir spazieren hier nicht gemütlich über den Bürgersteig. Wir bewegen uns von Ecke zu Ecke, von Knotenpunkt zu Knotenpunkt - wir schleichen vorsichtig durch die Stadt. Und das kostet! Die Straße verlangt ihren Tribut. Jeder Schritt kostet Schmiergeld – exakt ${CONFIG.ECONOMY.COST_PER_METER_FOOT * 100} Cent pro Meter, mindestens jedoch ${CONFIG.ECONOMY.MIN_STEP_COST} € pro Knotenpunkt-Sprung. Behalte dein Budget im Auge. Plane deine Route über die grünen Punkte also extrem clever, sonst bist du pleite, bevor du überhaupt dein erstes Ding gedreht hast.`,
             shortText: `Ziel: Erreiche die Kneipe '${targetPubName}'. (Achtung: Jeder Meter über die Knotenpunkte kostet Startkapital!)`,
             logId: 'goal-visit-pub'
         };

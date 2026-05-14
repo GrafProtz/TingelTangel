@@ -58,12 +58,12 @@ export class MovementEngine {
         const startNode = this.#mapData.getNode(startNodeId);
         const fullPath = [[startNode.lat, startNode.lon], ...edge.path];
 
-        const costMultiplier = isBiking ? 1.5 : 1.0;
-        const totalCost = Math.max(1, Math.ceil(edge.distance * CONFIG.COST_PER_METER * costMultiplier));
+        const costMultiplier = isBiking ? CONFIG.PLAYER.BIKE_COST_MULTIPLIER : 1.0;
+        const totalCost = Math.max(CONFIG.ECONOMY.MIN_STEP_COST, Math.ceil(edge.distance * CONFIG.ECONOMY.COST_PER_METER_FOOT * costMultiplier));
         const budgetAtStart = options.currentBudget;
 
-        // Geschwindigkeit: 240 m/s (Biking) vs 120 m/s (Walking)
-        const speed = isBiking ? 240 : 120;
+        // Geschwindigkeit: aus Config
+        const speed = isBiking ? CONFIG.PLAYER.SPEED_BIKE : CONFIG.PLAYER.SPEED_FOOT;
         const durationMs = (edge.distance / speed) * 1000;
         const startTime = performance.now();
 

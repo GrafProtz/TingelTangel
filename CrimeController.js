@@ -145,7 +145,7 @@ export class CrimeController {
 
             // 2. Risiko-Check (Entdeckung)
             if (Math.random() * 100 <= riskData.totalRisk) {
-                const fine = Math.ceil(this.#budgetManager.budget * 0.2);
+                const fine = Math.ceil(this.#budgetManager.budget * CONFIG.ECONOMY.FINE_FACTOR_BURGLARY);
                 this.#budgetManager.deductBudget(fine);
 
                 eventBus.emit(EVENTS.BURGLARY_RESOLVED, {
@@ -235,7 +235,7 @@ export class CrimeController {
             eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'bicycle-theft-progress' });
             eventBus.emit(EVENTS.ADD_LOG_ENTRY, { shortText: '✅ Fahrrad erfolgreich geklaut.', notify: true });
         } else {
-            const fine = Math.ceil(this.#budgetManager.budget * 0.1);
+            const fine = Math.ceil(this.#budgetManager.budget * CONFIG.ECONOMY.FINE_FACTOR_BICYCLE);
             this.#budgetManager.deductBudget(fine);
 
             eventBus.emit(EVENTS.REMOVE_LOG_ENTRY, { logId: 'bicycle-theft-progress' });
@@ -245,7 +245,7 @@ export class CrimeController {
         // Daten-Event für die UI-Schicht
         eventBus.emit(EVENTS.BICYCLE_THEFT_RESOLVED, {
             outcome: success ? 'success' : 'caught',
-            fine: success ? 0 : Math.ceil(this.#budgetManager.budget * 0.1),
+            fine: success ? 0 : Math.ceil(this.#budgetManager.budget * CONFIG.ECONOMY.FINE_FACTOR_BICYCLE),
             target
         });
 
@@ -307,10 +307,8 @@ export class CrimeController {
 
         const riskData = this.#riskCalculator.getPoliceRiskModifier([target.lat, target.lon]);
 
-        let mult = 1.0;
-        if (target.type === 'commercial') mult = 1.2;
-        if (target.type === 'public') mult = 1.5;
-        if (target.type === 'allotments') mult = 0.6;
+        const typeConfig = CONFIG.RISK.CATEGORY_STATS[target.type] || CONFIG.RISK.CATEGORY_STATS.residential;
+        const mult = typeConfig.mult;
 
         return {
             target,

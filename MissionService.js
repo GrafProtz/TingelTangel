@@ -41,7 +41,7 @@ export class MissionService {
                 if (!nd) return false;
                 const d = this.#mapData.calculateDistance(targetNode, nd);
                 // Zwischen 50m und 150m für den schnellen Einstieg
-                return d >= 50 && d <= CONFIG.MAX_DISTANCE_TUTORIAL_PUB;
+                return d >= 50 && d <= CONFIG.MAP.MAX_DISTANCE_TUTORIAL_PUB;
             });
 
             if (candidates.length === 0) continue;
@@ -91,7 +91,7 @@ export class MissionService {
             const dist = this.#mapData.calculateDistance(centerNode, { lat, lon });
             
             // Suche Ziele in anspruchsvollerer Distanz (mind. 600m)
-            if (dist >= CONFIG.MIN_DISTANCE_POI && dist <= (CONFIG.MIN_DISTANCE_POI + 600)) {
+            if (dist >= CONFIG.MAP.MIN_DISTANCE_POI && dist <= (CONFIG.MAP.MIN_DISTANCE_POI + 600)) {
                 // Finde den nächstgelegenen Straßenzugang für dieses Gebäude
                 const accessNode = this.#mapData.findNearestGraphNode(lat, lon);
                 
@@ -143,7 +143,7 @@ export class MissionService {
                 log("TRACE BIKES: Prüfe Stellplatz", p.id, "Distance:", dist, "Hat AccessNode:", !!accessNode);
                 return { ...p, distance: dist, accessNode };
             })
-            .filter(p => p.distance >= CONFIG.MIN_DISTANCE_BIKE && p.distance <= (CONFIG.MIN_DISTANCE_BIKE + 600) && p.accessNode !== null) 
+            .filter(p => p.distance >= CONFIG.MAP.MIN_DISTANCE_BIKE && p.distance <= (CONFIG.MAP.MIN_DISTANCE_BIKE + 600) && p.accessNode !== null) 
             .sort((a, b) => a.distance - b.distance);
 
         log("TRACE BIKES: Kandidaten nach Filterung:", candidates.length);
