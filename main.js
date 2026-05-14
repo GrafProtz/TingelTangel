@@ -5,6 +5,7 @@ import { UIManager } from './UIManager.js';
 import { InteractionManager } from './InteractionManager.js';
 import { NotificationManager } from './NotificationManager.js';
 import { log } from './Utils.js';
+import { CONFIG } from './GameConfig.js';
 
 /**
  * GridCrime - Bootstrapping
@@ -29,6 +30,7 @@ const CITIES = [
 ];
 
 async function initApp() {
+    console.log('[CONFIG] Booting with:', CONFIG);
     log("[BOOTSTRAP] Initialisiere GridCrime Core...");
 
     // 1. Core Services instanziieren (Session-unabhängig)
