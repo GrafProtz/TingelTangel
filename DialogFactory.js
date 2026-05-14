@@ -66,6 +66,17 @@ export class DialogFactory {
         };
     }
 
+    static createRetryDialog() {
+        return {
+            title: 'Verbindung zum Satelliten verloren',
+            text: "Die Map-Daten konnten nicht geladen werden. Bitte prüfe deine Internetverbindung oder versuche es erneut.",
+            buttons: [
+                { text: 'Erneut versuchen', event: EVENTS.CMD_RELOAD_GAME, className: 'btn-danger' },
+                { text: 'Hauptmenü', event: EVENTS.CMD_RELOAD_GAME, className: 'btn-secondary' }
+            ]
+        };
+    }
+
     static getRadarTutorial(count) {
         return {
             title: "Auge des Gesetzes",

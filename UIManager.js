@@ -125,6 +125,7 @@ export class UIManager {
         sub(EVENTS.UI_SHOW_CASCADE, (data) => this.#handleCascade(data));
         sub(EVENTS.UI_SHOW_ENCOUNTER, (data) => this.#showEncounterModal(data));
         sub(EVENTS.UI_SHOW_LOAN_MODAL, () => this.#showLoanModal());
+        sub(EVENTS.SYS_MAP_LOAD_ERROR, () => eventBus.emit(EVENTS.UI_SHOW_DIALOG, DialogFactory.createRetryDialog()));
 
         // --- Logbook Updates ---
         sub(EVENTS.CMD_ADD_LOG_ENTRY, (data) => {
@@ -261,7 +262,7 @@ export class UIManager {
         try {
             await this.#mapData.loadCityData(coords);
         } catch (err) {
-            eventBus.emit(EVENTS.UI_SHOW_DIALOG, DialogFactory.getNetworkErrorDialog());
+            eventBus.emit(EVENTS.SYS_MAP_LOAD_ERROR);
             return;
         }
 
