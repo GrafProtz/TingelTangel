@@ -99,7 +99,7 @@ export class UIManager {
         this.#btnNewGame?.addEventListener('click', () => this.#startSession(false));
         this.#btnContinueGame?.addEventListener('click', () => this.#startSession(true));
         this.#btnBackToMenu?.addEventListener('click', () => location.reload());
-        this.#devBtn?.addEventListener('click', () => eventBus.emit(EVENTS.TOGGLE_DEV_ENCOUNTERS));
+        this.#devBtn?.addEventListener('click', () => eventBus.emit(EVENTS.ACTION_TOGGLE_DEV_ENCOUNTERS));
 
         // Sidebar Toggle
         this.#sidebarToggle?.addEventListener('click', () => this.#toggleSidebar());
@@ -107,8 +107,8 @@ export class UIManager {
         // Global Key Listener (Fahrrad & Radar)
         window.addEventListener('keydown', (e) => {
             const key = e.key.toLowerCase();
-            if (key === 'f') eventBus.emit(EVENTS.TOGGLE_BICYCLE);
-            if (key === 'p') eventBus.emit(EVENTS.INTENT_TRIGGER_RADAR, { force: false });
+            if (key === 'f') eventBus.emit(EVENTS.ACTION_TOGGLE_BICYCLE);
+            if (key === 'p') eventBus.emit(EVENTS.CMD_TRIGGER_RADAR, { force: false });
         });
 
         // Info-Modal Button
@@ -122,17 +122,17 @@ export class UIManager {
         const sub = (ev, fn) => this.#appSubscriptions.push(eventBus.subscribe(ev, fn));
 
         // --- Info Cascade & Modals ---
-        sub(EVENTS.SHOW_INFO_CASCADE, (data) => this.#handleCascade(data));
-        sub(EVENTS.SHOW_ENCOUNTER, (data) => this.#showEncounterModal(data));
-        sub(EVENTS.SHOW_LOAN_MODAL, () => this.#showLoanModal());
+        sub(EVENTS.UI_SHOW_CASCADE, (data) => this.#handleCascade(data));
+        sub(EVENTS.UI_SHOW_ENCOUNTER, (data) => this.#showEncounterModal(data));
+        sub(EVENTS.UI_SHOW_LOAN_MODAL, () => this.#showLoanModal());
 
         // --- Logbook Updates ---
-        sub(EVENTS.ADD_LOG_ENTRY, (data) => {
+        sub(EVENTS.CMD_ADD_LOG_ENTRY, (data) => {
             this.#handleAddLogEntry(data);
             if (data.notify) this.#notifyLogEntry();
         });
-        sub(EVENTS.REMOVE_LOG_ENTRY, (data) => document.getElementById(data.logId)?.remove());
-        sub(EVENTS.COMPLETE_LOG_ENTRY, (data) => {
+        sub(EVENTS.CMD_REMOVE_LOG_ENTRY, (data) => document.getElementById(data.logId)?.remove());
+        sub(EVENTS.CMD_COMPLETE_LOG_ENTRY, (data) => {
             const el = document.getElementById(data.logId);
             if (el) {
                 el.classList.add('log-entry-completed');
@@ -142,38 +142,38 @@ export class UIManager {
         });
 
         // --- Map & Navigation (View Bridge) ---
-        sub(EVENTS.PLAYER_POSITION_UPDATED, ({ lat, lon }) => this.#mapView?.updatePlayerPosition([lat, lon]));
-        sub(EVENTS.CAMERA_FIT_BOUNDS_REQUESTED, (coords) => this.#mapView?.fitBounds(coords));
-        sub(EVENTS.FIRST_MOVE_COMPLETED, () => eventBus.emit(EVENTS.TOGGLE_INFO, false));
-        sub(EVENTS.INTRO_COMPLETE, () => this.#handleIntroComplete());
+        sub(EVENTS.STATE_PLAYER_POSITION, ({ lat, lon }) => this.#mapView?.updatePlayerPosition([lat, lon]));
+        sub(EVENTS.CMD_CAMERA_FIT_BOUNDS, (coords) => this.#mapView?.fitBounds(coords));
+        sub(EVENTS.SYS_FIRST_MOVE_DONE, () => eventBus.emit(EVENTS.ACTION_TOGGLE_INFO, false));
+        sub(EVENTS.SYS_INTRO_COMPLETE, () => this.#handleIntroComplete());
 
         // --- Gameplay Result Bridges ---
-        sub(EVENTS.BURGLARY_RESOLVED, (p) => {
+        sub(EVENTS.NOTIFY_BURGLARY_RESOLVED, (p) => {
             const dialog = (p.outcome === 'aborted') ? DialogFactory.getBurglaryAbort() :
                            (p.outcome === 'caught') ? DialogFactory.getBurglaryCaught(p.fine) :
                            DialogFactory.getBurglarySuccess(p.loot, p.debtAmount);
-            eventBus.emit(EVENTS.SHOW_DIALOG, dialog);
+            eventBus.emit(EVENTS.UI_SHOW_DIALOG, dialog);
         });
 
-        sub(EVENTS.BICYCLE_THEFT_RESOLVED, (p) => {
+        sub(EVENTS.NOTIFY_BICYCLE_THEFT_RESOLVED, (p) => {
             const dialog = (p.outcome === 'success') ? DialogFactory.getBicycleTheftSuccess() :
                            DialogFactory.getBicycleTheftFailure(p.fine);
-            eventBus.emit(EVENTS.SHOW_DIALOG, dialog);
+            eventBus.emit(EVENTS.UI_SHOW_DIALOG, dialog);
         });
 
-        sub(EVENTS.BICYCLE_THEFT_SUCCESS_DONE, () => {
-            eventBus.emit(EVENTS.SHOW_INFO_CASCADE, {
+        sub(EVENTS.ACTION_BICYCLE_SUCCESS_CONFIRMED, () => {
+            eventBus.emit(EVENTS.UI_SHOW_CASCADE, {
                 title: "Fahrrad-Modus",
                 shortText: "Hotkey F: Auf/Absteigen. Vorsicht: 15 Cent/Meter (1,5x Preise)!",
                 fullText: "Hör zu, Freundchen. Das Rad gehört jetzt dir. Damit bist du doppelt so schnell unterwegs, aber du fällst auch mehr auf. Das kostet dich natürlich auch mehr. Logo, versteht sich. Mit 'F' kannst du jederzeit auf- oder absteigen, um unauffällig zu bleiben.",
-                nextEvent: EVENTS.RESUME_GAME
+                nextEvent: EVENTS.CMD_RESUME_GAME
             });
         });
 
         // --- Interaction & Spawning ---
-        sub(EVENTS.SPAWN_TARGETS, (payload) => this.#handleSpawnTargets(payload));
-        sub(EVENTS.TARGETS_UPDATED, (state) => this.#handleTargetsUpdated(state));
-        sub(EVENTS.GAME_STATE_CHANGED, (state) => {
+        sub(EVENTS.CMD_SPAWN_TARGETS, (payload) => this.#handleSpawnTargets(payload));
+        sub(EVENTS.STATE_TARGETS_UPDATED, (state) => this.#handleTargetsUpdated(state));
+        sub(EVENTS.STATE_GAME_CHANGED, (state) => {
             if (this.#devBtn) this.#devBtn.title = state.devEncountersDisabled ? "Ereignisse: DEAKTIVIERT" : "Ereignisse: AKTIV";
             if (state.currentPlayerNodeId && !state.isMoving) {
                 this.#handlePlayerMoved(state);
@@ -182,45 +182,45 @@ export class UIManager {
         });
 
         // --- Cinema & Sequences ---
-        sub(EVENTS.PUB_TARGET_REACHED, () => {
+        sub(EVENTS.SYS_PUB_REACHED, () => {
             this.#game?.pause();
             this.#mapView?.playCinematicSequence('door', 1500, () => {});
         });
 
-        sub(EVENTS.START_POLICE_REVEAL, async () => {
+        sub(EVENTS.CMD_START_POLICE_REVEAL, async () => {
             const stations = this.#mapData.getPoliceStations();
             const playerNode = this.#mapData.getNode(this.#game.getState().currentPlayerNodeId);
             await this.#mapView?.playPoliceRevealSequence(stations, playerNode ? [playerNode.lat, playerNode.lon] : null);
             this.#game?.resume();
         });
 
-        sub(EVENTS.RADAR_SEQUENCE_START, () => eventBus.emit(EVENTS.INTENT_TRIGGER_RADAR, { force: true }));
-        sub(EVENTS.RADAR_RESULT_READY, async (res) => {
+        sub(EVENTS.CMD_START_RADAR_SEQUENCE, () => eventBus.emit(EVENTS.CMD_TRIGGER_RADAR, { force: true }));
+        sub(EVENTS.NOTIFY_RADAR_RESULT, async (res) => {
             await this.#mapView?.playPoliceRevealSequence(res.stations, res.playerCoords);
             this.#game?.resume();
         });
 
         // --- Specific Interactions ---
-        sub(EVENTS.BARBER_INFO_READY, ({ barber }) => {
+        sub(EVENTS.NOTIFY_BARBER_INFO, ({ barber }) => {
             const name = sanitizeHTML(barber?.tags?.name) || "Schnittwunde";
-            eventBus.emit(EVENTS.SHOW_DIALOG, {
+            eventBus.emit(EVENTS.UI_SHOW_DIALOG, {
                 title: 'Ein zwielichtiger Tipp',
                 text: `Ich kenne da jemanden. Geh zu '<strong>${name}</strong>'. Lass dir die Haare färben, setz eine Brille auf. Wenn du nicht aussiehst wie ein typischer Einbrecher, fällst du weniger auf. Das halbiert dein Risiko und die Hausbesitzer schöpfen nicht so schnell Verdacht.`,
                 buttons: [
-                    { text: 'Einverstanden (50 Euro)', event: EVENTS.BUY_BARBER_TICKET, payload: { barber, barberName: name } },
-                    { text: 'Ablehnen', event: EVENTS.RESUME_GAME }
+                    { text: 'Einverstanden (50 Euro)', event: EVENTS.CMD_BUY_BARBER_TICKET, payload: { barber, barberName: name } },
+                    { text: 'Ablehnen', event: EVENTS.CMD_RESUME_GAME }
                 ]
             });
         });
 
-        sub(EVENTS.BICYCLE_INTERACTION_READY, (data) => eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBicycleInteractionDialog(data.riskData, data.target)));
-        sub(EVENTS.BARBER_INTERACTION_READY, (data) => eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBarberDialog(data)));
-        sub(EVENTS.RADAR_TUTORIAL_TRIGGERED, (p) => eventBus.emit(EVENTS.SHOW_INFO_CASCADE, DialogFactory.getRadarTutorial(p.stationCount)));
-        sub(EVENTS.OPTION_C_CLICKED, () => eventBus.emit(EVENTS.INTENT_REQUEST_BARBER_INFO));
-        sub(EVENTS.OPTION_D_CLICKED, () => eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getBoltCutterDialog(75)));
+        sub(EVENTS.NOTIFY_BICYCLE_INTERACTION, (data) => eventBus.emit(EVENTS.UI_SHOW_DIALOG, DialogFactory.getBicycleInteractionDialog(data.riskData, data.target)));
+        sub(EVENTS.NOTIFY_BARBER_INTERACTION, (data) => eventBus.emit(EVENTS.UI_SHOW_DIALOG, DialogFactory.getBarberDialog(data)));
+        sub(EVENTS.NOTIFY_RADAR_TUTORIAL, (p) => eventBus.emit(EVENTS.UI_SHOW_CASCADE, DialogFactory.getRadarTutorial(p.stationCount)));
+        sub(EVENTS.ACTION_OPTION_C, () => eventBus.emit(EVENTS.CMD_REQUEST_BARBER_INFO));
+        sub(EVENTS.ACTION_OPTION_D, () => eventBus.emit(EVENTS.UI_SHOW_DIALOG, DialogFactory.getBoltCutterDialog(75)));
 
         // --- Visual States ---
-        sub(EVENTS.BIKING_STATE_CHANGED, (isBiking) => {
+        sub(EVENTS.STATE_BIKING_CHANGED, (isBiking) => {
             document.getElementById('app-container')?.classList.toggle('state-biking', isBiking);
             document.body.classList.toggle('state-biking', isBiking);
         });
@@ -261,7 +261,7 @@ export class UIManager {
         try {
             await this.#mapData.loadCityData(coords);
         } catch (err) {
-            eventBus.emit(EVENTS.SHOW_DIALOG, DialogFactory.getNetworkErrorDialog());
+            eventBus.emit(EVENTS.UI_SHOW_DIALOG, DialogFactory.getNetworkErrorDialog());
             return;
         }
 
@@ -282,7 +282,7 @@ export class UIManager {
                     this.#mapView.focusLocation([node.lat, node.lon]);
                 }
             } else {
-                eventBus.emit(EVENTS.SHOW_TOAST, { message: "Fehler beim Laden des Spielstands.", type: 'fail' });
+                eventBus.emit(EVENTS.UI_SHOW_TOAST, { message: "Fehler beim Laden des Spielstands.", type: 'fail' });
             }
         } else {
             this.#saveManager.deleteSave(city.name);
@@ -291,7 +291,7 @@ export class UIManager {
                 this.#game.startMission(scenario.startNodeId, scenario.targetNodeId, scenario.poiName);
                 
                 // Intro-Sequenz Bridge
-                const unsubIntro = eventBus.subscribe(EVENTS.START_MAP_INTRO, () => {
+                const unsubIntro = eventBus.subscribe(EVENTS.CMD_START_MAP_INTRO, () => {
                     this.#mapView.renderPlayer(scenario.startCoords);
                     const nb = this.#mapData.getNeighbors(scenario.startNodeId);
                     this.#mapView.focusScenarioBounds(scenario.startCoords, scenario.targetCoords, nb.map(n => [n.lat, n.lon]));
@@ -322,7 +322,7 @@ export class UIManager {
             this.#notifyLogEntry();
             const next = this.#currentCascadeData.nextEvent;
             this.#currentCascadeData = null;
-            eventBus.emit(next || EVENTS.START_MAP_INTRO);
+            eventBus.emit(next || EVENTS.CMD_START_MAP_INTRO);
         }, 600);
     }
 
@@ -368,7 +368,7 @@ export class UIManager {
         if (node) this.#mapView?.renderPlayer([node.lat, node.lon], state.currentPlayerNodeId);
         const neighbors = this.#mapData.getNeighbors(state.currentPlayerNodeId, state.isBiking);
         this.#mapView?.renderNeighbors(neighbors, state.targetPubNodeId, state.isBiking, state.lastPubVisit, (id) => {
-            eventBus.emit(EVENTS.INTENT_MOVE_PLAYER, { targetId: id });
+            eventBus.emit(EVENTS.CMD_MOVE_PLAYER, { targetId: id });
         });
     }
 
@@ -390,14 +390,14 @@ export class UIManager {
             });
         };
 
-        addPois(state.activeCrimeTargets, 'INTENT_SCOUT_TARGET', 'target');
+        addPois(state.activeCrimeTargets, 'CMD_SCOUT_TARGET', 'target');
         if (state.activeBarber) {
             const b = state.activeBarber;
             const node = this.#mapData.getNode(b.accessNodeId);
             poiList.push({ ...b, type: 'barber', accessNodeCoords: node ? { lat: node.lat, lon: node.lon } : null,
-                onClickCallback: () => eventBus.emit(EVENTS.INTENT_BARBER_TARGET, { barber: b }) });
+                onClickCallback: () => eventBus.emit(EVENTS.CMD_BARBER_TARGET, { barber: b }) });
         }
-        addPois(state.activeBicycleTargets, 'INTENT_BICYCLE_TARGET', 'target', 'bicycle');
+        addPois(state.activeBicycleTargets, 'CMD_BICYCLE_TARGET', 'target', 'bicycle');
 
         this.#mapView?.renderPOIs(poiList);
     }
@@ -405,13 +405,13 @@ export class UIManager {
     #handleSpawnTargets({ targetType, centerNodeId }) {
         const targets = this.#missionService.spawnTargets(targetType, centerNodeId);
         if (targets.length > 0) {
-            eventBus.emit(EVENTS.INTENT_SET_CRIME_TARGETS, { targets });
+            eventBus.emit(EVENTS.CMD_SET_CRIME_TARGETS, { targets });
             const coords = [[this.#mapData.getNode(centerNodeId).lat, this.#mapData.getNode(centerNodeId).lon]];
             targets.forEach(t => coords.push([this.#mapData.getNode(t.accessNodeId).lat, this.#mapData.getNode(t.accessNodeId).lon]));
-            eventBus.emit(EVENTS.CAMERA_FIT_BOUNDS_REQUESTED, coords);
-            eventBus.emit(EVENTS.SHOW_TOAST, { message: `${targets.length} Ziele markiert!`, type: 'success' });
+            eventBus.emit(EVENTS.CMD_CAMERA_FIT_BOUNDS, coords);
+            eventBus.emit(EVENTS.UI_SHOW_TOAST, { message: `${targets.length} Ziele markiert!`, type: 'success' });
         } else {
-            eventBus.emit(EVENTS.SHOW_TOAST, { message: "Keine Gebäude gefunden.", type: 'fail' });
+            eventBus.emit(EVENTS.UI_SHOW_TOAST, { message: "Keine Gebäude gefunden.", type: 'fail' });
         }
     }
 
@@ -421,17 +421,17 @@ export class UIManager {
             fullText: `<div style="line-height: 1.6;"><p>${event.text}</p><div style="color: var(--color-danger); font-weight: bold; margin-top: 15px;">Verlust: -${event.cost} €</div></div>`,
             shortText: `Ereignis: ${event.title} (-${event.cost} €)`,
             logId: 'last-encounter',
-            nextEvent: EVENTS.RESUME_GAME
+            nextEvent: EVENTS.CMD_RESUME_GAME
         });
     }
 
     #showLoanModal() {
-        eventBus.emit(EVENTS.SHOW_DIALOG, {
+        eventBus.emit(EVENTS.UI_SHOW_DIALOG, {
             title: 'Zweite Chance?',
             text: `<div style="line-height: 1.6;"><p>"Du bist pleite. Die Innnung bietet dir einen Kredit an..."</p><p style="color:var(--color-warning); font-weight:bold; margin-top:15px;">⚠️ 1 € Zinsen pro Schritt!</p></div>`,
             buttons: [
-                { text: 'Annehmen', event: EVENTS.ACCEPT_LOAN_OFFER, className: 'btn-danger' },
-                { text: 'Ablehnen', event: EVENTS.REJECT_LOAN, className: 'btn-secondary' }
+                { text: 'Annehmen', event: EVENTS.ACTION_ACCEPT_LOAN, className: 'btn-danger' },
+                { text: 'Ablehnen', event: EVENTS.ACTION_REJECT_LOAN, className: 'btn-secondary' }
             ]
         });
     }
